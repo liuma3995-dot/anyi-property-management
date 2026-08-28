@@ -34,14 +34,27 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="BaseInfo\BaseInfoDtos.cs" />
+    <Compile Include="BaseInfo\BaseInfoRequests.cs" />
     <Compile Include="Auth\ChangePasswordRequest.cs" />
     <Compile Include="Auth\LoginRequest.cs" />
     <Compile Include="Auth\LoginResult.cs" />
     <Compile Include="Common\ApiResponse.cs" />
+    <Compile Include="Common\CommonDtos.cs" />
     <Compile Include="Common\ErrorCode.cs" />
     <Compile Include="Common\PageRequest.cs" />
     <Compile Include="Common\PageResult.cs" />
+    <Compile Include="Dispute\DisputeDtos.cs" />
+    <Compile Include="Emergency\EmergencyDtos.cs" />
+    <Compile Include="Emergency\EmergencyRequests.cs" />
+    <Compile Include="Enums\Enums.cs" />
+    <Compile Include="Equipment\EquipmentDtos.cs" />
+    <Compile Include="Finance\FinanceDtos.cs" />
+    <Compile Include="Finance\FinanceRequests.cs" />
     <Compile Include="Health\HealthResponse.cs" />
+    <Compile Include="Org\OrgDtos.cs" />
+    <Compile Include="Org\OrgRequests.cs" />
+    <Compile Include="PhoneBook\PhoneBookDtos.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
