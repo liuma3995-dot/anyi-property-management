@@ -1,0 +1,25 @@
+# 构建输出
+bin/
+obj/
+packages/
+*.user
+*.suo
+.vs/
+TestResults/
+
+# 本机工具与临时目录
+tmp/
+.claude/
+output/
+
+# 运行期生成（日志/数据库/备份/导出）
+*.log
+logs/
+*.db
+*.db-journal
+backup/
+exports/
+
+# IDE 杂项
+*.nupkg
+*.nuspec.bak
