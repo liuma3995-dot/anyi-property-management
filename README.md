@@ -33,6 +33,10 @@ nuget restore PropertyManagement.sln
 - Contract：前后端共享 DTO，Client 与 Server 均引用，Contract 不得引用任何业务工程；
 - 前端与后端唯一耦合点是 API 契约，契约变更走 CHG。
 
+## 数据目录规范（DZ-3）
+
+运行期数据统一存放 `%ProgramData%\PropertyManagement\`（SQLite 库、日志、备份、导出），安装包预建目录并设置权限；**不得写入 Program Files**（Win7/权限兼容）。Server 路径设计与 Installer 脚本按此执行。
+
 ## 分支与提交约定
 
 - `main`：发布基线分支，禁止直接提交业务代码，合入须经过评审；
