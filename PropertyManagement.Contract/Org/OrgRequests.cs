@@ -62,6 +62,15 @@ namespace PropertyManagement.Contract.Org
         public string CheckOut { get; set; }
     }
 
+    /// <summary>考勤查询条件（UC-ORG-004，按日期/员工/结果）。</summary>
+    public class AttendanceQueryRequest : PageRequest
+    {
+        public int? EmployeeId { get; set; }
+        public DateTime? WorkDateFrom { get; set; }
+        public DateTime? WorkDateTo { get; set; }
+        public AttendanceResult? Result { get; set; }
+    }
+
     /// <summary>考勤异常审核请求（BR-ORG-05）。</summary>
     public class AttendanceReviewRequest
     {

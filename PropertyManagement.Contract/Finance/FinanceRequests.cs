@@ -11,6 +11,7 @@ namespace PropertyManagement.Contract.Finance
         public ChargePayMode PayMode { get; set; }
         public decimal UnitPrice { get; set; }
         public BillingCycleType CycleType { get; set; }
+        public int? Status { get; set; } // 停用不影响已出账单（UC-FIN-001）
     }
 
     public class BillingCycleRequest

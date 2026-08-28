@@ -57,6 +57,16 @@ namespace PropertyManagement.Contract.Dispute
         public List<DisputeRecordDto> Records { get; set; }
     }
 
+    /// <summary>纠纷状态变更记录（t_dispute_status_log，只追加）。</summary>
+    public class DisputeStatusLogDto
+    {
+        public int Id { get; set; }
+        public int CaseId { get; set; }
+        public DisputeCaseStatus OldStatus { get; set; }
+        public DisputeCaseStatus NewStatus { get; set; }
+        public DateTime ChangedAt { get; set; }
+    }
+
     /// <summary>纠纷统计（UC-DIS-006）。</summary>
     public class DisputeStatisticsDto
     {

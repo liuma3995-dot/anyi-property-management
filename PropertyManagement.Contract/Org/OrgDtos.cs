@@ -42,6 +42,15 @@ namespace PropertyManagement.Contract.Org
         public DateTime ChangedAt { get; set; }
     }
 
+    /// <summary>登录账号（t_user，UC-ORG-007 账号维护）。</summary>
+    public class UserAccountDto
+    {
+        public int Id { get; set; }
+        public string UserName { get; set; }
+        public UserStatus Status { get; set; }
+        public DateTime? LastLoginAt { get; set; }
+    }
+
     /// <summary>班次（t_shift）。</summary>
     public class ShiftDto
     {

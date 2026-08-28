@@ -80,4 +80,14 @@ namespace PropertyManagement.Contract.Emergency
         public List<EmergencyRecordDto> Records { get; set; }
         public EmergencyReviewDto Review { get; set; }
     }
+
+    /// <summary>应急事件状态变更记录（t_event_status_log，只追加）。</summary>
+    public class EmergencyEventStatusLogDto
+    {
+        public int Id { get; set; }
+        public int EventId { get; set; }
+        public EmergencyEventStatus OldStatus { get; set; }
+        public EmergencyEventStatus NewStatus { get; set; }
+        public DateTime ChangedAt { get; set; }
+    }
 }

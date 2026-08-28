@@ -1,6 +1,6 @@
 # API 接口契约（v0.1）
 
-> 版本：v0.1 ｜ 日期：2026-08-28 ｜ 状态：待评审
+> 版本：v0.1 ｜ 日期：2026-08-28 ｜ 状态：已定稿（D1-3 评审通过，2026-08-28）
 > 依据：[模型基线 v1.0](../models/模型基线-v1.0/README.md)＋ [DM-02 组件与子系统设计](../models/设计模型-v0.1/DM-02-组件与子系统设计.md)＋ [DM-03 设计类设计](../models/设计模型-v0.1/DM-03-设计类设计.md)＋ [DM-04 数据库设计](../models/设计模型-v0.1/DM-04-数据库设计.md)＋ [技术选型建议（确认稿）](../models/设计模型-v0.1/技术选型建议.md)
 > 契约代码：`PropertyManagement.Contract`（前后端同源引用，173 个类/枚举）
 > 里程碑：M1 契约先行（D1-1/D1-2/D1-3）
@@ -72,7 +72,9 @@
 | UC-INF-006 导入批次 | GET | /baseinfo/imports/{id} | — | ImportLogDto |
 | UC-INF-006 模板 | GET | /baseinfo/imports/template?module= | — | 文件流 |
 | UC-INF-006 错误清单 | GET | /baseinfo/imports/{id}/errors | — | 文件流 |
-| UC-INF-007 查询 | GET | /baseinfo/properties | BaseInfoQueryRequest | PageResult\<PropertyDto\> |
+| UC-INF-007 查询（房产） | GET | /baseinfo/properties | BaseInfoQueryRequest | PageResult\<PropertyDto\> |
+| UC-INF-007 查询（业主） | GET | /baseinfo/owners | BaseInfoQueryRequest | PageResult\<OwnerDto\> |
+| UC-INF-007 查询（车位） | GET | /baseinfo/parking-spaces | BaseInfoQueryRequest | PageResult\<ParkingSpaceDto\> |
 | UC-INF-007 导出 | POST | /baseinfo/exports | BaseInfoExportRequest | ExportLogDto |
 
 ### 2.3 org（人员组织）
@@ -85,12 +87,12 @@
 | UC-ORG-003 排班 | GET/POST | /org/schedules | ScheduleGenerateRequest | SchedulePlanDto |
 | UC-ORG-003 发布 | POST | /org/schedules/publish | SchedulePublishRequest | SchedulePlanDto |
 | UC-ORG-004 考勤登记 | POST | /org/attendances | AttendanceRequest | AttendanceDto |
-| UC-ORG-004 考勤查询 | GET | /org/attendances | PageRequest（按日期/员工） | PageResult\<AttendanceDto\> |
+| UC-ORG-004 考勤查询 | GET | /org/attendances | AttendanceQueryRequest | PageResult\<AttendanceDto\> |
 | UC-ORG-004 异常审核 | POST | /org/attendances/{id}/review | AttendanceReviewRequest | AttendanceDto |
 | UC-ORG-005 在岗状态 | POST | /org/employees/{id}/status | EmployeeStatusRequest | EmployeeStatusLogDto |
 | UC-ORG-005 状态历史 | GET | /org/employees/{id}/status-logs | — | List\<EmployeeStatusLogDto\> |
 | UC-ORG-006 员工查询 | GET | /org/employees | EmployeeQueryRequest | PageResult\<EmployeeDto\> |
-| UC-ORG-007 账号查询/维护 | GET/PUT | /org/accounts[/{id}] | UserAccountRequest | — |
+| UC-ORG-007 账号查询/维护 | GET/PUT | /org/accounts[/{id}] | UserAccountRequest | UserAccountDto |
 | UC-ORG-007 密码重置 | POST | /org/accounts/{id}/reset-password | ResetPasswordRequest | — |
 
 ### 2.4 billing（财务-账单）
@@ -112,6 +114,7 @@
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
 | UC-FIN-003 收款登记 | POST | /payments | PaymentCreateRequest | PaymentDto |
+| UC-FIN-003 收款历史 | GET | /payments | PageRequest | PageResult\<PaymentDto\> |
 | UC-FIN-003 收款查询 | GET | /payments/{id} | — | PaymentDto |
 | UC-FIN-003 预存款 | GET | /payments/pre-deposits/{ownerId} | — | PreDepositDto |
 | UC-FIN-003 预存退还 | POST | /payments/pre-deposits/refund | PreDepositRefundRequest | PreDepositDto |
@@ -246,6 +249,7 @@
 - **与 DM-03 对齐**：每个领域实体（ChargeItem/Bill/Payment/Receipt/RefundAdjustment/PreDeposit/Expense/EmergencyEvent/DisputeCase/Device 等）均有对应 DTO，字段取自 DM-03 类图职责；
 - **与 DM-04 对齐**：DTO 字段名/类型与 60 张表关键字段一致（下划线转驼峰），删除统一 `del_flag`、审计时间 `created_at/updated_at`；
 - **与 AM-05 对齐**：27 个枚举覆盖 7 类状态模型（账单/应急/纠纷/设备/员工/考勤/电话条目）；
+- **状态日志表**：60 张表中 6 张"只追加"状态日志表均有对应 DTO（BillStatusLogDto / EmergencyEventStatusLogDto / DisputeStatusLogDto / DeviceStatusLogDto / EmployeeStatusLogDto / BaseChangeLogDto）；
 - **与 AM-02 对齐**：60 个用例每个至少映射一个端点（§二覆盖核对通过）；
 - **枚举序列化**：契约约定枚举以字符串传输，M2 Startup 增加 `StringEnumConverter`。
 
@@ -256,3 +260,21 @@
 3. 错误码约定是否认可？
 4. DTO 命名与字段是否与界面原型（PG-XXX）可对应？
 5. 契约确认后进入实施：按 DZ-2 选定先做 M2（后端）或 M3（前端）；契约变更走 CHG。
+
+## 七、评审记录（D1-3，2026-08-28）
+
+> 评审方式：由 AI 代项目负责人评审（项目负责人授权），对照模型基线逐项核查。
+
+| # | 评审发现 | 结论/处置 |
+|---|---|---|
+| 1 | 60 用例 → 端点映射 | ✅ 程序化核对 60/60 覆盖，无缺失 |
+| 2 | 通用规范（鉴权/分页/时间/枚举/删除/审计/导入导出） | ✅ 符合技术选型与 DM-07；枚举序列化约定在 M2 落地 |
+| 3 | 错误码约定 | ✅ 与异常路径核对清单口径一致（公共段 4xxxx/5xxxx，业务细分码 M2 扩展） |
+| 4 | DTO 与 DM-04 对齐 | ✅ 60 表均有对应 DTO；本次补充 3 个状态日志 DTO（EmergencyEventStatusLogDto/DisputeStatusLogDto/DeviceStatusLogDto） |
+| 5 | 列表查询端点缺口 | ✅ 本次补充：GET /baseinfo/owners、GET /baseinfo/parking-spaces、GET /payments、AttendanceQueryRequest |
+| 6 | 账号/考勤 DTO 完整 | ✅ 本次补充：UserAccountDto、AttendanceQueryRequest |
+| 7 | 收费项目停用 | ✅ ChargeItemRequest 增加 Status（停用不影响已出账单） |
+| 8 | 原型页面对应 | ✅ 36 页关键页抽查（收款/应急发起/备份/导入/到期提醒/报表/欠费/电话查询）均有对应端点 |
+| 9 | 契约文档引用完整性 | ✅ 全部引用的 DTO/Request 类型在 Contract 代码中存在（程序化核对） |
+
+**评审结论：通过，契约定稿（v0.1）。** 后续契约变更走 CHG。

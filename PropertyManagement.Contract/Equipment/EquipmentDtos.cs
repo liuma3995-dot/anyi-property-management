@@ -26,6 +26,17 @@ namespace PropertyManagement.Contract.Equipment
         public bool DelFlag { get; set; }
     }
 
+    /// <summary>设备状态变更记录（t_device_status_log，只追加，BR-EQP-01）。</summary>
+    public class DeviceStatusLogDto
+    {
+        public int Id { get; set; }
+        public int DeviceId { get; set; }
+        public DeviceStatus OldStatus { get; set; }
+        public DeviceStatus NewStatus { get; set; }
+        public string Reason { get; set; }
+        public DateTime ChangedAt { get; set; }
+    }
+
     /// <summary>保养记录（t_maintenance_record，UC-EQP-002，BR-EQP-02/03）。</summary>
     public class MaintenanceRecordDto
     {
