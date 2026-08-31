@@ -1,0 +1,443 @@
+<hc:Window x:Class="PropertyManagement.Client.Views.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:hc="https://handyorg.github.io/handycontrol"
+        xmlns:vm="clr-namespace:PropertyManagement.Client.ViewModels"
+        xmlns:views="clr-namespace:PropertyManagement.Client.Views"
+        Title="澜庭物业管理系统"
+        Width="1366" Height="768"
+        MinWidth="1200" MinHeight="700"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        ShowNonClientArea="False"
+        ShowTitle="False"
+        ShowIcon="False"
+        Background="{StaticResource PageBackgroundBrush}"
+        TextOptions.TextFormattingMode="Display"
+        UseLayoutRounding="True"
+       FontFamily="微软雅黑">
+    <!-- 自定义窗口模板：移除 HandyControl 默认模板中为最大化阴影预留的 Padding 内缩
+         （Margin="{TemplateBinding Padding}"），使主窗口内容直抵四边，避免最大化后
+         四周露出窗口底色 #F4F7FB（2026-08-31）。 -->
+    <hc:Window.Template>
+        <ControlTemplate TargetType="hc:Window">
+            <Border Background="{TemplateBinding Background}">
+                <AdornerDecorator>
+                    <ContentPresenter ClipToBounds="True" />
+                </AdornerDecorator>
+            </Border>
+        </ControlTemplate>
+    </hc:Window.Template>
+    <hc:Window.Resources>
+        <vm:IconKeyConverter x:Key="IconConv" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- 无边框窗口控制按钮（顶栏右上角，与登录窗口风格一致：36x36 圆角8 悬停浅灰；关闭悬停浅红） -->
+        <Style x:Key="WindowChromeButton" TargetType="Button">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#F1F4F9" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="WindowCloseButton" TargetType="Button" BasedOn="{StaticResource WindowChromeButton}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="8">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="#FDECEC" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate DataType="{x:Type vm:DashboardViewModel}">
+            <views:DashboardView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PlaceholderViewModel}">
+            <views:PlaceholderView />
+        </DataTemplate>
+    </hc:Window.Resources>
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="218" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- ===================== 左栏导航栏（PG-SHELL：218px 深蓝） ===================== -->
+        <Border Grid.Column="0" Background="{StaticResource NavyBrush}">
+            <DockPanel Margin="14,22,14,16" LastChildFill="True">
+
+                <!-- 栏栏系统状态（底部） -->
+                <Border DockPanel.Dock="Bottom" Background="#0FFFFFFF" CornerRadius="8" Padding="12" Margin="0,12,0,0">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Width="8" Height="8" Fill="{Binding StatusDotBrush}" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding SidebarStatusText}" Foreground="{StaticResource NavTextBrush}"
+                                       FontSize="10" Margin="8,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding SyncTimeText}" Foreground="{StaticResource NavArrowBrush}"
+                                   FontSize="9" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 栏栏品牌 -->
+                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,18">
+                    <Border Width="36" Height="36" Background="{StaticResource PrimaryBrush}" CornerRadius="9">
+                        <Path Data="{StaticResource Icon.Building2}" Style="{StaticResource IconStroke}"
+                              Stroke="White" Width="20" Height="20" />
+                    </Border>
+                    <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
+                        <TextBlock Text="澜庭物业" Foreground="White" FontSize="16" FontWeight="Bold" />
+                        <TextBlock Text="PROPERTY OPS" Foreground="#8FB7E4" FontSize="8" />
+                    </StackPanel>
+                </StackPanel>
+
+                                <!-- 两级导航树 -->
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsControl ItemsSource="{Binding NavNodes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Margin="0,0,0,2">
+                                    <!-- 一级：仪表盘 / 模块行（行高36） -->
+                                    <Button Command="{Binding DataContext.SelectNodeCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                            CommandParameter="{Binding}"
+                                            Style="{StaticResource NavRowButton}">
+                                        <Grid Height="36" Margin="12,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="Auto" />
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <Path Grid.Column="0" Data="{Binding IconKey, Converter={StaticResource IconConv}}"
+                                                  Width="17" Height="17" VerticalAlignment="Center">
+                                                <Path.Style>
+                                                    <Style TargetType="Path">
+                                                        <Setter Property="StrokeThickness" Value="2" />
+                                                        <Setter Property="StrokeStartLineCap" Value="Round" />
+                                                        <Setter Property="StrokeEndLineCap" Value="Round" />
+                                                        <Setter Property="StrokeLineJoin" Value="Round" />
+                                                        <Setter Property="Fill" Value="Transparent" />
+                                                        <Setter Property="Stretch" Value="Uniform" />
+                                                        <Setter Property="Stroke" Value="{StaticResource NavIconBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="Stroke" Value="White" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Path.Style>
+                                            </Path>
+                                            <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="12"
+                                                       Margin="10,0,0,0" VerticalAlignment="Center">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{StaticResource NavTextBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                <Setter Property="Foreground" Value="White" />
+                                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
+                                            <Path Grid.Column="2" Data="{StaticResource Icon.ChevronDown}"
+                                                  Width="13" Height="13" VerticalAlignment="Center">
+                                                <Path.Style>
+                                                    <Style TargetType="Path">
+                                                        <Setter Property="StrokeThickness" Value="2" />
+                                                        <Setter Property="StrokeStartLineCap" Value="Round" />
+                                                        <Setter Property="StrokeEndLineCap" Value="Round" />
+                                                        <Setter Property="StrokeLineJoin" Value="Round" />
+                                                        <Setter Property="Fill" Value="Transparent" />
+                                                        <Setter Property="Stretch" Value="Uniform" />
+                                                        <Setter Property="Stroke" Value="{StaticResource NavArrowBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsModule}" Value="False">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                <Setter Property="Visibility" Value="Collapsed" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Path.Style>
+                                            </Path>
+                                            <Path Grid.Column="2" Data="{StaticResource Icon.ChevronUp}"
+                                                  Width="13" Height="13" VerticalAlignment="Center"
+                                                  Visibility="Collapsed">
+                                                <Path.Style>
+                                                    <Style TargetType="Path">
+                                                        <Setter Property="StrokeThickness" Value="2" />
+                                                        <Setter Property="StrokeStartLineCap" Value="Round" />
+                                                        <Setter Property="StrokeEndLineCap" Value="Round" />
+                                                        <Setter Property="StrokeLineJoin" Value="Round" />
+                                                        <Setter Property="Fill" Value="Transparent" />
+                                                        <Setter Property="Stretch" Value="Uniform" />
+                                                        <Setter Property="Stroke" Value="{StaticResource NavArrowBrush}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsModule}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding IsExpanded}" Value="True">
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Path.Style>
+                                            </Path>
+                                        </Grid>
+                                    </Button>
+
+                                    <!-- 二级：模块子页（行高24） -->
+                                    <ItemsControl ItemsSource="{Binding Pages}"
+                                                  Visibility="{Binding IsExpanded, Converter={StaticResource BoolToVis}}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Button Command="{Binding DataContext.SelectPageCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource NavPageButton}">
+                                                    <Grid Height="24" Margin="37,0,12,0">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="Auto" />
+                                                            <ColumnDefinition Width="*" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <Ellipse Grid.Column="0" Width="4" Height="4" VerticalAlignment="Center">
+                                                            <Ellipse.Style>
+                                                                <Style TargetType="Ellipse">
+                                                                    <Setter Property="Fill" Value="{StaticResource NavArrowBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                            <Setter Property="Fill" Value="White" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </Ellipse.Style>
+                                                        </Ellipse>
+                                                        <TextBlock Grid.Column="1" Text="{Binding Title}" FontSize="11"
+                                                                   Margin="8,0,0,0" VerticalAlignment="Center">
+                                                            <TextBlock.Style>
+                                                                <Style TargetType="TextBlock">
+                                                                    <Setter Property="Foreground" Value="{StaticResource NavIconBrush}" />
+                                                                    <Style.Triggers>
+                                                                        <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                                            <Setter Property="Foreground" Value="White" />
+                                                                            <Setter Property="FontWeight" Value="SemiBold" />
+                                                                        </DataTrigger>
+                                                                    </Style.Triggers>
+                                                                </Style>
+                                                            </TextBlock.Style>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </Button>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+        </Border>
+
+        <!-- ===================== 主工作区 ===================== -->
+        <Grid Grid.Column="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="68" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="30" />
+            </Grid.RowDefinitions>
+
+            <!-- 顶部栏 h68 白底（无边框窗口拖拽区：空白处左键拖拽/双击最大化，见 TopBar_MouseLeftButtonDown） -->
+            <Border x:Name="TopBarBorder" Grid.Row="0" Background="White"
+                    BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,0,0,1"
+                    MouseLeftButtonDown="TopBar_MouseLeftButtonDown" MouseMove="TopBar_MouseMove" MouseLeftButtonUp="TopBar_MouseLeftButtonUp">
+                <Grid Margin="24,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <!-- 页面上下文 -->
+                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding PageTitle}" FontSize="18" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding PagePath}" FontSize="10"
+                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,3,0,0" />
+                    </StackPanel>
+
+                    <!-- 全局搜索框 240x36 -->
+                    <Border Grid.Column="2" Width="240" Height="36" VerticalAlignment="Center" Margin="0,0,16,0"
+                            Background="{StaticResource SurfaceAltBrush}"
+                            BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1"
+                            CornerRadius="8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Path Grid.Column="0" Data="{StaticResource Icon.Search}"
+                                  Style="{StaticResource IconStroke}"
+                                  Stroke="{StaticResource TextMutedBrush}"
+                                  Width="16" Height="16" Margin="12,0,0,0" />
+                            <hc:TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     hc:InfoElement.Placeholder="搜索房产、业主、设备…"
+                                     FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"
+                                     Background="Transparent" BorderThickness="0"
+                                     VerticalContentAlignment="Center" Margin="10,0,12,0"
+                                     CaretBrush="{StaticResource PrimaryBrush}" />
+                        </Grid>
+                    </Border>
+
+                    <!-- 通知按钮 36x36 -->
+                    <Button Grid.Column="3" Width="36" Height="36" VerticalAlignment="Center" Margin="0,0,16,0"
+                            Style="{StaticResource IconButton}">
+                        <Path Data="{StaticResource Icon.Bell}" Style="{StaticResource IconStroke}"
+                              Stroke="{StaticResource TextSecondaryBrush}" Width="17" Height="17" />
+                    </Button>
+
+                    <!-- 用户区域（头像+姓名+角色+下拉菜单） -->
+                    <Grid Grid.Column="4" VerticalAlignment="Center">
+                        <Button x:Name="UserMenuButton" Command="{Binding ToggleUserMenuCommand}"
+                                Style="{StaticResource UserAreaButton}">
+                            <StackPanel Orientation="Horizontal">
+                                <Border Width="34" Height="34" Background="{StaticResource PrimarySoftBrush}" CornerRadius="17">
+                                    <TextBlock Text="{Binding UserAvatar}" Foreground="{StaticResource PrimaryBrush}"
+                                               FontSize="13" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <StackPanel Margin="10,0,8,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding UserName}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{StaticResource TextPrimaryBrush}" />
+                                    <TextBlock Text="{Binding UserRoleText}" FontSize="9"
+                                               Foreground="{StaticResource TextMutedBrush}" />
+                                </StackPanel>
+                                <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource IconStroke}"
+                                      Stroke="{StaticResource TextMutedBrush}" Width="15" Height="15"
+                                      VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Popup x:Name="UserMenuPopup" IsOpen="{Binding IsUserMenuOpen}"
+                               PlacementTarget="{Binding ElementName=UserMenuButton}"
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                                    BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,8,0,0">
+                                <StackPanel MinWidth="132">
+                                    <Button Command="{Binding ChangePasswordCommand}" Style="{StaticResource MenuButton}">
+                                        <TextBlock Text="修改密码" />
+                                    </Button>
+                                    <Button Command="{Binding LogoutCommand}" Style="{StaticResource MenuButton}">
+                                        <TextBlock Text="退出登录" />
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
+
+                    <!-- 窗口控制按钮：最小化 / 最大化·还原 / 关闭（无边框窗口自绘） -->
+                    <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="16,0,0,0">
+                        <Button Style="{StaticResource WindowChromeButton}" Click="MinimizeButton_Click" ToolTip="最小化">
+                            <Path Data="M6 12h12" Stroke="#667085" StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Width="16" Height="16" Stretch="Uniform" />
+                        </Button>
+                        <Button Style="{StaticResource WindowChromeButton}" Click="MaximizeButton_Click" ToolTip="最大化">
+                            <Grid Width="16" Height="16">
+                                <Path Data="M6 6h12v12H6z" Stroke="#667085" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                      Width="16" Height="16" Stretch="Uniform">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType={x:Type hc:Window}}}" Value="Maximized">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                                <Path Data="M4.5 4.5h9v9h-9z M10.5 10.5h9v9h-9z" Stroke="#667085" StrokeThickness="1.6" StrokeLineJoin="Round"
+                                      Width="16" Height="16" Stretch="Uniform">
+                                    <Path.Style>
+                                        <Style TargetType="Path">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding WindowState, RelativeSource={RelativeSource AncestorType={x:Type hc:Window}}}" Value="Maximized">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Path.Style>
+                                </Path>
+                            </Grid>
+                        </Button>
+                        <Button Style="{StaticResource WindowCloseButton}" Click="CloseButton_Click" ToolTip="关闭">
+                            <Path Data="M7 7l10 10 M17 7L7 17" Stroke="#667085" StrokeThickness="1.6"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                  Width="16" Height="16" Stretch="Uniform" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- 内容区 -->
+            <ContentControl Grid.Row="1" Content="{Binding CurrentViewModel}" />
+
+            <!-- 底部状态栏 h30 白底 -->
+            <Border Grid.Row="2" Background="White"
+                    BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,1,0,0">
+                <DockPanel LastChildFill="False" Margin="24,0">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding StatusSummary}" FontSize="9"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="·" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="9,0" />
+                        <TextBlock Text="{Binding TodoSummary}" FontSize="9" FontWeight="SemiBold"
+                                   Foreground="{StaticResource PrimaryBrush}" />
+                        <TextBlock Text="·" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="9,0" />
+                        <TextBlock Text="{Binding TodoDetail}" FontSize="9"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                    </StackPanel>
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontSize="8"
+                               Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                </DockPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</hc:Window>
+
+
+
+

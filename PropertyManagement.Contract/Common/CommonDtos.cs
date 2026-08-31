@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using PropertyManagement.Contract.Enums;
 
@@ -82,7 +82,8 @@ namespace PropertyManagement.Contract.Common
         public DateTime PrintedAt { get; set; }
     }
 
-    /// <summary>仪表盘首页（UC-COM-006：提醒/欠费/应急/纠纷/设备统计）。</summary>
+    /// <summary>仪表盘首页（UC-COM-006：提醒/欠费/应急/纠纷/设备统计）。
+    /// CHG-001（2026-08-31 负责人批准）：增量追加本月应收/已收/收缴率/趋势/值班/保养到期字段。</summary>
     public class DashboardDto
     {
         public int PendingReminders { get; set; }
@@ -93,6 +94,16 @@ namespace PropertyManagement.Contract.Common
         public int HandlingDisputes { get; set; }
         public int RepairingDevices { get; set; }
         public List<ReminderDto> RecentReminders { get; set; }
+
+        // ---- CHG-001 新增（原型 1:1 所需）----
+        public decimal MonthReceivable { get; set; }
+        public string ReceivableTrend { get; set; }
+        public decimal MonthReceived { get; set; }
+        public decimal CollectionRate { get; set; }
+        public string ReceivedTrend { get; set; }
+        public string OverdueTrend { get; set; }
+        public int MaintenanceDue { get; set; }
+        public int DutyToday { get; set; }
     }
 
     public class DictTypeRequest
@@ -137,3 +148,4 @@ namespace PropertyManagement.Contract.Common
         public int BackupId { get; set; }
     }
 }
+
