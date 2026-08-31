@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Configuration;
 using System.Net.Http;
 
@@ -15,6 +15,11 @@ namespace PropertyManagement.Client.Services
         {
             string mode = (ConfigurationManager.AppSettings["Api.Mode"] ?? "Auto").Trim();
             string baseUrl = ConfigurationManager.AppSettings["Api.BaseUrl"] ?? HttpApiClient.DefaultBaseAddress;
+            // 统一以 "/" 结尾，避免相对路径拼接时 URI 解析吞掉最后一段（Auto 探测与真实请求共用）
+            if (!string.IsNullOrEmpty(baseUrl) && !baseUrl.EndsWith("/"))
+            {
+                baseUrl += "/";
+            }
 
             if (string.Equals(mode, "Http", StringComparison.OrdinalIgnoreCase))
             {

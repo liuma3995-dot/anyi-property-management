@@ -5,9 +5,7 @@ using PropertyManagement.Contract.Health;
 
 namespace PropertyManagement.Server.Api
 {
-    /// <summary>
-    /// 健康检查（骨架期用于前后端连通验证，不鉴权）。
-    /// </summary>
+    /// <summary>健康检查（骨架期用于前后端连通验证，不鉴权）。</summary>
     public class HealthController : ApiController
     {
         [HttpGet]
@@ -17,7 +15,7 @@ namespace PropertyManagement.Server.Api
             var data = new HealthResponse
             {
                 Service = "PropertyManagement.Server",
-                Version = "0.1.0-skeleton",
+                Version = "0.2.0-m2",
                 Status = "ok",
                 ServerTime = DateTime.Now
             };

@@ -11,6 +11,7 @@ namespace PropertyManagement.Contract.Common
         // 公共段 4xxxx
         public const int BadRequest = 40000;
         public const int Unauthorized = 40100;
+        public const int LoginLocked = 40101; // 登录失败次数超限，账号锁定（P-02，契约文档 §四）
         public const int Forbidden = 40300;
         public const int NotFound = 40400;
         public const int Conflict = 40900;

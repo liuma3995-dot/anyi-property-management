@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -13,7 +13,7 @@ namespace PropertyManagement.Client.Services
     /// <summary>真实 HTTP 客户端：统一信封解包、token 注入、错误码映射（契约 v0.1）。</summary>
     public class HttpApiClient : IApiClient
     {
-        public const string DefaultBaseAddress = "http://127.0.0.1:5210/api/v1";
+        public const string DefaultBaseAddress = "http://127.0.0.1:5210/api/v1/";
 
         private readonly HttpClient _http;
 
@@ -21,9 +21,13 @@ namespace PropertyManagement.Client.Services
 
         public HttpApiClient(string baseAddress)
         {
+            // BaseAddress 必须以 "/" 结尾，否则相对路径会被 URI 解析吞掉最后一段（如 /api/v1 + auth/login -> /api/auth/login）
+            string normalized = string.IsNullOrEmpty(baseAddress) || baseAddress.EndsWith("/")
+                ? baseAddress
+                : baseAddress + "/";
             _http = new HttpClient
             {
-                BaseAddress = new Uri(baseAddress),
+                BaseAddress = new Uri(normalized),
                 Timeout = TimeSpan.FromSeconds(8)
             };
         }
