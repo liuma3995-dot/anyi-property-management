@@ -395,7 +395,8 @@ CREATE TABLE IF NOT EXISTS t_bill_generate_log (
     total       INTEGER,
     success     INTEGER,
     fail        INTEGER,
-    fail_detail TEXT
+    fail_detail TEXT,
+    del_flag    INTEGER NOT NULL DEFAULT 0   -- CHG-M4-16：批次软删（删除草稿/失败批次后保留轨迹）
 );
 
 CREATE TABLE IF NOT EXISTS t_report_log (
@@ -710,3 +711,15 @@ CREATE INDEX IF NOT EXISTS ix_dispute_case_occur     ON t_dispute_case (occur_ti
 CREATE INDEX IF NOT EXISTS ix_device_status          ON t_device (status);
 CREATE INDEX IF NOT EXISTS ix_schedule_work_date     ON t_schedule (work_date, status);
 CREATE INDEX IF NOT EXISTS ix_attendance_work_date   ON t_attendance (work_date, result);
+
+CREATE TABLE IF NOT EXISTS t_arrear_remind_log (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    bill_id    INTEGER NOT NULL,
+    channel    TEXT    NOT NULL,
+    note       TEXT,
+    remind_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+    created_by INTEGER,
+    created_at TEXT    NOT NULL DEFAULT (datetime('now','localtime')),
+    FOREIGN KEY (bill_id) REFERENCES t_bill (id),
+    FOREIGN KEY (created_by) REFERENCES t_user (id)
+);

@@ -63,6 +63,27 @@ INSERT OR IGNORE INTO t_dict_item (type_code, item_code, item_name, sort, status
  ('dispute_type', 'parking',    '停车',   3, 0),
  ('dispute_type', 'fee',        '物业费', 4, 0),
  ('dispute_type', 'other',      '其他',   5, 0);
+-- 收费项目类别/计价方式/计费周期（T4F-1-5，与 migration_004 幂等一致；remark 由 migration_004 补充）
+INSERT OR IGNORE INTO t_dict_type (type_code, type_name) VALUES
+ ('charge_category', '收费项目类别'),
+ ('charge_method',    '计价方式'),
+ ('charge_cycle',     '计费周期');
+
+INSERT OR IGNORE INTO t_dict_item (type_code, item_code, item_name, sort, status) VALUES
+ ('charge_category', 'property_fee', '物业费',   1, 0),
+ ('charge_category', 'agency_fee',   '代收代缴', 2, 0),
+ ('charge_category', 'parking_fee',  '车位费',   3, 0),
+ ('charge_category', 'shared_cost',  '公摊分摊', 4, 0),
+ ('charge_category', 'onetime',      '一次性',   5, 0),
+ ('charge_method', 'area',    '按建筑面积', 1, 0),
+ ('charge_method', 'house',   '按户',       2, 0),
+ ('charge_method', 'parking', '按车位',     3, 0),
+ ('charge_method', 'share',   '按户均摊',   4, 0),
+ ('charge_method', 'onetime', '一次性',     5, 0),
+ ('charge_method', 'step',    '阶梯单价',   6, 0),
+ ('charge_cycle', 'monthly',  '按月',       1, 0),
+ ('charge_cycle', 'yearly',   '按年',       2, 0),
+ ('charge_cycle', 'onetime',  '一次性',     3, 0);
 
 -- ------------------------------------------------------------
 -- 系统参数 P-01~P-09（异常路径核对清单确认默认值，可界面调整）

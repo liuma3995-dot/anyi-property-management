@@ -155,6 +155,18 @@ namespace PropertyManagement.Client.ViewModels
             _ = InitializeAsync();
         }
 
+        /// <summary>T4F-2-1：财务模块内页级跳转（如账单工作台"催缴"→欠费台账）。</summary>
+        public void NavigateToFinancePage(string pageTitle)
+        {
+            var node = NavNodes.FirstOrDefault(n => string.Equals(n.Key, "finance", StringComparison.OrdinalIgnoreCase));
+            if (node == null) { return; }
+            var page = node.Pages.FirstOrDefault(pg => string.Equals(pg.Title, pageTitle, StringComparison.Ordinal));
+            if (page != null)
+            {
+                SelectPage(page);
+            }
+        }
+
         /// <summary>快速入口跳转（仪表盘）：按模块 key 定位并展开。</summary>
         public void NavigateTo(string key)
         {
@@ -251,9 +263,17 @@ namespace PropertyManagement.Client.ViewModels
             }
             else
             {
-                PageTitle = node.Title;
-                PagePath = "首页  /  " + node.Title;
-                CurrentViewModel = new PlaceholderViewModel(node.Title);
+                // 财务收费已落地真实子页（PG-FIN-01~08）：点击模块不再显示全局框架占位，直入首个业务子页
+                if (string.Equals(node.Title, "财务收费", StringComparison.Ordinal) && node.Pages.Count > 0)
+                {
+                    SelectPage(node.Pages[0]);
+                }
+                else
+                {
+                    PageTitle = node.Title;
+                    PagePath = "首页  /  " + node.Title;
+                    CurrentViewModel = new PlaceholderViewModel(node.Title);
+                }
             }
         }
 
@@ -285,7 +305,27 @@ namespace PropertyManagement.Client.ViewModels
 
             PageTitle = page.Title;
             PagePath = "首页  /  " + node.Title + "  /  " + page.Title;
-            CurrentViewModel = new PlaceholderViewModel(page.Title);
+            CurrentViewModel = CreatePageViewModel(page.Key, node.Title);
+        }
+
+        /// <summary>按导航页 Key 创建页面 VM；财务 8 页走真实页面，其余模块暂用占位页（M4）。</summary>
+        private object CreatePageViewModel(string pageKey, string moduleTitle)
+        {
+            if (string.Equals(moduleTitle, "财务收费", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "收费项目维护": return new ChargeItemsViewModel(_api);
+                    case "账单工作台": return new BillWorkbenchViewModel(_api, NavigateToFinancePage);
+                    case "收款登记": return new PaymentEntryViewModel(_api);
+                    case "退款/减免/调整": return new RefundAdjustmentViewModel(_api);
+                    case "支出登记": return new ExpenseViewModel(_api);
+                    case "欠费台账": return new ArrearViewModel(_api);
+                    case "财务报表": return new FinancialReportViewModel(_api);
+                    case "收支明细流水": return new LedgerViewModel(_api);
+                }
+            }
+            return new PlaceholderViewModel(pageKey);
         }
 
         private async Task InitializeAsync()
@@ -367,5 +407,4 @@ namespace PropertyManagement.Client.ViewModels
         }
     }
 }
-
 

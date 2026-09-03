@@ -82,6 +82,30 @@
         <DataTemplate DataType="{x:Type vm:PlaceholderViewModel}">
             <views:PlaceholderView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ChargeItemsViewModel}">
+            <views:ChargeItemsView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:BillWorkbenchViewModel}">
+            <views:BillWorkbenchView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PaymentEntryViewModel}">
+            <views:PaymentEntryView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:RefundAdjustmentViewModel}">
+            <views:RefundAdjustmentView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ExpenseViewModel}">
+            <views:ExpenseView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ArrearViewModel}">
+            <views:ArrearView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:FinancialReportViewModel}">
+            <views:FinancialReportView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:LedgerViewModel}">
+            <views:LedgerView />
+        </DataTemplate>
     </hc:Window.Resources>
 
     <Grid>
@@ -312,12 +336,10 @@
                                   Style="{StaticResource IconStroke}"
                                   Stroke="{StaticResource TextMutedBrush}"
                                   Width="16" Height="16" Margin="12,0,0,0" />
-                            <hc:TextBox Grid.Column="1" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
                                      hc:InfoElement.Placeholder="搜索房产、业主、设备…"
-                                     FontSize="11" Foreground="{StaticResource TextPrimaryBrush}"
-                                     Background="Transparent" BorderThickness="0"
-                                     VerticalContentAlignment="Center" Margin="10,0,12,0"
-                                     CaretBrush="{StaticResource PrimaryBrush}" />
+                                     FontSize="11" Margin="10,0,12,0" />
                         </Grid>
                     </Border>
 

@@ -108,6 +108,38 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Views\ChargeItemsView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\BillWorkbenchView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\PaymentEntryView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\RefundAdjustmentView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ExpenseView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ArrearView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\FinancialReportView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\LedgerView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs">
@@ -141,10 +173,44 @@
     <Compile Include="ViewModels\DashboardViewModel.cs" />
     <Compile Include="ViewModels\NavNode.cs" />
     <Compile Include="ViewModels\IconKeyConverter.cs" />
+    <Compile Include="Converters\IntEqualsConverter.cs" />
     <Compile Include="Services\ClientPrefs.cs" />
     <Compile Include="ViewModels\LoginViewModel.cs" />
     <Compile Include="ViewModels\PlaceholderViewModel.cs" />
     <Compile Include="ViewModels\ShellViewModel.cs" />
+    <Compile Include="Views\ChargeItemsView.xaml.cs">
+      <DependentUpon>ChargeItemsView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\BillWorkbenchView.xaml.cs">
+      <DependentUpon>BillWorkbenchView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\PaymentEntryView.xaml.cs">
+      <DependentUpon>PaymentEntryView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\RefundAdjustmentView.xaml.cs">
+      <DependentUpon>RefundAdjustmentView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ExpenseView.xaml.cs">
+      <DependentUpon>ExpenseView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ArrearView.xaml.cs">
+      <DependentUpon>ArrearView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\FinancialReportView.xaml.cs">
+      <DependentUpon>FinancialReportView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\LedgerView.xaml.cs">
+      <DependentUpon>LedgerView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="ViewModels\FinancePageViewModel.cs" />
+    <Compile Include="ViewModels\ChargeItemsViewModel.cs" />
+    <Compile Include="ViewModels\BillWorkbenchViewModel.cs" />
+    <Compile Include="ViewModels\PaymentEntryViewModel.cs" />
+    <Compile Include="ViewModels\RefundAdjustmentViewModel.cs" />
+    <Compile Include="ViewModels\ExpenseViewModel.cs" />
+    <Compile Include="ViewModels\ArrearViewModel.cs" />
+    <Compile Include="ViewModels\FinancialReportViewModel.cs" />
+    <Compile Include="ViewModels\LedgerViewModel.cs" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PropertyManagement.Contract\PropertyManagement.Contract.csproj">

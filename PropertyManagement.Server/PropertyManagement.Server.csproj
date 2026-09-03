@@ -69,6 +69,60 @@
     <Reference Include="Dapper">
       <HintPath>$(MSBuildProjectDirectory)\..\packages\Dapper.2.1.35\lib\net461\Dapper.dll</HintPath>
     </Reference>
+    <Reference Include="ClosedXML">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\ClosedXML.0.102.3\lib\netstandard2.0\ClosedXML.dll</HintPath>
+    </Reference>
+    <Reference Include="DocumentFormat.OpenXml">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\DocumentFormat.OpenXml.2.20.0\lib\netstandard2.0\DocumentFormat.OpenXml.dll</HintPath>
+    </Reference>
+    <Reference Include="ExcelNumberFormat">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\ExcelNumberFormat.1.1.0\lib\netstandard2.0\ExcelNumberFormat.dll</HintPath>
+    </Reference>
+    <Reference Include="SixLabors.Fonts">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\SixLabors.Fonts.1.0.0\lib\netstandard2.0\SixLabors.Fonts.dll</HintPath>
+    </Reference>
+    <Reference Include="System.IO.Packaging">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.IO.Packaging.6.0.0\lib\netstandard2.0\System.IO.Packaging.dll</HintPath>
+    </Reference>
+    <Reference Include="XLParser">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\XLParser.1.5.2\lib\net461\XLParser.dll</HintPath>
+    </Reference>
+    <Reference Include="PdfSharp">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\PDFsharp.6.1.1\lib\netstandard2.0\PdfSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.DependencyInjection.Abstractions">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.Extensions.DependencyInjection.Abstractions.6.0.0\lib\netstandard2.0\Microsoft.Extensions.DependencyInjection.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.Extensions.Logging.6.0.0\lib\netstandard2.0\Microsoft.Extensions.Logging.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Logging.Abstractions">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.Extensions.Logging.Abstractions.6.0.0\lib\netstandard2.0\Microsoft.Extensions.Logging.Abstractions.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Options">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.Extensions.Options.6.0.0\lib\netstandard2.0\Microsoft.Extensions.Options.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.Primitives">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.Extensions.Primitives.6.0.0\lib\netstandard2.0\Microsoft.Extensions.Primitives.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Diagnostics.DiagnosticSource">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Diagnostics.DiagnosticSource.6.0.0\lib\netstandard2.0\System.Diagnostics.DiagnosticSource.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Buffers">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Buffers.4.6.1\lib\netstandard2.0\System.Buffers.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Memory">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Memory.4.6.0\lib\netstandard2.0\System.Memory.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Numerics.Vectors">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Numerics.Vectors.4.6.1\lib\netstandard2.0\System.Numerics.Vectors.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Runtime.CompilerServices.Unsafe.6.1.2\lib\netstandard2.0\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+    </Reference>
+    <Reference Include="System.Threading.Tasks.Extensions">
+      <HintPath>$(MSBuildProjectDirectory)\..\packages\System.Threading.Tasks.Extensions.4.6.3\lib\netstandard2.0\System.Threading.Tasks.Extensions.dll</HintPath>
+    </Reference>
     <Reference Include="BCrypt.Net-Next">
       <HintPath>$(MSBuildProjectDirectory)\..\packages\BCrypt.Net-Next.4.0.3\lib\net462\BCrypt.Net-Next.dll</HintPath>
     </Reference>
@@ -104,6 +158,18 @@
     <Compile Include="Services\AuditService.cs" />
     <Compile Include="Services\AuthService.cs" />
     <Compile Include="Services\DashboardService.cs" />
+    <Compile Include="Api\BillingController.cs" />
+    <Compile Include="Api\DictController.cs" />
+    <Compile Include="Api\ExpensesController.cs" />
+    <Compile Include="Api\PaymentsController.cs" />
+    <Compile Include="Api\ReportsController.cs" />
+    <Compile Include="Domain\Repositories\IFinanceRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlFinanceRepository.cs" />
+    <Compile Include="Services\BillingService.cs" />
+    <Compile Include="Services\DictService.cs" />
+    <Compile Include="Services\ExpenseService.cs" />
+    <Compile Include="Services\PaymentService.cs" />
+    <Compile Include="Services\ReportService.cs" />
     <Compile Include="Startup.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -118,6 +184,30 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Infrastructure\Data\seed.sql">
       <LogicalName>PropertyManagement.Server.Infrastructure.Data.seed.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\dev-seed.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.dev-seed.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_002.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_002.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_003.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_003.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_004.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_004.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_005.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_005.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_006.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_006.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_007.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_007.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_008.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_008.sql</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

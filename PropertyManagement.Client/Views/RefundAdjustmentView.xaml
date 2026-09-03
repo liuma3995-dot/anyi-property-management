@@ -1,0 +1,243 @@
+<UserControl x:Class="PropertyManagement.Client.Views.RefundAdjustmentView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <conv:IntEqualsConverter x:Key="IntEquals" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </UserControl.Resources>
+
+    <Grid Margin="24,20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="14" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ 上排：三页签表单 + 审批节点流 ============ -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="14" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 表单卡片 -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16">
+                <StackPanel>
+                    <!-- 三页签 -->
+                    <Border Height="34" Background="#F1F3F7" CornerRadius="8">
+                        <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <RadioButton Grid.Column="0" Content="退款申请" GroupName="RefundTabs" IsChecked="{Binding RefundType, Converter={StaticResource IntEquals}, ConverterParameter=0}"
+                                     Style="{StaticResource TabRadioStyle}" />
+                        <RadioButton Grid.Column="1" Content="费用减免" GroupName="RefundTabs" IsChecked="{Binding RefundType, Converter={StaticResource IntEquals}, ConverterParameter=1}"
+                                     Style="{StaticResource TabRadioStyle}" />
+                        <RadioButton Grid.Column="2" Content="账务调整" GroupName="RefundTabs" IsChecked="{Binding RefundType, Converter={StaticResource IntEquals}, ConverterParameter=2}"
+                                     Style="{StaticResource TabRadioStyle}" />
+                    </Grid>
+                </Border>
+
+                    <TextBlock Text="{Binding FormTitle}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
+                               Margin="0,14,0,12" />
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="86" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="12" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="关联房产" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="0" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}" DisplayMemberPath="DisplayText" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="关联账单" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding FilteredBills}" SelectedItem="{Binding SelectedBill}">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock>
+                                        <Run Text="{Binding NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding Dto.ChargeItemName, Mode=OneWay}" />
+                                        <Run Text=" · " /><Run Text="{Binding Dto.CyclePeriod, Mode=OneWay}" /><Run Text=" · " />
+                                        <Run Text="{Binding Dto.PaidAmount, StringFormat=¥{0:N2}, Mode=OneWay}" />
+                                    </TextBlock>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+
+                        <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding AmountLabel}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <Border Grid.Row="4" Grid.Column="1" Height="36" Background="#F8FAFD"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                            <TextBox Style="{StaticResource SearchTextBox}" FontSize="15" FontWeight="SemiBold"
+                                     Foreground="{StaticResource DangerBrush}"
+                                     Text="{Binding Amount, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}" />
+                        </Border>
+
+                        <TextBlock Grid.Row="6" Grid.Column="0" Text="方式" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="6" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
+                                  ItemsSource="{Binding MethodOptions}" SelectedIndex="{Binding MethodIndex}" />
+
+                        <TextBlock Grid.Row="8" Grid.Column="0" Text="原因" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Top" Margin="0,6,0,0" />
+                        <Border Grid.Row="8" Grid.Column="1" Height="64" Background="#F8FAFD"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                            <TextBox Style="{StaticResource SearchTextBox}" FontSize="12" TextWrapping="Wrap"
+                                     VerticalContentAlignment="Top" Padding="8,5"
+                                     Text="{Binding Reason, UpdateSourceTrigger=PropertyChanged}"
+                                     hc:InfoElement.Placeholder="必填：如 重复缴费、空置减免、单价更正…" />
+                        </Border>
+
+                        <TextBlock Grid.Row="10" Grid.Column="0" Text="附件" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                                   VerticalAlignment="Center" />
+                        <StackPanel Grid.Row="10" Grid.Column="1">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center">
+                                    <Run Text="附件：" /><Run Text="{Binding AttachmentName, Mode=OneWay}" FontWeight="SemiBold" />
+                                    <Run Text="（≤5MB，必传）" Foreground="{StaticResource TextMutedBrush}" />
+                                </TextBlock>
+                                <Button Grid.Column="1" Content="选择附件…" FontSize="12" Padding="12,4"
+                                        Command="{Binding PickAttachmentCommand}" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 大额提示 + 负责人确认 -->
+                    <Border Background="#FFF5DC" CornerRadius="6" Padding="10,6" Margin="0,12,0,0"
+                            Visibility="{Binding HasLargeHint, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding LargeHint}" FontSize="11" Foreground="#B76E00" TextWrapping="Wrap" />
+                    </Border>
+                    <CheckBox Content="负责人已确认（BR-FIN-10）" IsChecked="{Binding Confirmed}" FontSize="12"
+                              Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
+                              Visibility="{Binding HasLargeHint, Converter={StaticResource BoolToVis}}" />
+
+                    <Grid Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="10" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="提交审批"
+                                Command="{Binding SubmitCommand}" />
+                        <Button Grid.Column="2" Content="暂存" FontSize="13" Command="{Binding SaveDraftCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- 审批节点流（本期不落地，仅状态展示） -->
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20,16">
+                <StackPanel>
+                    <TextBlock Text="审批节点流" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="本期不落地审批流，登记即生效（大额需负责人确认）"
+                               FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,16" />
+
+                    <ItemsControl>
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <StackPanel Width="92">
+                                        <Border Width="26" Height="26" CornerRadius="13"
+                                                Background="#2B7DE9" HorizontalAlignment="Center">
+                                            <TextBlock Text="{Binding Index}" FontSize="11" FontWeight="Bold"
+                                                       Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <TextBlock Text="{Binding Name}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                                                   HorizontalAlignment="Center" Margin="0,6,0,0" TextWrapping="Wrap" TextAlignment="Center" />
+                                    </StackPanel>
+                                    <TextBlock Text="→" FontSize="12" Foreground="#C3CCD8" VerticalAlignment="Top" Margin="4,6,4,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Rectangle Height="1" Fill="{StaticResource BorderBrushColor}" Margin="0,18,0,14" />
+                    <TextBlock Text="节点说明" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="提交申请 → 客服主管审核 → 财务复核 → 负责人审批 → 原路退回（UC-FIN-004 全程留痕）"
+                               FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                    <Border Background="#F7F5FE" CornerRadius="6" Padding="10,8" Margin="0,12,0,0">
+                        <TextBlock Text="本期单角色（系统管理员）：退款/减免 &gt; ¥1,000 或调整涉及已结清账单 → 勾选负责人确认后提交（BR-FIN-10）；驳回/短信通知等审批流能力在多人协作版提供。"
+                                   FontSize="10" Foreground="#4A3AB0" TextWrapping="Wrap" />
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ 最近申请记录 ============ -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="42" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="最近申请记录" FontSize="13" FontWeight="Bold"
+                           Foreground="{StaticResource TextPrimaryBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                <DataGrid Grid.Row="1" ItemsSource="{Binding Records}" IsReadOnly="True" AutoGenerateColumns="False">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="申请编号" Width="130" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTemplateColumn Header="类型" Width="80">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding TypeBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding TypeText}" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="{Binding TypeBrush}" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="关联房产" Width="100" Binding="{Binding PropertyNoText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="原因" Width="*" Binding="{Binding Reason}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTemplateColumn Header="状态" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="#E8F7F1" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
+                                                   Foreground="#12805C" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="当前节点" Width="100" Binding="{Binding NodeText}" ElementStyle="{StaticResource GridCellText}" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </Border>
+
+        <!-- ============ 状态/错误条 ============ -->
+        <TextBlock Grid.Row="4" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
+        <TextBlock Grid.Row="4" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+    </Grid>
+</UserControl>

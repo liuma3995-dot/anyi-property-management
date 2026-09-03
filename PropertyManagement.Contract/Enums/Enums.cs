@@ -7,7 +7,8 @@ namespace PropertyManagement.Contract.Enums
         Partial = 1,   // 部分缴
         Overdue = 2,   // 逾期
         Paid = 3,      // 已缴
-        Reversed = 4   // 已冲正
+        Reversed = 4,   // 已冲正
+        Draft = 5       // 草稿（CHG-M4-01：D4-1 生成后未发布）
     }
 
     /// <summary>收费项目计费模式（BR-FIN-03，字典/枚举双轨）。</summary>
@@ -18,18 +19,23 @@ namespace PropertyManagement.Contract.Enums
         Temporary = 2   // 临时
     }
 
-    /// <summary>计费周期类型。</summary>
+    /// <summary>计费周期类型（T4F-1-5：新增 一次性/自定义）。</summary>
     public enum BillingCycleType
     {
-        Yearly = 0,
-        Monthly = 1
+        Yearly = 0,   // 按年
+        Monthly = 1,  // 按月
+        OneTime = 2,  // 一次性（T4F-1-5）
+        Custom = 3    // 自定义周期（周期名见 t_charge_item.cycle_name，T4F-1-5）
     }
 
     /// <summary>收款方式。</summary>
     public enum PayMethod
     {
-        Cash = 0,      // 现金
-        Transfer = 1   // 转账
+        Cash = 0,          // 现金
+        Transfer = 1,      // 转账
+        WeChat = 2,        // 微信
+        BankTransfer = 3,  // 银行转账
+        Pos = 4            // POS
     }
 
     /// <summary>缴费记录状态。</summary>
@@ -163,6 +169,13 @@ namespace PropertyManagement.Contract.Enums
         Processed = 1  // 已处理
     }
 
+
+    /// <summary>收费项目适用对象类型（CHG-M4-09：D4-1 账单生成按对象类型取候选，避免物业费/停车费混生成）。</summary>
+    public enum ChargeObjectType
+    {
+        Property = 0, // 房产
+        Parking = 1   // 车位
+    }
     /// <summary>报表导出格式（D-3：Excel/PDF）。</summary>
     public enum ExportFormat
     {

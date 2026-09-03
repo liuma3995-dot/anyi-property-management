@@ -11,13 +11,15 @@ using PropertyManagement.Server.Infrastructure.Security;
 namespace PropertyManagement.Server.Infrastructure.Data
 {
     /// <summary>
-    /// 数据库初始化（M2 D2-1/D2-2）：
+    /// 数据库初始化（M2 D2-1/D2-2 + M4 增补）：
     /// 首次启动执行 schema.sql + seed.sql，并以 BCrypt 写入管理员种子；
-    /// 后续启动仅校验 schema_version，幂等；版本不一致时快速失败（升级走后续切片）。
+    /// 存量库按 schema_version 执行增量迁移（migration_00X.sql，M4 起支持）；
+    /// DevSeedEnabled=true 时（仅开发机，源码默认 false）执行 dev-seed.sql 演示造数。
     /// </summary>
     public static class DatabaseInitializer
     {
-        private const int SchemaVersion = 1;
+        private const int SchemaVersion = 8;
+
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
         private static readonly string AdminUsername =
@@ -25,6 +27,8 @@ namespace PropertyManagement.Server.Infrastructure.Data
 
         private static readonly string DefaultAdminPassword =
             ConfigurationManager.AppSettings["DefaultAdminPassword"] ?? "Admin@123";
+
+        private static readonly bool DevSeedEnabled = ReadDevSeedEnabled();
 
         /// <summary>确保数据库文件、表结构与种子数据就绪（启动时调用一次）。</summary>
         public static void EnsureInitialized()
@@ -43,29 +47,46 @@ namespace PropertyManagement.Server.Infrastructure.Data
                     ExecuteScript(connection, transaction, LoadSql("schema.sql"));
                     ExecuteScript(connection, transaction, LoadSql("seed.sql"));
                     SeedAdmin(connection, transaction);
-                    MarkVersion(connection, transaction, SchemaVersion);
-                    Log.Info("数据库初始化完成");
+                    MarkVersion(connection, transaction, 1);
+                    current = 1;
+                    Log.Info("数据库初始化完成（v1）");
                 }
-                else if (current == SchemaVersion)
-                {
-                    Log.Info("数据库版本一致（schema v{0}），跳过初始化", SchemaVersion);
-                }
-                else if (current > SchemaVersion)
+
+                if (current > SchemaVersion)
                 {
                     throw new InvalidOperationException(
                         "数据库版本高于程序预期（" + current + " > " + SchemaVersion + "），请升级程序后再启动。");
                 }
-                else
+
+                if (current < SchemaVersion)
                 {
-                    throw new InvalidOperationException(
-                        "数据库版本低于程序预期（" + current + " < " + SchemaVersion +
-                        "），请先备份数据文件，再按迁移流程升级。");
+                    Log.Info("检测到数据库版本 {0}，执行增量迁移至 v{1}", current, SchemaVersion);
+                    for (int version = current + 1; version <= SchemaVersion; version++)
+                    {
+                        string scriptName = "migration_" + version.ToString("000") + ".sql";
+                        ExecuteScript(connection, transaction, LoadSql(scriptName));
+                        MarkVersion(connection, transaction, version);
+                        Log.Info("迁移完成：{0}（v{1}）", scriptName, version);
+                    }
+                }
+
+                if (DevSeedEnabled)
+                {
+                    ExecuteScript(connection, transaction, LoadSql("dev-seed.sql"));
+                    Log.Info("DevSeedEnabled=true：已执行演示造数 dev-seed.sql（仅开发演示，正式安装请关闭）");
                 }
 
                 transaction.Commit();
             }
 
             Log.Info("数据库就绪：{0}", DbConfig.DatabaseFile);
+        }
+
+        private static bool ReadDevSeedEnabled()
+        {
+            string value = ConfigurationManager.AppSettings["DevSeedEnabled"];
+            bool enabled;
+            return bool.TryParse(value, out enabled) && enabled;
         }
 
         private static void EnsureVersionTable(IDbConnection connection, IDbTransaction transaction)
