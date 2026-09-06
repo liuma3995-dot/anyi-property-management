@@ -1,0 +1,12 @@
+using System.Windows.Controls;
+
+namespace PropertyManagement.Client.Views
+{
+    public partial class DataImportView : UserControl
+    {
+        public DataImportView()
+        {
+            InitializeComponent();
+        }
+    }
+}

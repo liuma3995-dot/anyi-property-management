@@ -1,0 +1,338 @@
+<UserControl x:Class="PropertyManagement.Client.Views.OwnerProfileView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 顶部：业主选择 -->
+        <Border Grid.Row="0" Style="{StaticResource CardBorder}" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="业主：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <Border Height="32" Width="220" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0" />
+                            <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}" Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}" hc:InfoElement.Placeholder="搜索姓名 / 电话 / 证件号" FontSize="11" Margin="8,0,12,0" />
+                        </Grid>
+                    </Border>
+                    <ComboBox Height="32" MinWidth="180" MaxWidth="320" Margin="8,0,0,0"
+                              ItemsSource="{Binding FilteredOwners}" DisplayMemberPath="OwnerDisplayName"
+                              SelectedValuePath="Id" SelectedValue="{Binding SelectedOwnerId, Mode=TwoWay}" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button Style="{StaticResource ButtonPrimary}" Content="新增业主" Command="{Binding NewCommand}" />
+                    <Button Style="{StaticResource LinkButton}" Content="编辑" Command="{Binding EditCommand}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    <Button Style="{StaticResource LinkButton}" Content="删除" Foreground="{StaticResource DangerBrush}" Command="{Binding DeleteCommand}" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                    <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出 Excel" Command="{Binding ExportCommand}" VerticalAlignment="Center" Margin="12,0,0,0" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="380" />
+                <ColumnDefinition Width="10" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 左列：档案卡 + 缴费概况 -->
+            <StackPanel Grid.Column="0">
+                <Border Style="{StaticResource CardBorder}" Padding="18,16">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="46" Height="46" Background="{StaticResource PrimarySoftBrush}" CornerRadius="23">
+                                <TextBlock Text="{Binding OwnerAvatar}" Foreground="{StaticResource PrimaryBrush}" FontSize="16" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                            <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding OwnerName}" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                <TextBlock Text="{Binding OwnerNoText}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,3,0,0" />
+                            </StackPanel>
+                            <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="4" Padding="8,3" VerticalAlignment="Center" Margin="10,0,0,0">
+                                <TextBlock Text="{Binding OwnerStatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" />
+                            </Border>
+                        </StackPanel>
+                        <Grid Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="联系电话" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerPhone}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="证件类型" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerIdCardTypeText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="证件号码" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerIdCard}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="入住日期" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerCheckInText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid Margin="0,14,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="常住地址" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerAddress}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="紧急联系人" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding OwnerEmergency}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <Border Style="{StaticResource CardBorder}" Padding="18,14" Margin="0,10,0,0">
+                    <StackPanel>
+                        <TextBlock Text="本年度缴费概况" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="应缴合计" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding YearReceivable, StringFormat=¥{0:#,0.00}}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="14" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="1">
+                                <TextBlock Text="已缴合计" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding YearPaid, StringFormat=¥{0:#,0.00}}" Foreground="{StaticResource SuccessBrush}" FontSize="14" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="当前欠费" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                <TextBlock Text="{Binding CurrentArrear, StringFormat=¥{0:#,0.00}}" Foreground="{StaticResource DangerBrush}" FontSize="14" FontWeight="Bold" Margin="0,4,0,0" />
+                            </StackPanel>
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- 右列：关联房产 + 变更历史 -->
+            <Grid Grid.Column="2">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="10" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="关联房产" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                <Border Grid.Row="1" Style="{StaticResource CardBorder}" Padding="0" Margin="0,4,0,0" VerticalAlignment="Top">
+                    <DataGrid Height="150" Style="{StaticResource GridStyle}" ItemsSource="{Binding Relations}" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="房号" Width="*" Binding="{Binding Room}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="关系" Width="96" Binding="{Binding RelTypeText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="份额" Width="64" Binding="{Binding ShareText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="入住日期" Width="104" Binding="{Binding CheckIn}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTemplateColumn Header="状态" Width="84">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left">
+                                            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="操作" Width="56">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource LinkButton}" Content="查看" Padding="0"
+                                                Command="{Binding DataContext.ViewRelationCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+                <TextBlock Grid.Row="3" Text="联系方式变更历史" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,12,0,0" />
+                <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0" Margin="0,4,0,0" VerticalAlignment="Top">
+                    <DataGrid Height="180" Style="{StaticResource GridStyle}" ItemsSource="{Binding ChangeLogs}" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="变更时间" Width="136" Binding="{Binding TimeText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="变更字段" Width="72" Binding="{Binding Field}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="旧值" Width="104" Binding="{Binding OldValue}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="新值" Width="104" Binding="{Binding NewValue}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="操作人" Width="104" Binding="{Binding Operator}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="渠道" Width="90" Binding="{Binding Channel}" ElementStyle="{StaticResource GridCellText}" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+            </Grid>
+        </Grid>
+
+        <!-- 状态/错误提示 -->
+        <Border Grid.Row="3" Background="{StaticResource SurfaceAltBrush}" CornerRadius="6" Padding="12,8" Margin="0,10,0,0">
+            <StackPanel>
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 编辑/新增弹层 -->
+        <Border Grid.RowSpan="4" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding FormTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
+                    <TextBlock Text="姓名" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBox Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <TextBlock Text="证件类型 / 证件号（选填）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
+                        <ComboBox SelectedValue="{Binding FormIdCardType}" SelectedValuePath="Tag" Width="130">
+                            <ComboBoxItem Content="身份证" Tag="IdCard" />
+                            <ComboBoxItem Content="护照" Tag="Passport" />
+                        </ComboBox>
+                        <TextBox Text="{Binding FormIdCard, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="220" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="联系电话" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBox Text="{Binding FormPhone, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <TextBlock Text="常住地址" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBox Text="{Binding FormAddress, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <StackPanel Width="200">
+                            <TextBlock Text="紧急联系人" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <TextBox Text="{Binding FormEmergencyName, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" />
+                        </StackPanel>
+                        <StackPanel Width="200" Margin="12,0,0,0">
+                            <TextBlock Text="紧急联系人电话" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <TextBox Text="{Binding FormEmergencyPhone, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,0,0,8" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 关联房产详情 -->
+        <Border Grid.RowSpan="4" Background="#66000000" Visibility="{Binding IsViewVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="关联房产详情" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding ViewRelationRow.Room}" Foreground="{StaticResource TextMutedBrush}" FontSize="12" VerticalAlignment="Center" Margin="10,0,0,0" />
+                    </StackPanel>
+                    <Grid Margin="0,16,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="关系" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding ViewRelationRow.RelTypeText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="份额" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding ViewRelationRow.ShareText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="入住日期" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding ViewRelationRow.CheckIn}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1">
+                            <TextBlock Text="状态" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                            <TextBlock Text="{Binding ViewRelationRow.StatusText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="关闭" Command="{Binding CloseViewCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 删除确认 -->
+        <Border Grid.RowSpan="4" Background="#66000000" Visibility="{Binding IsDeleteConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="确认删除业主？" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Text="{Binding DeleteConfirmOwnerName, StringFormat=业主：{0}}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="删除为软删除，且需该业主无房产绑定关系。" Foreground="{StaticResource TextMutedBrush}" FontSize="11" Margin="0,6,0,0" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmDeleteCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 批量删除业主 -->
+        <Border Grid.RowSpan="4" Background="#66000000" Visibility="{Binding IsBatchDialogVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="560" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="批量删除业主" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Text="勾选要删除的业主（软删除，需该业主无房产绑定关系）。" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,0,0,10" />
+                    <Border Height="300" Style="{StaticResource CardBorder}" Padding="0">
+                        <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BatchOwners}" IsReadOnly="True" AutoGenerateColumns="False">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="40">
+                                    <DataGridTemplateColumn.HeaderTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding DataContext.IsBatchSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                                      VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.HeaderTemplate>
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="RowCheckBox_Click" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="业主编号" Width="90" Binding="{Binding Id, StringFormat=YZ-{0:D3}}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="姓名" Width="*" Binding="{Binding Name}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="联系电话" Width="130" Binding="{Binding Phone}" ElementStyle="{StaticResource GridCellText}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelBatchDeleteCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmBatchDeleteCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

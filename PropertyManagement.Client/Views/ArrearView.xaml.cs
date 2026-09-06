@@ -13,6 +13,15 @@ namespace PropertyManagement.Client.Views
             InitializeComponent();
         }
 
+        /// <summary>行勾选写回：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，需在点击时显式同步到行对象。</summary>
+        private void RowCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is ArrearRow row)
+            {
+                row.IsChecked = cb.IsChecked == true;
+            }
+        }
+
         private void KeywordBox_KeyDown(object sender, KeyEventArgs e)
         {
             if (e.Key == Key.Enter && DataContext is ArrearViewModel vm)

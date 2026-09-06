@@ -68,6 +68,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
@@ -111,6 +112,10 @@
                         VerticalAlignment="Center" Click="BatchRemindButton_Click" Margin="0,0,14,0" />
                 <Button Grid.Column="9" Style="{StaticResource LinkButton}" Content="导出台账" FontSize="13"
                         VerticalAlignment="Center" Click="ExportButton_Click" />
+                <Button Grid.Column="10" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
+                        Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                        BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}"
+                        VerticalAlignment="Center" Margin="12,0,0,0" />
             </Grid>
         </Border>
 
@@ -118,6 +123,19 @@
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
             <DataGrid ItemsSource="{Binding Items}" IsReadOnly="True">
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="40">
+                        <DataGridTemplateColumn.HeaderTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                          VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.HeaderTemplate>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="RowCheckBox_Click" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="房产" Width="110" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="业主" Width="100" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="欠费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
@@ -246,6 +264,29 @@
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmDeleteCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 批量删除确认 -->
+        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="确认批量删除" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding BatchConfirmMessage}" Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                               Text="删除为软删除，保留查账轨迹。" />
+                    <Grid Margin="0,20,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmBatchDeleteCommand}" />
+                        <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelBatchDeleteCommand}" />
                     </Grid>
                 </StackPanel>
             </Border>

@@ -8,6 +8,7 @@
                 <ResourceDictionary Source="pack://application:,,,/HandyControl;component/Themes/Theme.xaml" />
                 <ResourceDictionary Source="Assets/Theme.xaml" />
                 <ResourceDictionary Source="Assets/Icons.xaml" />
+                <ResourceDictionary Source="Assets/BaseInfoStyles.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

@@ -166,6 +166,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
@@ -199,7 +200,10 @@
                 </ComboBox>
                 <Button Grid.Column="6" Style="{StaticResource ButtonPrimary}" Content="生成账单"
                         Command="{Binding OpenGenerateCommand}" Margin="0,0,10,0" />
-                <Button Grid.Column="7" Style="{StaticResource LinkButton}" Content="失败清单"
+                <Button Grid.Column="7" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
+                        Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                        BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}" Margin="0,0,10,0" />
+                <Button Grid.Column="8" Style="{StaticResource LinkButton}" Content="失败清单"
                         FontSize="13" VerticalAlignment="Center" Command="{Binding ShowAllFailuresCommand}" />
             </Grid>
         </Border>
@@ -208,6 +212,19 @@
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
             <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Batches}" IsReadOnly="True">
                 <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="40">
+                        <DataGridTemplateColumn.HeaderTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                          VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.HeaderTemplate>
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="RowCheckBox_Click" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="批次号" Width="110" Binding="{Binding BatchNoText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="收费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="账单期间" Width="110" Binding="{Binding CyclePeriod}" ElementStyle="{StaticResource GridCellText}" />

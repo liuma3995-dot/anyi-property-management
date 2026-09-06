@@ -17,7 +17,10 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>收费项目维护页行（PG-FIN-01，UC-FIN-001，BR-FIN-03；T4F-1-3 新字段展示）。</summary>
     public class ChargeItemRow : ObservableObject
     {
+        private bool _isChecked;
         public ChargeItemDto Dto { get; set; }
+        /// <summary>批量选择标记。</summary>
+        public bool IsChecked { get { return _isChecked; } set { SetProperty(ref _isChecked, value); } }
 
         public int Id { get { return Dto.Id; } }
 
@@ -131,6 +134,10 @@ namespace PropertyManagement.Client.ViewModels
         private readonly DispatcherTimer _searchDebounce;
         private bool _isConfirmVisible;
         private ChargeItemRow _confirmRow;
+        private bool _isBatchConfirmVisible;
+        private string _batchConfirmMessage = string.Empty;
+        private List<ChargeItemRow> _batchRows;
+        private bool _isSelectAll;
         private string _customInputRemark = string.Empty;
 
         public ChargeItemsViewModel(IApiClient api) : base(api)
@@ -155,6 +162,9 @@ namespace PropertyManagement.Client.ViewModels
             DeleteCommand = new RelayCommand<ChargeItemRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => { ConfirmRow = null; IsConfirmVisible = false; });
+            BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
+            ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
+            CancelBatchDeleteCommand = new RelayCommand(() => { IsBatchConfirmVisible = false; _batchRows = null; });
             _ = InitAsync();
         }
 
@@ -243,6 +253,20 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsConfirmVisible { get { return _isConfirmVisible; } private set { SetProperty(ref _isConfirmVisible, value); } }
 
         public ChargeItemRow ConfirmRow { get { return _confirmRow; } private set { SetProperty(ref _confirmRow, value); } }
+        public bool IsBatchConfirmVisible { get { return _isBatchConfirmVisible; } private set { SetProperty(ref _isBatchConfirmVisible, value); } }
+        public string BatchConfirmMessage { get { return _batchConfirmMessage; } private set { SetProperty(ref _batchConfirmMessage, value); } }
+        /// <summary>全选：勾选/取消勾选当前列表全部行。</summary>
+        public bool IsSelectAll
+        {
+            get { return _isSelectAll; }
+            set
+            {
+                if (SetProperty(ref _isSelectAll, value))
+                {
+                    foreach (var r in Items) { r.IsChecked = value; }
+                }
+            }
+        }
 
         public bool IsCustomDialogVisible { get { return _isCustomDialogVisible; } private set { SetProperty(ref _isCustomDialogVisible, value); } }
 
@@ -268,6 +292,9 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<ChargeItemRow> DeleteCommand { get; }
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
         public IRelayCommand CancelDeleteCommand { get; }
+        public IRelayCommand BatchDeleteCommand { get; }
+        public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
+        public IRelayCommand CancelBatchDeleteCommand { get; }
 
         private async Task InitAsync()
         {
@@ -295,6 +322,8 @@ namespace PropertyManagement.Client.ViewModels
             {
                 Items.Add(new ChargeItemRow { Dto = dto });
             }
+            _isSelectAll = false;
+            OnPropertyChanged(nameof(IsSelectAll));
         }
 
         /// <summary>刷新三组字典并尽量保持当前选择（启动/自定义字典项保存后调用）。</summary>
@@ -544,6 +573,30 @@ namespace PropertyManagement.Client.ViewModels
                 IsConfirmVisible = false;
                 await LoadItemsCoreAsync();
             }, "收费项目已删除（软删除，历史账单与流水不受影响 BR-FIN-03）");
+        }
+
+        private void RequestBatchDelete()
+        {
+            var rows = Items.Where(x => x.IsChecked).ToList();
+            if (rows.Count == 0) { ErrorText = "请先勾选要删除的收费项目"; return; }
+            string desc = string.Join("、", rows.Take(3).Select(r => r.Name));
+            if (rows.Count > 3) { desc += " 等 " + rows.Count + " 项"; }
+            _batchRows = rows;
+            BatchConfirmMessage = "将删除 " + rows.Count + " 项收费项目（软删除，历史账单与流水不受影响）：\n" + desc;
+            IsBatchConfirmVisible = true;
+        }
+
+        private async Task ConfirmBatchDeleteAsync()
+        {
+            var rows = _batchRows;
+            IsBatchConfirmVisible = false;
+            if (rows == null || rows.Count == 0) { return; }
+            await RunAsync(async () =>
+            {
+                foreach (var r in rows) { await Api.DeleteChargeItemAsync(r.Id); }
+                _batchRows = null;
+                await LoadItemsCoreAsync();
+            }, "已批量删除 " + rows.Count + " 项收费项目（软删除 BR-FIN-03）");
         }
 
         private void OpenCustomDialog(string typeCode, string title, bool showRemark)

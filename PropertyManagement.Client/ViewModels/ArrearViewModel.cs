@@ -14,7 +14,10 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>欠费台账行（PG-FIN-06，UC-FIN-007，账龄>90 天标红；操作按催缴状态派生 T4F-6-1）。</summary>
     public class ArrearRow : ObservableObject
     {
+        private bool _isChecked;
         public ArrearDto Dto { get; set; }
+        /// <summary>批量选择标记。</summary>
+        public bool IsChecked { get { return _isChecked; } set { SetProperty(ref _isChecked, value); } }
 
         public string PropertyNo { get { return Dto.PropertyNo ?? "—"; } }
 
@@ -106,6 +109,10 @@ namespace PropertyManagement.Client.ViewModels
         private int _remindStateFilter;
         private bool _isConfirmVisible;
         private ArrearRow _confirmRow;
+        private bool _isBatchConfirmVisible;
+        private string _batchConfirmMessage = string.Empty;
+        private List<ArrearRow> _batchRows;
+        private bool _isSelectAll;
 
         private static readonly string[] Channels = { "短信", "电话", "函件", "上门", "微信", "法务", "免催缴" };
 
@@ -121,6 +128,9 @@ namespace PropertyManagement.Client.ViewModels
             DeleteCommand = new RelayCommand<ArrearRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => { ConfirmRow = null; IsConfirmVisible = false; });
+            BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
+            ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
+            CancelBatchDeleteCommand = new RelayCommand(() => { IsBatchConfirmVisible = false; _batchRows = null; });
             _ = LoadAsync();
         }
 
@@ -193,10 +203,29 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand SearchCommand { get; }
 
         public IRelayCommand<ArrearRow> DeleteCommand { get; }
+        public IRelayCommand BatchDeleteCommand { get; }
 
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
 
         public IRelayCommand CancelDeleteCommand { get; }
+        public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
+        public IRelayCommand CancelBatchDeleteCommand { get; }
+
+        public bool IsBatchConfirmVisible { get { return _isBatchConfirmVisible; } private set { SetProperty(ref _isBatchConfirmVisible, value); } }
+        public string BatchConfirmMessage { get { return _batchConfirmMessage; } private set { SetProperty(ref _batchConfirmMessage, value); } }
+
+        /// <summary>全选：勾选/取消勾选当前列表全部行。</summary>
+        public bool IsSelectAll
+        {
+            get { return _isSelectAll; }
+            set
+            {
+                if (SetProperty(ref _isSelectAll, value))
+                {
+                    foreach (var r in Items) { r.IsChecked = value; }
+                }
+            }
+        }
 
         public async Task LoadAsync()
         {
@@ -265,6 +294,8 @@ namespace PropertyManagement.Client.ViewModels
                 {
                     Items.Add(new ArrearRow { Dto = dto });
                 }
+                _isSelectAll = false;
+                OnPropertyChanged(nameof(IsSelectAll));
 
                 TotalText = "¥" + list.Sum(x => x.ArrearAmount).ToString("N0");
                 TotalSubText = "涉及 " + HouseholdCount(list) + " 户";
@@ -336,6 +367,30 @@ namespace PropertyManagement.Client.ViewModels
                 IsConfirmVisible = false;
                 await LoadAsync();
             }, "欠费记录已删除（软删除，保留操作轨迹）");
+        }
+
+        private void RequestBatchDelete()
+        {
+            var rows = Items.Where(x => x.IsChecked).ToList();
+            if (rows.Count == 0) { ErrorText = "请先勾选要删除的欠费记录"; return; }
+            string desc = string.Join("、", rows.Take(3).Select(r => r.PropertyNo + " " + r.OwnerName));
+            if (rows.Count > 3) { desc += " 等 " + rows.Count + " 条"; }
+            _batchRows = rows;
+            BatchConfirmMessage = "将删除 " + rows.Count + " 条欠费记录（软删除，保留操作轨迹）：\n" + desc;
+            IsBatchConfirmVisible = true;
+        }
+
+        private async Task ConfirmBatchDeleteAsync()
+        {
+            var rows = _batchRows;
+            IsBatchConfirmVisible = false;
+            if (rows == null || rows.Count == 0) { return; }
+            await RunAsync(async () =>
+            {
+                foreach (var r in rows) { await Api.DeleteArrearAsync(r.Dto.BillId); }
+                _batchRows = null;
+                await LoadAsync();
+            }, "已批量删除 " + rows.Count + " 条欠费记录（软删除）");
         }
     }
 }

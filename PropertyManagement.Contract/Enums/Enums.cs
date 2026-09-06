@@ -63,22 +63,56 @@ namespace PropertyManagement.Contract.Enums
     /// <summary>房产入住状态。</summary>
     public enum PropertyStatus
     {
-        Vacant = 0,    // 空置
-        Occupied = 1   // 入住
+        Vacant = 0,      // 空置
+        Occupied = 1,    // 入住
+        Renovating = 2   // 装修中
     }
 
     /// <summary>车位类型。</summary>
     public enum ParkingSpaceType
     {
-        Fixed = 0,     // 固定（产权）
-        Temporary = 1  // 临时（人防等禁售）
+        PropertyRight = 0, // 产权（固定）
+        CivilDefense = 1,  // 人防（禁售，只租不售）
+        Temporary = 2      // 临时（租用）
+    }
+
+    /// <summary>车位上锁状态（PG-INF-04，BR-INF-03）。</summary>
+    public enum ParkingSpaceStatus
+    {
+        Owned = 0,     // 已售
+        Rented = 1,    // 已租
+        Vacant = 2,    // 空置
+        Repairing = 3  // 维修中
+    }
+
+    /// <summary>车位租金计费模式（PG-INF-04，BR-INF-03）。</summary>
+    public enum RentMode
+    {
+        Monthly = 0,   // 按月
+        Yearly = 1     // 按年
     }
 
     /// <summary>业主-房产关系类型。</summary>
     public enum OwnerRelType
     {
-        Self = 0,     // 自住
-        Rent = 1      // 出租
+        Owner = 0,      // 业主
+        CoOwner = 1,    // 共有人
+        RentRecord = 2  // 租户备案
+    }
+
+    /// <summary>业主-房产关系状态（PG-INF-03，租约到期前 30 天→即将到期）。</summary>
+    public enum OwnerRelStatus
+    {
+        Active = 0,   // 有效
+        Expiring = 1, // 即将到期
+        Released = 2  // 已解除
+    }
+
+    /// <summary>业主状态（PG-INF-02：在住/搬离）。</summary>
+    public enum OwnerStatus
+    {
+        Living = 0,    // 在住
+        MovedOut = 1   // 搬离
     }
 
     /// <summary>员工状态（AM-05 §五）。</summary>
@@ -190,6 +224,24 @@ namespace PropertyManagement.Contract.Enums
         Owner = 1,         // 业主
         Parking = 2,       // 车位
         OwnerRelation = 3  // 业主-房产关系
+    }
+
+    /// <summary>基础数据导入批次状态（PG-INF-05，校验通过前不落库）。</summary>
+    public enum ImportStatus
+    {
+        Processing = 0,   // 校验中
+        Success = 1,      // 成功
+        PartialSuccess = 2, // 部分成功（部分行校验失败）
+        Failed = 3        // 失败
+    }
+
+    /// <summary>业主证件类型（PG-INF-02）。</summary>
+    public enum OwnerIdCardType
+    {
+        IdCard = 0,   // 身份证
+        Passport = 1, // 护照
+        Hukou = 2,    // 户口簿
+        Other = 3     // 其他
     }
 
     /// <summary>登录账号状态。</summary>

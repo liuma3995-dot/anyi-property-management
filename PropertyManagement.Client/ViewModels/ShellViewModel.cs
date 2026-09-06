@@ -252,24 +252,29 @@ namespace PropertyManagement.Client.ViewModels
                 }
             }
 
-            _selectedPage = null;
             _selectedNode = node;
 
             if (!node.IsModule)
             {
+                _selectedPage = null;
                 PageTitle = "仪表盘";
                 PagePath = "首页  /  工作概览";
                 CurrentViewModel = new DashboardViewModel(_api, NavigateTo);
             }
             else
             {
-                // 财务收费已落地真实子页（PG-FIN-01~08）：点击模块不再显示全局框架占位，直入首个业务子页
-                if (string.Equals(node.Title, "财务收费", StringComparison.Ordinal) && node.Pages.Count > 0)
+                // 财务收费/基础信息已落地真实子页：点击模块不再显示全局框架占位，直入首个业务子页
+                bool hasRealPages = string.Equals(node.Title, "财务收费", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "基础信息", StringComparison.Ordinal);
+                if (hasRealPages && node.Pages.Count > 0)
                 {
-                    SelectPage(node.Pages[0]);
+                    // 展开：进入首个子页；收起：仅收起子菜单，保留当前页（修复“只支持展开不支持收起”）
+                    if (node.IsExpanded) SelectPage(node.Pages[0]);
+                    else _selectedPage = null;
                 }
                 else
                 {
+                    _selectedPage = null;
                     PageTitle = node.Title;
                     PagePath = "首页  /  " + node.Title;
                     CurrentViewModel = new PlaceholderViewModel(node.Title);
@@ -311,6 +316,17 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>按导航页 Key 创建页面 VM；财务 8 页走真实页面，其余模块暂用占位页（M4）。</summary>
         private object CreatePageViewModel(string pageKey, string moduleTitle)
         {
+            if (string.Equals(moduleTitle, "基础信息", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "房产列表": return new PropertyListViewModel(_api);
+                    case "业主档案": return new OwnerProfileViewModel(_api);
+                    case "业主-房产关系": return new OwnerRelationViewModel(_api);
+                    case "车位维护": return new ParkingViewModel(_api);
+                    case "基础数据导入": return new DataImportViewModel(_api);
+                }
+            }
             if (string.Equals(moduleTitle, "财务收费", StringComparison.Ordinal))
             {
                 switch (pageKey)
@@ -407,4 +423,3 @@ namespace PropertyManagement.Client.ViewModels
         }
     }
 }
-

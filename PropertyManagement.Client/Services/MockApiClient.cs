@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using PropertyManagement.Contract.Auth;
+using PropertyManagement.Contract.BaseInfo;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
@@ -646,5 +647,114 @@ namespace PropertyManagement.Client.Services
                 OwnerName = ownerName
             };
         }
+
+        // ==================== M5 基础信息与导入（演示夹具） ====================
+        public Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null) =>
+            Task.FromResult(new List<CommunityDto> { new CommunityDto { Id = 1, Name = "澜庭小区", Address = "示例大道 1 号" } });
+
+        public Task<List<BuildingDto>> GetBuildingsAsync(int? communityId = null) =>
+            Task.FromResult(new List<BuildingDto> { new BuildingDto { Id = 1, CommunityId = 1, CommunityName = "澜庭小区", BuildingNo = "1号楼", Floors = 6 } });
+
+        public Task<List<UnitDto>> GetUnitsAsync(int? buildingId = null) =>
+            Task.FromResult(new List<UnitDto> { new UnitDto { Id = 1, BuildingId = 1, BuildingNo = "1号楼", UnitNo = "1单元" } });
+
+        public Task<BuildingDto> CreateBuildingAsync(BuildingRequest request) =>
+            Task.FromResult(new BuildingDto { Id = 99, CommunityId = request.CommunityId, BuildingNo = request.BuildingNo, Floors = request.Floors });
+
+        public Task<UnitDto> CreateUnitAsync(UnitRequest request) =>
+            Task.FromResult(new UnitDto { Id = 99, BuildingId = request.BuildingId, UnitNo = request.UnitNo });
+
+        public Task DeleteBuildingAsync(int id) => Task.CompletedTask;
+
+        public Task DeleteUnitAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<PropertyDto>> QueryPropertiesAsync(BaseInfoQueryRequest request) =>
+            Task.FromResult(new PageResult<PropertyDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 1,
+                Items = new List<PropertyDto> { new PropertyDto { Id = 1, UnitId = 1, UnitPath = "1号楼-1单元-101", RoomNo = "101", Area = 88.5m, Usage = PropertyUsage.Residential, Status = PropertyStatus.Occupied, OwnerName = "张伟", OwnerPhone = "13800000001", CurrentArrear = 0 } }
+            });
+
+        public Task<PropertyDto> CreatePropertyAsync(PropertyRequest request) =>
+            Task.FromResult(new PropertyDto { Id = 99, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
+
+        public Task<PropertyDto> UpdatePropertyAsync(int id, PropertyRequest request) =>
+            Task.FromResult(new PropertyDto { Id = id, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
+
+        public Task DeletePropertyAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<OwnerDto>> QueryOwnersAsync(BaseInfoQueryRequest request) =>
+            Task.FromResult(new PageResult<OwnerDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 1,
+                Items = new List<OwnerDto> { new OwnerDto { Id = 1, Name = "张伟", IdCardType = OwnerIdCardType.IdCard, IdCard = "110101198501011234", Phone = "13800000001", Status = OwnerStatus.Living, StatusText = "在住", PropertyCount = 1 } }
+            });
+
+        public Task<OwnerDto> GetOwnerAsync(int id) =>
+            Task.FromResult(new OwnerDto { Id = id, Name = "张伟", IdCardType = OwnerIdCardType.IdCard, IdCard = "110101198501011234", Phone = "13800000001", Status = OwnerStatus.Living, StatusText = "在住", PropertyCount = 1 });
+
+        public Task<List<BaseChangeLogDto>> GetOwnerChangeLogsAsync(int id) =>
+            Task.FromResult(new List<BaseChangeLogDto>());
+
+        public Task<List<OwnerPropertyRelationDto>> GetOwnerRelationsAsync(int id) =>
+            Task.FromResult(new List<OwnerPropertyRelationDto>());
+
+        public Task<OwnerDto> CreateOwnerAsync(OwnerRequest request) =>
+            Task.FromResult(new OwnerDto { Id = 99, Name = request.Name, Phone = request.Phone, Status = OwnerStatus.Living });
+
+        public Task<OwnerDto> UpdateOwnerAsync(int id, OwnerRequest request) =>
+            Task.FromResult(new OwnerDto { Id = id, Name = request.Name, Phone = request.Phone });
+
+        public Task DeleteOwnerAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<OwnerPropertyRelationDto>> QueryRelationsAsync(BaseInfoQueryRequest request) =>
+            Task.FromResult(new PageResult<OwnerPropertyRelationDto> { PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 0, Items = new List<OwnerPropertyRelationDto>() });
+
+        public Task<OwnerPropertyRelationDto> CreateRelationAsync(OwnerPropertyRelationRequest request) =>
+            Task.FromResult(new OwnerPropertyRelationDto { Id = 99, PropertyId = request.PropertyId, OwnerId = request.OwnerId, RelType = request.RelType, Share = request.Share, EffectiveAt = request.EffectiveAt });
+
+        public Task<OwnerPropertyRelationDto> UpdateRelationAsync(int id, OwnerPropertyRelationRequest request) =>
+            Task.FromResult(new OwnerPropertyRelationDto { Id = id, PropertyId = request.PropertyId, OwnerId = request.OwnerId, RelType = request.RelType, Share = request.Share, EffectiveAt = request.EffectiveAt });
+
+        public Task ReleaseRelationAsync(int id, string reason) => Task.CompletedTask;
+
+        public Task<PageResult<ParkingSpaceDto>> QueryParkingsAsync(BaseInfoQueryRequest request) =>
+            Task.FromResult(new PageResult<ParkingSpaceDto> { PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 0, Items = new List<ParkingSpaceDto>() });
+
+        public Task<ParkingSpaceDto> CreateParkingAsync(ParkingSpaceRequest request) =>
+            Task.FromResult(new ParkingSpaceDto { Id = 99, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status });
+
+        public Task<ParkingSpaceDto> UpdateParkingAsync(int id, ParkingSpaceRequest request) =>
+            Task.FromResult(new ParkingSpaceDto { Id = id, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status });
+
+        public Task DeleteParkingAsync(int id) => Task.CompletedTask;
+
+        public Task<byte[]> DownloadBaseInfoTemplateAsync(ImportModule module) =>
+            Task.FromResult(new byte[0]);
+
+        public Task<ImportResultDto> ImportAsync(ImportRequest request) =>
+            Task.FromResult(new ImportResultDto
+            {
+                Batch = new ImportLogDto { Id = 1, Module = request.Module, FileName = request.FileName, Total = 0, Success = 0, Fail = 0, Status = ImportStatus.Success, StatusText = "成功" },
+                Errors = new List<ImportErrorItemDto>()
+            });
+
+        public Task<List<ImportLogDto>> GetImportLogsAsync() =>
+            Task.FromResult(new List<ImportLogDto>());
+
+        public Task<byte[]> DownloadImportErrorsAsync(int id) =>
+            Task.FromResult(new byte[0]);
+
+        public Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request) =>
+            Task.FromResult(new ExportLogDto { Id = 1, Module = request.ExportType, Format = ExportFormat.Excel, FilePath = "demo.xlsx", CreatedAt = DateTime.Now });
+
+        public Task DownloadExportFileAsync(int id, string savePath) =>
+            Task.FromResult(true);
+
+        public Task<string> GetParamAsync(string key) =>
+            Task.FromResult<string>(null);
+
+        public Task SetParamAsync(string key, string value) =>
+            Task.CompletedTask;
     }
 }

@@ -129,6 +129,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Api\AuthController.cs" />
+    <Compile Include="Api\BaseInfoController.cs" />
     <Compile Include="Api\CommonController.cs" />
     <Compile Include="Api\Filters\ApiExceptionFilterAttribute.cs" />
     <Compile Include="Api\Filters\ApiValidationFilterAttribute.cs" />
@@ -140,6 +141,7 @@
     <Compile Include="Domain\Entities\DictTypeEntry.cs" />
     <Compile Include="Domain\Entities\ParamEntry.cs" />
     <Compile Include="Domain\Repositories\IAuditLogRepository.cs" />
+    <Compile Include="Domain\Repositories\IBaseInfoRepository.cs" />
     <Compile Include="Domain\Repositories\IDictRepository.cs" />
     <Compile Include="Domain\Repositories\IParamRepository.cs" />
     <Compile Include="Domain\Repositories\IUserRepository.cs" />
@@ -148,6 +150,7 @@
     <Compile Include="Infrastructure\Data\IDbConnectionFactory.cs" />
     <Compile Include="Infrastructure\Data\SqliteConnectionFactory.cs" />
     <Compile Include="Infrastructure\Repositories\SqlAuditLogRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlBaseInfoRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlDictRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlParamRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlUserRepository.cs" />
@@ -166,6 +169,7 @@
     <Compile Include="Domain\Repositories\IFinanceRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlFinanceRepository.cs" />
     <Compile Include="Services\BillingService.cs" />
+    <Compile Include="Services\BaseInfoService.cs" />
     <Compile Include="Services\DictService.cs" />
     <Compile Include="Services\ExpenseService.cs" />
     <Compile Include="Services\PaymentService.cs" />
@@ -209,6 +213,27 @@
     <EmbeddedResource Include="Infrastructure\Data\migration_008.sql">
       <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_008.sql</LogicalName>
     </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_009.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_009.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_010.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_010.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_011.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_011.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_012.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_012.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_013.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_013.sql</LogicalName>
+    </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_014.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_014.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_015.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_015.sql</LogicalName>
+  </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

@@ -1,0 +1,122 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DataImportView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 四步导入向导 -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="14,12">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="22" Height="22" Background="{StaticResource PrimaryBrush}" CornerRadius="11"><TextBlock Text="1" Foreground="White" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <StackPanel Margin="10,0,0,0"><TextBlock Text="下载模板" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" /><TextBlock Text="按类型下载 Excel 模板" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" /></StackPanel>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{StaticResource CardBorder}" Padding="14,12" Margin="10,0,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="22" Height="22" Background="{StaticResource PrimaryBrush}" CornerRadius="11"><TextBlock Text="2" Foreground="White" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <StackPanel Margin="10,0,0,0"><TextBlock Text="选择文件" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" /><TextBlock Text="选择房产/业主/车位数据文件" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" /></StackPanel>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="14,12" Margin="10,0,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="22" Height="22" Background="{StaticResource PrimaryBrush}" CornerRadius="11"><TextBlock Text="3" Foreground="White" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <StackPanel Margin="10,0,0,0"><TextBlock Text="数据校验" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" /><TextBlock Text="系统校验必填与格式" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" /></StackPanel>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Style="{StaticResource CardBorder}" Padding="14,12" Margin="10,0,0,0">
+                <StackPanel Orientation="Horizontal">
+                    <Border Width="22" Height="22" Background="{StaticResource PrimaryBrush}" CornerRadius="11"><TextBlock Text="4" Foreground="White" FontSize="12" HorizontalAlignment="Center" VerticalAlignment="Center" /></Border>
+                    <StackPanel Margin="10,0,0,0"><TextBlock Text="执行导入" FontSize="13" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" /><TextBlock Text="错误行修正后重传" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" /></StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 导入执行区 -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Text="数据类型：" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" />
+                    <ComboBox Width="150" SelectedValue="{Binding Module}" SelectedValuePath="Tag">
+                        <ComboBoxItem Content="房产" Tag="Property" />
+                        <ComboBoxItem Content="业主" Tag="Owner" />
+                        <ComboBoxItem Content="车位" Tag="Parking" />
+                        <ComboBoxItem Content="业主-房产关系" Tag="OwnerRelation" />
+                    </ComboBox>
+                    <TextBlock Text="{Binding SelectedFileName, StringFormat=已选：{0}}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" VerticalAlignment="Center" Margin="12,0,0,0" />
+                </StackPanel>
+                <Button Grid.Column="1" Style="{StaticResource ButtonPrimary}" Content="① 下载模板" Command="{Binding DownloadTemplateCommand}" Margin="0,0,10,0" />
+                <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="② 选择文件" Command="{Binding SelectFileCommand}" Margin="0,0,10,0" />
+                <Button Grid.Column="3" Style="{StaticResource ButtonPrimary}" Content="③ 校验并导入" Command="{Binding ImportCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- 导入批次记录 -->
+        <TextBlock Grid.Row="3" Text="导入批次记录" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+        <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
+            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Batches}" IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="批次号" Width="90" Binding="{Binding BatchNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="数据类型" Width="110" Binding="{Binding ModuleText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="总行数" Width="70" Binding="{Binding Total}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="成功" Width="70" Binding="{Binding Success}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="失败" Width="70" Binding="{Binding Fail}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="状态" Width="100">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding StatusBg}" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusBrush}" FontSize="11" />
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="导入时间" Width="140" Binding="{Binding TimeText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="操作" Width="130">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource LinkButton}" Content="下载回执" Command="{Binding DataContext.DownloadErrorsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource LinkButton}" Content="重传" Command="{Binding DataContext.ReImportCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0">
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="11" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" />
+            </StackPanel>
+            <Button Grid.Column="1" Style="{StaticResource LinkButton}" Content="刷新" Command="{Binding RefreshCommand}" />
+        </Grid>
+    </Grid>
+</UserControl>

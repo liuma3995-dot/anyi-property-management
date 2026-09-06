@@ -2,7 +2,9 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using PropertyManagement.Contract.Auth;
+using PropertyManagement.Contract.BaseInfo;
 using PropertyManagement.Contract.Common;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.Health;
 
@@ -68,5 +70,41 @@ namespace PropertyManagement.Client.Services
         Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request);
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);
+
+        // ==================== M5 基础信息与导入（PG-INF-01~05） ====================
+        Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null);
+        Task<List<BuildingDto>> GetBuildingsAsync(int? communityId = null);
+        Task<List<UnitDto>> GetUnitsAsync(int? buildingId = null);
+        Task<BuildingDto> CreateBuildingAsync(BuildingRequest request);
+        Task<UnitDto> CreateUnitAsync(UnitRequest request);
+        Task DeleteBuildingAsync(int id);
+        Task DeleteUnitAsync(int id);
+        Task<PageResult<PropertyDto>> QueryPropertiesAsync(BaseInfoQueryRequest request);
+        Task<PropertyDto> CreatePropertyAsync(PropertyRequest request);
+        Task<PropertyDto> UpdatePropertyAsync(int id, PropertyRequest request);
+        Task DeletePropertyAsync(int id);
+        Task<PageResult<OwnerDto>> QueryOwnersAsync(BaseInfoQueryRequest request);
+        Task<OwnerDto> GetOwnerAsync(int id);
+        Task<List<BaseChangeLogDto>> GetOwnerChangeLogsAsync(int id);
+        Task<List<OwnerPropertyRelationDto>> GetOwnerRelationsAsync(int id);
+        Task<OwnerDto> CreateOwnerAsync(OwnerRequest request);
+        Task<OwnerDto> UpdateOwnerAsync(int id, OwnerRequest request);
+        Task DeleteOwnerAsync(int id);
+        Task<PageResult<OwnerPropertyRelationDto>> QueryRelationsAsync(BaseInfoQueryRequest request);
+        Task<OwnerPropertyRelationDto> CreateRelationAsync(OwnerPropertyRelationRequest request);
+        Task<OwnerPropertyRelationDto> UpdateRelationAsync(int id, OwnerPropertyRelationRequest request);
+        Task ReleaseRelationAsync(int id, string reason);
+        Task<PageResult<ParkingSpaceDto>> QueryParkingsAsync(BaseInfoQueryRequest request);
+        Task<ParkingSpaceDto> CreateParkingAsync(ParkingSpaceRequest request);
+        Task<ParkingSpaceDto> UpdateParkingAsync(int id, ParkingSpaceRequest request);
+        Task DeleteParkingAsync(int id);
+        Task<byte[]> DownloadBaseInfoTemplateAsync(ImportModule module);
+        Task<ImportResultDto> ImportAsync(ImportRequest request);
+        Task<List<ImportLogDto>> GetImportLogsAsync();
+        Task<byte[]> DownloadImportErrorsAsync(int id);
+        Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request);
+        Task DownloadExportFileAsync(int id, string savePath);
+        Task<string> GetParamAsync(string key);
+        Task SetParamAsync(string key, string value);
     }
 }

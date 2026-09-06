@@ -140,6 +140,30 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Views\PropertyListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\OwnerProfileView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\OwnerRelationView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ParkingView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DataImportView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Assets\BaseInfoStyles.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs">
@@ -211,6 +235,27 @@
     <Compile Include="ViewModels\ArrearViewModel.cs" />
     <Compile Include="ViewModels\FinancialReportViewModel.cs" />
     <Compile Include="ViewModels\LedgerViewModel.cs" />
+    <Compile Include="ViewModels\BaseInfoPageViewModel.cs" />
+    <Compile Include="ViewModels\PropertyListViewModel.cs" />
+    <Compile Include="ViewModels\OwnerProfileViewModel.cs" />
+    <Compile Include="ViewModels\OwnerRelationViewModel.cs" />
+    <Compile Include="ViewModels\ParkingViewModel.cs" />
+    <Compile Include="ViewModels\DataImportViewModel.cs" />
+    <Compile Include="Views\PropertyListView.xaml.cs">
+      <DependentUpon>PropertyListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\OwnerProfileView.xaml.cs">
+      <DependentUpon>OwnerProfileView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\OwnerRelationView.xaml.cs">
+      <DependentUpon>OwnerRelationView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ParkingView.xaml.cs">
+      <DependentUpon>ParkingView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DataImportView.xaml.cs">
+      <DependentUpon>DataImportView.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PropertyManagement.Contract\PropertyManagement.Contract.csproj">
@@ -220,6 +265,4 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
-
-
 

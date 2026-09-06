@@ -16,7 +16,10 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>账单批次行（PG-FIN-02，T4F-2-1 操作按状态派生）。</summary>
     public class BillBatchRow : ObservableObject
     {
+        private bool _isChecked;
         public BillBatchDto Dto { get; set; }
+        /// <summary>批量选择标记。</summary>
+        public bool IsChecked { get { return _isChecked; } set { SetProperty(ref _isChecked, value); } }
 
         public string StatusText
         {
@@ -123,6 +126,8 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isDeleteConfirmVisible;
         private string _deleteConfirmText = string.Empty;
         private BillBatchRow _pendingDelete;
+        private List<BillBatchRow> _batchDeleteRows;
+        private bool _isSelectAll;
         private DateTime? _newCycleStart;
         private DateTime? _newCycleEnd;
 
@@ -149,6 +154,7 @@ namespace PropertyManagement.Client.ViewModels
             DeleteCommand = new RelayCommand<BillBatchRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => IsDeleteConfirmVisible = false);
+            BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
             _ = LoadAsync();
         }
 
@@ -250,6 +256,20 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<BillBatchRow> DeleteCommand { get; }
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
         public IRelayCommand CancelDeleteCommand { get; }
+        public IRelayCommand BatchDeleteCommand { get; }
+
+        /// <summary>全选：勾选/取消勾选当前批次列表全部行。</summary>
+        public bool IsSelectAll
+        {
+            get { return _isSelectAll; }
+            set
+            {
+                if (SetProperty(ref _isSelectAll, value))
+                {
+                    foreach (var r in Batches) { r.IsChecked = value; }
+                }
+            }
+        }
 
         private async Task ReloadCyclesAsync(BillingCycleDto preferred = null)
         {
@@ -316,6 +336,8 @@ namespace PropertyManagement.Client.ViewModels
             {
                 Batches.Add(new BillBatchRow { Dto = dto });
             }
+            _isSelectAll = false;
+            OnPropertyChanged(nameof(IsSelectAll));
         }
 
         private void RefreshPeriodOptions()
@@ -533,6 +555,19 @@ namespace PropertyManagement.Client.ViewModels
             BillBatchRow row = _pendingDelete;
             IsDeleteConfirmVisible = false;
             _pendingDelete = null;
+            if (_batchDeleteRows != null && _batchDeleteRows.Count > 0)
+            {
+                var rows = _batchDeleteRows;
+                _batchDeleteRows = null;
+                await RunAsync(async () =>
+                {
+                    foreach (var r in rows) { await Api.DeleteBillBatchAsync(r.Dto.Id); }
+                    await RefreshBatchesAsync();
+                    await RefreshSummaryAsync();
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已批量删除 " + rows.Count + " 个批次（软删，轨迹保留）";
+                }, null);
+                return;
+            }
             if (row == null) { return; }
             await RunAsync(async () =>
             {
@@ -541,6 +576,17 @@ namespace PropertyManagement.Client.ViewModels
                 await RefreshSummaryAsync();
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + row.BatchNoText + " 已删除（软删，轨迹保留）";
             }, null);
+        }
+
+        /// <summary>批量删除批次（任意状态均可删；软删批次及其账单，已缴/部分缴流水不回退）。</summary>
+        private void RequestBatchDelete()
+        {
+            var rows = Batches.Where(x => x.IsChecked).ToList();
+            if (rows.Count == 0) { ErrorText = "请先勾选要删除的批次"; return; }
+            _batchDeleteRows = rows;
+            _pendingDelete = null;
+            DeleteConfirmText = "将批量删除 " + rows.Count + " 个批次（含批次下账单一并软删并保留操作轨迹；已缴/部分缴金额对应流水不做回退）。请谨慎操作。确认删除？";
+            IsDeleteConfirmVisible = true;
         }
         private async Task RetryAsync(BillBatchRow row)
         {

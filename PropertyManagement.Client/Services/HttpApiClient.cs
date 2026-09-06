@@ -8,7 +8,9 @@ using System.Text;
 using System.Threading.Tasks;
 using Newtonsoft.Json;
 using PropertyManagement.Contract.Auth;
+using PropertyManagement.Contract.BaseInfo;
 using PropertyManagement.Contract.Common;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.Health;
 
@@ -229,6 +231,190 @@ namespace PropertyManagement.Client.Services
             return PostAsync<ReportExportRequest, ReportLogDto>("reports/export", request);
         }
 
+        // ==================== M5 基础信息与导入 ====================
+
+        public Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null)
+        {
+            return GetAsync<List<CommunityDto>>("baseinfo/communities" + Query(new { keyword }));
+        }
+
+        public Task<List<BuildingDto>> GetBuildingsAsync(int? communityId = null)
+        {
+            return GetAsync<List<BuildingDto>>("baseinfo/buildings" + Query(new { communityId }));
+        }
+
+        public Task<List<UnitDto>> GetUnitsAsync(int? buildingId = null)
+        {
+            return GetAsync<List<UnitDto>>("baseinfo/units" + Query(new { buildingId }));
+        }
+
+        public Task<BuildingDto> CreateBuildingAsync(BuildingRequest request)
+        {
+            return PostAsync<BuildingRequest, BuildingDto>("baseinfo/buildings", request);
+        }
+
+        public Task<UnitDto> CreateUnitAsync(UnitRequest request)
+        {
+            return PostAsync<UnitRequest, UnitDto>("baseinfo/units", request);
+        }
+
+        public Task DeleteBuildingAsync(int id)
+        {
+            return DeleteAsync<object>("baseinfo/buildings/" + id);
+        }
+
+        public Task DeleteUnitAsync(int id)
+        {
+            return DeleteAsync<object>("baseinfo/units/" + id);
+        }
+
+        public Task<PageResult<PropertyDto>> QueryPropertiesAsync(BaseInfoQueryRequest request)
+        {
+            return GetAsync<PageResult<PropertyDto>>("baseinfo/properties" + Query(request));
+        }
+
+        public Task<PropertyDto> CreatePropertyAsync(PropertyRequest request)
+        {
+            return PostAsync<PropertyRequest, PropertyDto>("baseinfo/properties", request);
+        }
+
+        public Task<PropertyDto> UpdatePropertyAsync(int id, PropertyRequest request)
+        {
+            return PutAsync<PropertyRequest, PropertyDto>("baseinfo/properties/" + id, request);
+        }
+
+        public Task DeletePropertyAsync(int id)
+        {
+            return DeleteAsync<object>("baseinfo/properties/" + id);
+        }
+
+        public Task<PageResult<OwnerDto>> QueryOwnersAsync(BaseInfoQueryRequest request)
+        {
+            return GetAsync<PageResult<OwnerDto>>("baseinfo/owners" + Query(request));
+        }
+
+        public Task<OwnerDto> GetOwnerAsync(int id)
+        {
+            return GetAsync<OwnerDto>("baseinfo/owners/" + id);
+        }
+
+        public Task<List<BaseChangeLogDto>> GetOwnerChangeLogsAsync(int id)
+        {
+            return GetAsync<List<BaseChangeLogDto>>("baseinfo/owners/" + id + "/change-logs");
+        }
+
+        public Task<List<OwnerPropertyRelationDto>> GetOwnerRelationsAsync(int id)
+        {
+            return GetAsync<List<OwnerPropertyRelationDto>>("baseinfo/owners/" + id + "/relations");
+        }
+
+        public Task<OwnerDto> CreateOwnerAsync(OwnerRequest request)
+        {
+            return PostAsync<OwnerRequest, OwnerDto>("baseinfo/owners", request);
+        }
+
+        public Task<OwnerDto> UpdateOwnerAsync(int id, OwnerRequest request)
+        {
+            return PutAsync<OwnerRequest, OwnerDto>("baseinfo/owners/" + id, request);
+        }
+
+        public Task DeleteOwnerAsync(int id)
+        {
+            return DeleteAsync<object>("baseinfo/owners/" + id);
+        }
+
+        public Task<PageResult<OwnerPropertyRelationDto>> QueryRelationsAsync(BaseInfoQueryRequest request)
+        {
+            return GetAsync<PageResult<OwnerPropertyRelationDto>>("baseinfo/owner-property-relations" + Query(request));
+        }
+
+        public Task<OwnerPropertyRelationDto> CreateRelationAsync(OwnerPropertyRelationRequest request)
+        {
+            return PostAsync<OwnerPropertyRelationRequest, OwnerPropertyRelationDto>("baseinfo/owner-property-relations", request);
+        }
+
+        public Task<OwnerPropertyRelationDto> UpdateRelationAsync(int id, OwnerPropertyRelationRequest request)
+        {
+            return PutAsync<OwnerPropertyRelationRequest, OwnerPropertyRelationDto>("baseinfo/owner-property-relations/" + id, request);
+        }
+
+        public Task ReleaseRelationAsync(int id, string reason)
+        {
+            return PostAsync<ReleaseRelationRequest, object>(
+                "baseinfo/owner-property-relations/" + id + "/release", new ReleaseRelationRequest { Reason = reason });
+        }
+
+        public Task<PageResult<ParkingSpaceDto>> QueryParkingsAsync(BaseInfoQueryRequest request)
+        {
+            return GetAsync<PageResult<ParkingSpaceDto>>("baseinfo/parking-spaces" + Query(request));
+        }
+
+        public Task<ParkingSpaceDto> CreateParkingAsync(ParkingSpaceRequest request)
+        {
+            return PostAsync<ParkingSpaceRequest, ParkingSpaceDto>("baseinfo/parking-spaces", request);
+        }
+
+        public Task<ParkingSpaceDto> UpdateParkingAsync(int id, ParkingSpaceRequest request)
+        {
+            return PutAsync<ParkingSpaceRequest, ParkingSpaceDto>("baseinfo/parking-spaces/" + id, request);
+        }
+
+        public Task DeleteParkingAsync(int id)
+        {
+            return DeleteAsync<object>("baseinfo/parking-spaces/" + id);
+        }
+
+        public Task<byte[]> DownloadBaseInfoTemplateAsync(ImportModule module)
+        {
+            return GetRawBytesAsync("baseinfo/imports/template" + Query(new { module }));
+        }
+
+        public Task<ImportResultDto> ImportAsync(ImportRequest request)
+        {
+            return PostAsync<ImportRequest, ImportResultDto>("baseinfo/imports", request);
+        }
+
+        public Task<List<ImportLogDto>> GetImportLogsAsync()
+        {
+            return GetAsync<List<ImportLogDto>>("baseinfo/imports");
+        }
+
+        public Task<byte[]> DownloadImportErrorsAsync(int id)
+        {
+            return GetRawBytesAsync("baseinfo/imports/" + id + "/errors");
+        }
+
+        public Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request)
+        {
+            return PostAsync<BaseInfoExportRequest, ExportLogDto>("baseinfo/exports", request);
+        }
+
+        public async Task DownloadExportFileAsync(int id, string savePath)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, "baseinfo/exports/" + id + "/file"))
+            {
+                AddToken(req);
+                HttpResponseMessage resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    throw new ApiClientException(ErrorCode.InternalError, "文件下载失败（HTTP " + (int)resp.StatusCode + "）");
+                }
+                byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+                System.IO.File.WriteAllBytes(savePath, bytes);
+            }
+        }
+
+        public Task<string> GetParamAsync(string key)
+        {
+            return GetAsync<string>("baseinfo/params/" + Uri.EscapeDataString(key));
+        }
+
+        public Task SetParamAsync(string key, string value)
+        {
+            return PutAsync<ParamValueRequest, object>(
+                "baseinfo/params/" + Uri.EscapeDataString(key), new ParamValueRequest { Value = value });
+        }
+
         // ==================== 基础 HTTP 设施 ====================
 
         private async Task<T> GetAsync<T>(string url)
@@ -237,6 +423,20 @@ namespace PropertyManagement.Client.Services
             {
                 AddToken(req);
                 return await SendAsync<T>(req);
+            }
+        }
+
+        private async Task<byte[]> GetRawBytesAsync(string url)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                AddToken(req);
+                HttpResponseMessage resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    throw new ApiClientException(ErrorCode.InternalError, "文件下载失败（HTTP " + (int)resp.StatusCode + "）");
+                }
+                return await resp.Content.ReadAsByteArrayAsync();
             }
         }
 

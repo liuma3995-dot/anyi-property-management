@@ -106,6 +106,21 @@
         <DataTemplate DataType="{x:Type vm:LedgerViewModel}">
             <views:LedgerView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PropertyListViewModel}">
+            <views:PropertyListView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:OwnerProfileViewModel}">
+            <views:OwnerProfileView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:OwnerRelationViewModel}">
+            <views:OwnerRelationView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ParkingViewModel}">
+            <views:ParkingView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DataImportViewModel}">
+            <views:DataImportView />
+        </DataTemplate>
     </hc:Window.Resources>
 
     <Grid>
@@ -215,8 +230,7 @@
                                                 </Path.Style>
                                             </Path>
                                             <Path Grid.Column="2" Data="{StaticResource Icon.ChevronUp}"
-                                                  Width="13" Height="13" VerticalAlignment="Center"
-                                                  Visibility="Collapsed">
+                                                  Width="13" Height="13" VerticalAlignment="Center">
                                                 <Path.Style>
                                                     <Style TargetType="Path">
                                                         <Setter Property="StrokeThickness" Value="2" />
@@ -226,10 +240,8 @@
                                                         <Setter Property="Fill" Value="Transparent" />
                                                         <Setter Property="Stretch" Value="Uniform" />
                                                         <Setter Property="Stroke" Value="{StaticResource NavArrowBrush}" />
+                                                        <Setter Property="Visibility" Value="Collapsed" />
                                                         <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding IsModule}" Value="True">
-                                                                <Setter Property="Visibility" Value="Visible" />
-                                                            </DataTrigger>
                                                             <DataTrigger Binding="{Binding IsExpanded}" Value="True">
                                                                 <Setter Property="Visibility" Value="Visible" />
                                                             </DataTrigger>
@@ -459,7 +471,4 @@
         </Grid>
     </Grid>
 </hc:Window>
-
-
-
 
