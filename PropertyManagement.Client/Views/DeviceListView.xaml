@@ -1,0 +1,581 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DeviceListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:local="clr-namespace:PropertyManagement.Client.Views"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <local:IntEqualConverter x:Key="IntEqual" />
+    </UserControl.Resources>
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+        <!-- 统计行：4 张卡 + 子标注（后端 summary 端点） -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="18,14">
+                <StackPanel>
+                    <TextBlock Text="设备总数" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Total}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2"/>
+                    <TextBlock Text="{Binding TotalSub}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{StaticResource CardBorder}" Padding="18,14" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="在用" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding InUse}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2"/>
+                    <TextBlock Text="{Binding InUseSub}" FontSize="11" Foreground="{StaticResource SuccessBrush}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="18,14" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="维修中" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Repairing}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2"/>
+                    <TextBlock Text="{Binding RepairingSub}" FontSize="11" Foreground="{StaticResource DangerBrush}"/>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Style="{StaticResource CardBorder}" Padding="18,14" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="停用 / 报废" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"/>
+                    <TextBlock Text="{Binding Disabled}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2"/>
+                    <TextBlock Text="{Binding DisabledSub}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <!-- 工具栏：搜索（回车）/类别/位置/状态 + 新增设备/导出 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Border Height="32" Width="190" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}" Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}" hc:InfoElement.Placeholder="搜索设备编号 / 名称" FontSize="11" Margin="8,0,12,0">
+                            <TextBox.InputBindings><KeyBinding Key="Enter" Command="{Binding SearchCommand}" /></TextBox.InputBindings>
+                        </TextBox>
+                    </Grid>
+                </Border>
+                <ComboBox Height="32" Width="120" Margin="8,0,0,0" ItemsSource="{Binding TypeFilterItems}" SelectedValuePath="Id" SelectedValue="{Binding TypeFilterId, Mode=TwoWay}" DisplayMemberPath="Name" />
+                <!-- 位置筛选：原型"位置：全部"下拉（取值来自在册设备位置） -->
+                <ComboBox Height="32" Width="146" Margin="8,0,0,0" ItemsSource="{Binding LocationFilterItems}" SelectedItem="{Binding SelectedLocation, Mode=TwoWay}" DisplayMemberPath="Label" />
+                <ComboBox Height="32" Width="130" Margin="8,0,0,0" SelectedIndex="{Binding StatusFilter, Mode=TwoWay}">
+                    <ComboBoxItem Content="状态：全部"/><ComboBoxItem Content="状态：在用"/><ComboBoxItem Content="状态：维修中"/><ComboBoxItem Content="状态：故障"/><ComboBoxItem Content="状态：停用"/><ComboBoxItem Content="状态：报废"/><ComboBoxItem Content="状态：停用 / 报废"/>
+                </ComboBox>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}">
+                    <CheckBox Content="全选" IsChecked="{Binding IsAllChecked, Mode=TwoWay}" FontSize="12" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding CheckedCountText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <!-- 与右侧「新增设备」保持 10px 间距（与「新增设备 / 导出」间隔一致） -->
+                <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="批量删除" Command="{Binding EnterBatchModeCommand}" Margin="0,0,10,0" Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="取消" Command="{Binding CancelBatchDeleteCommand}" Margin="10,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmSelectionCommand}" IsEnabled="{Binding HasChecked}" Margin="8,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Style="{StaticResource ButtonPrimary}" Content="新增设备" Command="{Binding NewCommand}" />
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出" Command="{Binding ExportCommand}" Margin="10,0,0,0" />
+            </StackPanel>
+        </Grid>
+        <!-- 数据表：设备编号/名称/类别/位置/品牌型号/投运日期/状态/下次保养/操作（查看/报修） -->
+        <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
+            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="40">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Click="BatchCheckBox_Click"
+                                          Visibility="{Binding DataContext.IsBatchMode, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="设备编号" Width="90" Binding="{Binding DeviceNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="设备名称" Width="*" Binding="{Binding Name}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="类别" Width="80" Binding="{Binding TypeName}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="位置" Width="120" Binding="{Binding Location}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="品牌 / 型号" Width="130" Binding="{Binding BrandModel}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="投运日期" Width="100" Binding="{Binding EnableDate}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="状态" Width="80">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding StatusBg}" CornerRadius="4" Padding="8,2" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-8,0,0,0">
+                                    <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusFg}" FontSize="11" />
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="下次保养" Width="90" Binding="{Binding NextMaintenance}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="操作" Width="158">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <Button Style="{StaticResource LinkButton}" Content="查看" Command="{Binding DataContext.DetailCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource LinkButton}" Content="报修" Command="{Binding DataContext.RepairCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" Margin="8,0,0,0"
+                                            Visibility="{Binding CanRepair, Converter={StaticResource BoolToVis}}" />
+                                    <!-- R8：人工状态变更（在用 / 维修中 / 停用 / 报废，停用与报废需填原因并写留痕） -->
+                                    <Button Style="{StaticResource LinkButton}" Content="状态" Padding="3,2"
+                                            ToolTip="状态变更（在用 / 维修中 / 停用 / 报废），停用与报废需填写原因并写入状态留痕"
+                                            Command="{Binding DataContext.ChangeStatusCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}"
+                                            Margin="8,0,0,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+        <!-- 分页（原型"共 186 条记录 · 第 1/2 页"+ 上一页/页码/下一页）+ 错误 -->
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextTrimming="CharacterEllipsis" />
+                <!-- 操作反馈（新增/删除类别、批量删除结果） -->
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextTrimming="CharacterEllipsis" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <TextBlock Text="{Binding PageText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <Button Height="28" MinWidth="60" FontSize="12" Content="上一页" Command="{Binding PrevPageCommand}" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Padding="6,0"/>
+                <ItemsControl ItemsSource="{Binding PageNumbers}" Margin="8,0,0,0" VerticalAlignment="Center">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><StackPanel Orientation="Horizontal" /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Button Height="28" MinWidth="30" FontSize="12" Content="{Binding Text}" Padding="6,0" Cursor="Hand"
+                                    Command="{Binding DataContext.GoToPageCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}">
+                                <Button.Style>
+                                    <Style TargetType="Button">
+                                        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
+                                                <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                                <Setter Property="Foreground" Value="White" />
+                                                <Setter Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Button.Style>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Button Height="28" MinWidth="60" FontSize="12" Content="下一页" Command="{Binding NextPageCommand}" Margin="8,0,0,0" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Padding="6,0"/>
+            </StackPanel>
+        </Grid>
+        <!-- 交互标注（原型 PG-EQP-01 底部） -->
+        <Border Grid.Row="8" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                    <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="·【查看】→ 设备详情含 保养 / 年检 / 故障 / 自定义类型 四类记录；「下次保养」可用日历自定义，清空后按「最近保养 + 周期」派生" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="·【报修】→ 生成故障单并转入「故障登记」；【批量删除】为软删，历史台账保留" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                <TextBlock Text="·【新增设备】→ 类别与保养周期可扩展（类别支持自定义新增 / 删除，被在册设备引用时禁止删除）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+        </Border>
+        <!-- 新增/编辑设备浮层 -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="设备登记" FontSize="16" FontWeight="Bold" Margin="0,0,0,16" />
+                    <!-- 行一：设备类型（自定义新增 / 删除，参照纠纷登记：类型可扩展，BR-EQP-05） -->
+                    <StackPanel Orientation="Horizontal">
+                        <ComboBox IsEditable="True" SelectedValue="{Binding FormTypeId}" SelectedValuePath="Id" DisplayMemberPath="Name"
+                                  ItemsSource="{Binding Types}" Text="{Binding FormTypeText, UpdateSourceTrigger=PropertyChanged}"
+                                  Height="32" Width="220" FontSize="12" />
+                        <Button Style="{StaticResource LinkButton}" Content="＋新增" Command="{Binding OpenNewTypeCommand}" VerticalAlignment="Center" Margin="8,0,0,0" FontSize="12" />
+                        <Button Style="{StaticResource LinkButton}" Content="删除" Command="{Binding RequestDeleteTypeCommand}" Foreground="#D64545" VerticalAlignment="Center" Margin="6,0,0,0" FontSize="12" />
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding IsTypeAdd, Converter={StaticResource BoolToVis}}">
+                        <!-- 只填类别名称：保养周期由后台按 P-04 默认 30 天落库（不再暴露多余输入项） -->
+                        <TextBox Style="{StaticResource HintTextBox}" Text="{Binding NewTypeName, UpdateSourceTrigger=PropertyChanged}" Width="240"
+                                 hc:InfoElement.Placeholder="输入类别名称，如 门禁（默认保养周期 30 天）" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding ConfirmNewTypeCommand}" Height="32" Margin="6,0,0,0" FontSize="12" />
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelNewTypeCommand}" Height="32" Margin="6,0,0,0" FontSize="12" />
+                    </StackPanel>
+                    <!-- 行二/三/四：文字操作提示（输入框内置提示，随输入隐藏） -->
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}" Margin="0,10,0,0"
+                             hc:InfoElement.Placeholder="设备名称，如：3 单元客梯 / 消防泵组" />
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FormLocation, UpdateSourceTrigger=PropertyChanged}" Margin="0,10,0,0"
+                             hc:InfoElement.Placeholder="安装位置，如：3 栋 3 单元 / 泵房 B1" />
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FormBrandModel, UpdateSourceTrigger=PropertyChanged}" Margin="0,10,0,0"
+                             hc:InfoElement.Placeholder="品牌 / 型号，如：日立 / LCA-1050" />
+                    <hc:DatePicker SelectedDate="{Binding FormEnableDate, Mode=TwoWay}" Height="32" Margin="0,10,0,0" />
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="质保到期（到期提醒用）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <hc:DatePicker SelectedDate="{Binding FormWarrantyEnd, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="合同到期（到期提醒用）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <hc:DatePicker SelectedDate="{Binding FormContractEnd, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+        <!-- 报修浮层：故障现象/级别/发现人/发现时间 → AddFaultAsync（WX 故障单） -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsRepairVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="设备报修" FontSize="16" FontWeight="Bold" Margin="0,0,0,4" />
+                    <TextBlock Text="提交后自动生成 WX 故障单（待接单），设备同步转为「维修中」" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,12" />
+                    <TextBlock Text="报修设备" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBlock Text="{Binding RepairTargetText}" FontSize="13" FontWeight="SemiBold" Margin="0,4,0,10" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="故障现象 *" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding RepairSymptom, UpdateSourceTrigger=PropertyChanged}" Height="66" AcceptsReturn="True" TextWrapping="Wrap" Margin="0,4,0,10" VerticalScrollBarVisibility="Auto" hc:InfoElement.Placeholder="如：摄像头画面黑屏，重启无效" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="12"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="故障级别" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox SelectedIndex="{Binding RepairLevelIndex, Mode=TwoWay}" Height="32" Margin="0,4,0,0">
+                                <ComboBoxItem Content="一般（影响部分功能）"/><ComboBoxItem Content="重大（影响安全）"/>
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="发现人" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Text="{Binding RepairReporter, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,4,0,0" hc:InfoElement.Placeholder="如：保安 · 李伟（巡查）" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="发现时间（yyyy-MM-dd HH:mm，默认当前）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding RepairFTimeText, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,4,0,10" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelRepairCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="提交报修" Command="{Binding SubmitRepairCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+        <!-- 详情浮层：设备信息 + 保养/年检/故障全记录 -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="780" MaxHeight="640" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="24,20">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0" Margin="0,0,0,12">
+                        <Button DockPanel.Dock="Right" Style="{StaticResource LinkButton}" Content="关闭" Command="{Binding CloseDetailCommand}" />
+                        <StackPanel>
+                            <TextBlock FontSize="16" FontWeight="Bold"><Run Text="设备详情 · "/><Run Text="{Binding DetailRow.Name, Mode=OneWay}"/></TextBlock>
+                            <TextBlock FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0"><Run Text="{Binding DetailRow.DeviceNo, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding DetailRow.TypeName, Mode=OneWay}"/></TextBlock>
+                        </StackPanel>
+                    </DockPanel>
+                    <WrapPanel Grid.Row="1" Margin="0,0,0,12">
+                        <StackPanel Margin="0,0,28,0" MinWidth="110"><TextBlock Text="类别" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/><TextBlock Text="{Binding DetailRow.TypeName}" FontSize="13" Margin="0,2,0,0"/></StackPanel>
+                        <StackPanel Margin="0,0,28,0" MinWidth="110"><TextBlock Text="位置" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/><TextBlock Text="{Binding DetailRow.Location}" FontSize="13" Margin="0,2,0,0"/></StackPanel>
+                        <StackPanel Margin="0,0,28,0" MinWidth="130"><TextBlock Text="品牌 / 型号" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/><TextBlock Text="{Binding DetailRow.BrandModel}" FontSize="13" Margin="0,2,0,0"/></StackPanel>
+                        <StackPanel Margin="0,0,28,0" MinWidth="100"><TextBlock Text="投运日期" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/><TextBlock Text="{Binding DetailRow.EnableDate}" FontSize="13" Margin="0,2,0,0"/></StackPanel>
+                        <StackPanel Margin="0,0,28,0" MinWidth="70"><TextBlock Text="状态" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"/><TextBlock Text="{Binding DetailRow.StatusText}" FontSize="13" Margin="0,2,0,0"/></StackPanel>
+                        <!-- R6：下次保养改为日历自定义（用户可自行指定；清空恢复按周期派生） -->
+                        <StackPanel MinWidth="250">
+                            <TextBlock FontSize="11" Foreground="{StaticResource TextSecondaryBrush}">
+                                <Run Text="下次保养（来源：" /><Run Text="{Binding NextMaintenanceSourceText, Mode=OneWay}" /><Run Text="）" />
+                            </TextBlock>
+                            <TextBlock Text="（仅「在用」设备可设置下次保养）" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                       Visibility="{Binding CannotEditNextMaintenance, Converter={StaticResource BoolToVis}}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                <hc:DatePicker SelectedDate="{Binding NextMaintenanceEdit, Mode=TwoWay}" Width="140" Height="28" FontSize="12"
+                                               IsEnabled="{Binding CanEditNextMaintenance}" />
+                                <Button Style="{StaticResource LinkButton}" Content="保存" FontSize="12" Margin="6,0,0,0"
+                                        Command="{Binding SaveNextMaintenanceCommand}" IsEnabled="{Binding CanEditNextMaintenance}" />
+                                <Button Style="{StaticResource LinkButton}" Content="恢复周期派生" FontSize="12" Margin="4,0,0,0"
+                                        Command="{Binding ClearNextMaintenanceCommand}" IsEnabled="{Binding CanEditNextMaintenance}" />
+                            </StackPanel>
+                        </StackPanel>
+                    </WrapPanel>
+                    <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,0,0,8">
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding SetDetailTabCommand}" CommandParameter="0">
+                            <StackPanel>
+                                <TextBlock Text="保养记录" FontSize="13" FontWeight="SemiBold"/>
+                                <Border Height="2" Background="{StaticResource PrimaryBrush}" CornerRadius="1" Margin="0,3,0,0" Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=0}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding SetDetailTabCommand}" CommandParameter="1" Margin="18,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="年检记录" FontSize="13" FontWeight="SemiBold"/>
+                                <Border Height="2" Background="{StaticResource PrimaryBrush}" CornerRadius="1" Margin="0,3,0,0" Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=1}"/>
+                            </StackPanel>
+                        </Button>
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding SetDetailTabCommand}" CommandParameter="2" Margin="18,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="故障记录" FontSize="13" FontWeight="SemiBold"/>
+                                <Border Height="2" Background="{StaticResource PrimaryBrush}" CornerRadius="1" Margin="0,3,0,0" Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=2}"/>
+                            </StackPanel>
+                        </Button>
+                        <!-- R6：自定义类型记录（登记类型解耦；保养/年检/故障三类走固定业务表） -->
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding SetDetailTabCommand}" CommandParameter="3" Margin="18,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="自定义类型记录" FontSize="13" FontWeight="SemiBold"/>
+                                <Border Height="2" Background="{StaticResource PrimaryBrush}" CornerRadius="1" Margin="0,3,0,0" Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=3}"/>
+                            </StackPanel>
+                        </Button>
+                        <!-- R8：状态留痕（t_device_status_log，含首次登记行） -->
+                        <Button Style="{StaticResource LinkButton}" Command="{Binding SetDetailTabCommand}" CommandParameter="4" Margin="18,0,0,0">
+                            <StackPanel>
+                                <TextBlock Text="状态留痕" FontSize="13" FontWeight="SemiBold"/>
+                                <Border Height="2" Background="{StaticResource PrimaryBrush}" CornerRadius="1" Margin="0,3,0,0" Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=4}"/>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
+                    <Grid Grid.Row="3" MinHeight="280" MaxHeight="320">
+                        <Border Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=0}">
+                            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding MaintenanceRecords}" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="日期" Width="96" Binding="{Binding MDate, StringFormat='{}{0:yyyy-MM-dd}'}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="结果" Width="64" Binding="{Binding Result}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="执行方" Width="110" Binding="{Binding VendorName}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="费用（元）" Width="90" Binding="{Binding Cost, StringFormat='{}{0:0.00}'}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="结果记录" Width="*" Binding="{Binding Content}" ElementStyle="{StaticResource GridCellText}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                        <Border Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=1}">
+                            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding InspectionRecords}" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="日期" Width="96" Binding="{Binding IDate, StringFormat='{}{0:yyyy-MM-dd}'}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="结果" Width="64" Binding="{Binding Result}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="执行方" Width="110" Binding="{Binding VendorName}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="费用（元）" Width="90" Binding="{Binding Cost, StringFormat='{}{0:0.00}'}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="不合格说明" Width="*" Binding="{Binding FailReason}" ElementStyle="{StaticResource GridCellText}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                        <Border Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=2}">
+                            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding FaultRecords}" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="故障单" Width="96" Binding="{Binding FaultNo}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="级别" Width="56" Binding="{Binding LevelText}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="状态" Width="64" Binding="{Binding StatusText}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="现象" Width="*" Binding="{Binding Symptom}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="报修时间" Width="100" Binding="{Binding FTime, StringFormat='{}{0:MM-dd HH:mm}'}" ElementStyle="{StaticResource GridCellText}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                        <!-- R6：自定义类型记录（管理员自定义类型的关联数据记录） -->
+                        <Border Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=3}">
+                            <Grid>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <!-- 内联表单：新增/编辑 -->
+                                <Border Grid.Row="0" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                                        BorderThickness="1" CornerRadius="6" Padding="10,8" Margin="0,0,0,8"
+                                        Visibility="{Binding IsCustomRecordForm, Converter={StaticResource BoolToVis}}">
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding CustomRecordFormTitle}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
+                                        <Grid Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="1.2*" /><ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="1*" /><ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="1*" /><ColumnDefinition Width="8" />
+                                                <ColumnDefinition Width="1*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="自定义类型名称" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <ComboBox Grid.Row="1" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" Height="28" FontSize="12"
+                                                          Text="{Binding CustomTypeName, UpdateSourceTrigger=PropertyChanged}" ItemsSource="{Binding CustomRecordTypes}"
+                                                          hc:InfoElement.Placeholder="如：清洁保养" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="记录日期" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <hc:DatePicker SelectedDate="{Binding CustomRDate, Mode=TwoWay}" Height="28" FontSize="12" Margin="0,2,0,0" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="4">
+                                                <TextBlock Text="结果" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <ComboBox SelectedValue="{Binding CustomResult, Mode=TwoWay}" SelectedValuePath="Content" Height="28" FontSize="12" Margin="0,2,0,0">
+                                                    <ComboBoxItem Content="合格" /><ComboBoxItem Content="不合格" /><ComboBoxItem Content="已完成" />
+                                                </ComboBox>
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="6">
+                                                <TextBlock Text="费用（元）/ 记录人" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <StackPanel Orientation="Horizontal" Margin="0,2,0,0">
+                                                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding CustomCostText, UpdateSourceTrigger=PropertyChanged}" Width="70" Height="28" FontSize="12" hc:InfoElement.Placeholder="0.00" />
+                                                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding CustomOperator, UpdateSourceTrigger=PropertyChanged}" Width="90" Height="28" FontSize="12" Margin="6,0,0,0" hc:InfoElement.Placeholder="记录人" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </Grid>
+                                        <Grid Margin="0,6,0,0">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" /><ColumnDefinition Width="8" /><ColumnDefinition Width="1*" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="记录内容" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <TextBox Style="{StaticResource HintTextBox}" Text="{Binding CustomContent, UpdateSourceTrigger=PropertyChanged}" Height="28" FontSize="12" Margin="0,2,0,0"
+                                                         hc:InfoElement.Placeholder="如：机房清洁、滤网更换" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Text="执行方（可选）" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <ComboBox SelectedValue="{Binding CustomVendorId, Mode=TwoWay}" SelectedValuePath="Id" DisplayMemberPath="Name"
+                                                          Height="28" FontSize="12" Margin="0,2,0,0" ItemsSource="{Binding Vendors}" />
+                                            </StackPanel>
+                                        </Grid>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                            <!-- R7：按钮高度需容纳样式内边距（16,8）+ 文本，否则文字被裁切/粘连 -->
+                                            <Button Style="{StaticResource ButtonSecondary}" Content="取消" Height="32" Padding="12,4" FontSize="13" Command="{Binding CancelCustomRecordCommand}" />
+                                            <Button Style="{StaticResource ButtonPrimary}" Content="保存记录" Height="32" Padding="12,4" FontSize="13" Margin="8,0,0,0" Command="{Binding SaveCustomRecordCommand}" />
+                                        </StackPanel>
+                                    </StackPanel>
+                                </Border>
+                                <Grid Grid.Row="1">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="*" />
+                                    </Grid.RowDefinitions>
+                                    <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                        <Button DockPanel.Dock="Right" Style="{StaticResource ButtonPrimary}" Content="＋新增自定义记录" Height="32" Padding="12,4" FontSize="13"
+                                                Command="{Binding OpenAddCustomRecordCommand}" />
+                                        <TextBlock Text="自定义类型记录用于承载管理员自定义类型的数据（年检/保养/故障请使用前三类固定记录）"
+                                                   FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+                                    </DockPanel>
+                                    <DataGrid Grid.Row="1" Style="{StaticResource GridStyle}" ItemsSource="{Binding CustomRecords}" IsReadOnly="True">
+                                        <DataGrid.Columns>
+                                            <DataGridTextColumn Header="类型" Width="108" Binding="{Binding TypeName}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="日期" Width="96" Binding="{Binding RDate, StringFormat='{}{0:yyyy-MM-dd}'}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="内容" Width="*" MinWidth="120" Binding="{Binding Content}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="结果" Width="64" Binding="{Binding Result}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="费用（元）" Width="80" Binding="{Binding Cost, StringFormat='{}{0:0.00}'}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="执行方" Width="96" Binding="{Binding VendorName}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTextColumn Header="记录人" Width="76" Binding="{Binding Operator}" ElementStyle="{StaticResource GridCellText}" />
+                                            <DataGridTemplateColumn Header="操作" Width="86">
+                                                <DataGridTemplateColumn.CellTemplate>
+                                                    <DataTemplate>
+                                                        <StackPanel Orientation="Horizontal">
+                                                            <Button Style="{StaticResource LinkButton}" Content="编辑" FontSize="12" Padding="3,2"
+                                                                    Command="{Binding DataContext.EditCustomRecordCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                                    CommandParameter="{Binding}" />
+                                                            <Button Style="{StaticResource LinkButton}" Content="删除" FontSize="12" Padding="3,2" Margin="6,0,0,0" Foreground="#D64545"
+                                                                    Command="{Binding DataContext.RequestDeleteCustomRecordCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                                    CommandParameter="{Binding}" />
+                                                        </StackPanel>
+                                                    </DataTemplate>
+                                                </DataGridTemplateColumn.CellTemplate>
+                                            </DataGridTemplateColumn>
+                                        </DataGrid.Columns>
+                                    </DataGrid>
+                                </Grid>
+                            </Grid>
+                        </Border>
+                        <!-- R8：状态留痕（原状态 → 新状态 + 原因） -->
+                        <Border Visibility="{Binding DetailTabIndex, Converter={StaticResource IntEqual}, ConverterParameter=4}">
+                            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding StatusLogs}" IsReadOnly="True">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="变更时间" Width="130" Binding="{Binding ChangedAtText}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="原状态" Width="80" Binding="{Binding OldStatusText}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="新状态" Width="80" Binding="{Binding NewStatusText}" ElementStyle="{StaticResource GridCellText}" />
+                                    <DataGridTextColumn Header="变更原因" Width="*" MinWidth="160" Binding="{Binding ReasonText}" ElementStyle="{StaticResource GridCellText}" />
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Border>
+                    </Grid>
+                    <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="编辑设备" Command="{Binding EditDetailCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="关闭" Command="{Binding CloseDetailCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </Border>
+        <!-- 删除设备类别 二次确认浮层（参照纠纷登记：被在册设备引用时后端拒绝删除） -->
+        <!-- R8：设备状态变更浮层（在用 / 维修中 / 停用 / 报废；停用与报废需填原因并写状态留痕） -->
+        <Grid Grid.RowSpan="9" Visibility="{Binding IsStatusChangeVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="设备状态变更" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding StatusChangeTitle}" FontSize="13" FontWeight="SemiBold" Margin="0,6,0,2" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Text="{Binding StatusChangeSub}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="变更为 *" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,12,0,0" />
+                    <ComboBox Height="32" Margin="0,4,0,10" ItemsSource="{Binding StatusTargetOptions}" SelectedItem="{Binding SelectedStatusTarget, Mode=TwoWay}" DisplayMemberPath="Text" />
+                    <TextBlock Text="变更原因（停用 / 报废必填）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Height="52" Margin="0,4,0,0" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                             Text="{Binding StatusChangeReason, UpdateSourceTrigger=PropertyChanged}"
+                             hc:InfoElement.Placeholder="如：年度停用检修 / 设备老化不可修复" />
+                    <TextBlock Text="{Binding StatusChangeError}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Text="· 报废为终态：报废后不可再改为在用 / 停用 / 维修中" FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,6,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelStatusChangeCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认变更" Command="{Binding ConfirmStatusChangeCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <Grid Grid.RowSpan="9" Visibility="{Binding IsTypeDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="380" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="删除设备类别" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Foreground="{StaticResource TextPrimaryBrush}" FontSize="13">
+                        <Run Text="确认删除设备类别「" /><Run Text="{Binding DeleteTypeName, Mode=OneWay}" /><Run Text="」？" />
+                    </TextBlock>
+                    <TextBlock Text="（若该类别下仍有在册设备，将无法删除并提示先转移设备）" FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteTypeCommand}" />
+                        <Button Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmDeleteTypeCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <!-- 批量删除 二次确认浮层（参照纠纷列表） -->
+        <Grid Grid.RowSpan="9" Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="批量删除设备" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding BatchConfirmText}" FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,22" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelBatchDeleteCommand}" />
+                        <Button Grid.Column="2" Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmBatchDeleteCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+        <!-- R6：删除自定义类型记录 二次确认浮层 -->
+        <Grid Grid.RowSpan="9" Visibility="{Binding IsCustomRecordDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="删除自定义类型记录" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding CustomRecordDeleteText}" FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,22" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteCustomRecordCommand}" />
+                        <Button Grid.Column="2" Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}"
+                                BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmDeleteCustomRecordCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

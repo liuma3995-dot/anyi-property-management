@@ -1,0 +1,176 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DeviceMaintainView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="3*" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="2*" MinWidth="300" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <!-- 左：登记表单 -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22,18">
+                <StackPanel>
+                    <TextBlock Text="保养 / 年检登记（UC-EQP-002/003）" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="选择设备" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <!-- 下拉内部自定义输入搜索：输入字符自动过滤并按「编号 · 名称 · 位置」排列候选 -->
+                            <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                      TextSearch.TextPath="Display"
+                                      SelectedItem="{Binding SelectedDeviceOption, Mode=TwoWay}" Height="32" Margin="0,6,0,0"
+                                      ItemsSource="{Binding DeviceView}" DisplayMemberPath="Display"
+                                      Text="{Binding DeviceSearch, UpdateSourceTrigger=PropertyChanged}"
+                                      hc:InfoElement.Placeholder="输入编号 / 名称 / 位置检索" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="登记类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <!-- R6：登记类型固定为系统内置 保养 / 年检（不可自定义增删）；自定义类型记录改挂设备查看浮层 -->
+                            <ComboBox Margin="0,6,0,0" Height="32" FontSize="12" SelectedItem="{Binding SelectedRecordType, Mode=TwoWay}"
+                                      DisplayMemberPath="Name" ItemsSource="{Binding RecordTypeOptions}" />
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="执行日期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <hc:DatePicker SelectedDate="{Binding Date, Mode=TwoWay}" Height="32" Margin="0,6,0,0" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="执行人 / 单位" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <!-- 执行人 / 单位：自定义新增 / 删除（参照纠纷登记类型下拉） -->
+                            <Grid Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <ComboBox Grid.Column="0" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                          SelectedValue="{Binding VendorId}" SelectedValuePath="Id" DisplayMemberPath="Name" Height="32" FontSize="12" ItemsSource="{Binding Vendors}" />
+                                <Button Grid.Column="1" Style="{StaticResource LinkButton}" Content="＋新增" Command="{Binding OpenNewVendorCommand}" VerticalAlignment="Center" Margin="6,0,0,0" FontSize="12" />
+                                <Button Grid.Column="2" Style="{StaticResource LinkButton}" Content="删除" Command="{Binding RequestDeleteVendorCommand}" Foreground="#D64545" VerticalAlignment="Center" Margin="4,0,0,0" FontSize="12" />
+                            </Grid>
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0" Visibility="{Binding IsVendorAdd, Converter={StaticResource BoolToVis}}">
+                                <TextBox Style="{StaticResource HintTextBox}" Text="{Binding NewVendorName, UpdateSourceTrigger=PropertyChanged}" Width="170" hc:InfoElement.Placeholder="输入执行单位名称" />
+                                <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding ConfirmNewVendorCommand}" Height="32" Margin="6,0,0,0" FontSize="12" />
+                                <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelNewVendorCommand}" Height="32" Margin="6,0,0,0" FontSize="12" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="检测结果" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <!-- 修复 P0：内联 ComboBoxItem 需 SelectedValuePath="Content"，否则 SelectedValue 是 ComboBoxItem 对象，"不合格"永远选不上 -->
+                            <ComboBox SelectedValue="{Binding Result}" SelectedValuePath="Content" Height="32" Margin="0,6,0,0">
+                                <ComboBoxItem Content="合格" /><ComboBoxItem Content="不合格" />
+                            </ComboBox>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="费用（元）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <Grid Height="32" Margin="0,6,0,0">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0" Style="{StaticResource HintTextBox}" Text="{Binding CostText, UpdateSourceTrigger=PropertyChanged}" hc:InfoElement.Placeholder="0.00" />
+                                <TextBlock Grid.Column="1" Text="（合同内）" FontSize="11" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="6,0,0,0" />
+                            </Grid>
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="结果记录" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}" Height="52" AcceptsReturn="True" TextWrapping="Wrap" Margin="0,6,0,10" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" hc:InfoElement.Placeholder="如：主备泵切换正常，压力表读数 0.6MPa，阀门无渗漏" />
+                    <TextBlock Text="不合格说明（检测结果为「不合格」时必填，必填后保存自动转维修）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FailReason, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,10" hc:InfoElement.Placeholder="如：压力表读数偏低，需更换压力开关" />
+                    <!-- 附件行：降级说明（附件上传全链路未接入 t_attachment） -->
+                    <Border Height="40" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6" Padding="12,0" Margin="0,0,0,10">
+                        <StackPanel Orientation="Vertical" VerticalAlignment="Center">
+                            <TextBlock Text="附件：保养报告.pdf · 现场照片 3 张" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Text="（附件上传暂未接入，当前为展示占位）" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" />
+                    <!-- 操作反馈（登记类型/执行单位新增、删除结果） -->
+                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="12" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存登记" Command="{Binding SaveCommand}" />
+                        <Button Height="32" MinWidth="150" FontSize="13" Background="{StaticResource WarningBrush}" Foreground="White" BorderThickness="0" Content="检测不合格 → 转维修" Command="{Binding SaveUnqualifiedCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <!-- 右：设备卡（所选设备信息 + 最近登记） -->
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="22,18">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                        <Border Width="40" Height="40" CornerRadius="8" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1">
+                            <TextBlock Text="设" FontSize="16" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <StackPanel Margin="12,0,0,0" VerticalAlignment="Center">
+                            <TextBlock Text="{Binding SelectedDevice.Name}" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                            <TextBlock Text="{Binding SelectedDeviceText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,2,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                    <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,1,0,0" Padding="0,12,0,0">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="上次保养" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding LastMaintenanceText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                            <Grid>
+                                <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                                <TextBlock Text="年检到期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding InspectionDueText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" TextAlignment="Right" TextTrimming="CharacterEllipsis" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                    <TextBlock Text="最近登记" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,16,0,8" />
+                    <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                        <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding RecentRecords}" IsReadOnly="True" MaxHeight="300">
+                            <DataGrid.Columns>
+                                <!-- 日期列原 86px 减去单元格内边距后不足以容纳 yyyy-MM-dd（时间被裁切），加宽并设最小宽度 -->
+                                <DataGridTextColumn Header="日期" Width="108" MinWidth="104" Binding="{Binding DateText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="类型" Width="Auto" MinWidth="64" Binding="{Binding TypeText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="结果" Width="Auto" MinWidth="48" Binding="{Binding ResultText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="执行方" Width="*" MinWidth="80" Binding="{Binding VendorText}" ElementStyle="{StaticResource GridCellText}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </StackPanel>
+            </Border>
+            <!-- 交互标注（原型 PG-EQP-02 底部） -->
+            <Border Grid.Row="2" Grid.ColumnSpan="3" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                        <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="·【检测结果 = 不合格】→ 必填不合格说明，保存后自动转维修（生成 WX 故障单，设备转「维修中」）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="· 合格登记完成后：按「登记日期 + 保养周期」更新下次保养，并自动闭环对应到期提醒、顺延下一周期" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <TextBlock Text="· 登记类型固定为系统「保养 / 年检」（不可增删）；自定义类型记录请在「设备列表 → 查看 → 自定义类型记录」维护" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+        <!-- 删除执行单位 二次确认浮层 -->
+        <Grid Visibility="{Binding IsVendorDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="380" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="删除执行人 / 单位" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Foreground="{StaticResource TextPrimaryBrush}" FontSize="13">
+                        <Run Text="确认删除执行单位「" /><Run Text="{Binding DeleteVendorName, Mode=OneWay}" /><Run Text="」？" />
+                    </TextBlock>
+                    <TextBlock Text="（历史保养 / 年检记录保留该单位名称，删除后下拉不再展示）" FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteVendorCommand}" />
+                        <Button Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmDeleteVendorCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

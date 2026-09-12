@@ -1,0 +1,163 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DeviceFaultView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <Grid Margin="16">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="1*" MinWidth="500" />
+                <ColumnDefinition Width="16" />
+                <ColumnDefinition Width="1.22*" MinWidth="460" />
+            </Grid.ColumnDefinitions>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <!-- 左：故障登记表单 -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22,18">
+                <StackPanel>
+                    <TextBlock Text="故障登记（UC-EQP-004）" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.9*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="故障设备" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <!-- 下拉内部自定义输入搜索：输入字符自动过滤并按「编号 · 名称 · 位置」排列候选 -->
+                            <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                      TextSearch.TextPath="Display"
+                                      SelectedItem="{Binding SelectedDeviceOption, Mode=TwoWay}" Height="32" Margin="0,6,0,0"
+                                      ItemsSource="{Binding DeviceView}" DisplayMemberPath="Display"
+                                      Text="{Binding DeviceSearch, UpdateSourceTrigger=PropertyChanged}"
+                                      hc:InfoElement.Placeholder="输入编号 / 名称 / 位置检索" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="故障级别" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox SelectedIndex="{Binding Level, Mode=TwoWay}" Height="32" Margin="0,6,0,0">
+                                <ComboBoxItem Content="一般（影响部分功能）" /><ComboBoxItem Content="重大（影响安全）" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+                    <Grid Margin="0,0,0,10">
+                        <Grid.ColumnDefinitions><ColumnDefinition Width="1.9*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="1*"/></Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="发现人" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Style="{StaticResource HintTextBox}" Text="{Binding Reporter, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" hc:InfoElement.Placeholder="如：保安 · 李伟（巡查）" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="发现时间（默认当前，可改）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FTimeText, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,0" hc:InfoElement.Placeholder="yyyy-MM-dd HH:mm" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="故障描述" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Style="{StaticResource HintTextBox}" Text="{Binding FaultDesc, UpdateSourceTrigger=PropertyChanged}" Height="66" AcceptsReturn="True" TextWrapping="Wrap" Margin="0,6,0,10" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" hc:InfoElement.Placeholder="如：摄像头画面黑屏，重启无效，影响 2 栋东南侧周界监控" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存故障单" Command="{Binding SaveCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+            <!-- 右：进行中 / 最近故障 -->
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="22,18">
+                <StackPanel>
+                    <TextBlock Text="进行中 / 最近故障" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8" />
+                    <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                        <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding RecentFaults}" IsReadOnly="True" MaxHeight="520">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="故障单" Width="100" Binding="{Binding FaultNoText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- 设备单元格：悬浮显示设备/级别/状态与处理结果（面板宽度有限，明细由 ToolTip 承载） -->
+                                <DataGridTextColumn Header="设备" Width="*" MinWidth="120" Binding="{Binding DeviceText}">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                            <Setter Property="ToolTip" Value="{Binding RowTip}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTemplateColumn Header="级别" Width="54">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding LevelBg}" CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-6,0,0,0">
+                                                <TextBlock Text="{Binding LevelText}" Foreground="{Binding LevelFg}" FontSize="11" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="状态" Width="68">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding StatusBg}" CornerRadius="4" Padding="7,2" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="-7,0,0,0">
+                                                <TextBlock Text="{Binding StatusText}" Foreground="{Binding StatusFg}" FontSize="11" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="报修时间" Width="96" Binding="{Binding FTimeText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- 操作：手动状态流转（R5）——生成工单（Excel 派工单，转维修中）/ 维修完成（已修复 + 设备回在用） -->
+                                <DataGridTemplateColumn Header="操作" Width="82">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                <Button Style="{StaticResource LinkButton}" Content="生成工单" FontSize="12" Padding="3,2"
+                                                        ToolTip="生成 Excel 维修派工单（保存到「文档」），故障转「维修中」并同步设备状态"
+                                                        Command="{Binding DataContext.GenerateWorkOrderCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding ShowDispatch, Converter={StaticResource BoolToVis}}" />
+                                                <Button Style="{StaticResource LinkButton}" Content="维修完成" FontSize="12" Padding="3,2"
+                                                        ToolTip="线下维修完成后回填原因/处理结果，故障置「已修复」并同步设备状态回「在用」"
+                                                        Command="{Binding DataContext.OpenRepairDoneCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                        CommandParameter="{Binding}"
+                                                        Visibility="{Binding ShowRepairDone, Converter={StaticResource BoolToVis}}" />
+                                                <TextBlock Text="—" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center"
+                                                           Visibility="{Binding ShowNoAction, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                </StackPanel>
+            </Border>
+            <!-- 交互标注（原型 PG-EQP-03 右侧） -->
+            <Border Grid.Row="2" Grid.ColumnSpan="3" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                        <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="·【保存故障单】→ 生成 WX 编号并置「待接单」，设备同步转为「维修中」" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="· 右表【生成工单】→ 生成 Excel 维修派工单（保存到「文档」，可打印 / 线下回填）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <TextBlock Text="· 右表【维修完成】→ 回填故障原因与处理结果后故障置「已修复」；设备无其它未闭环故障时自动回到「在用」" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+
+    <!-- 维修完成浮层（R5 闭环：补录原因/处理结果 → 已修复 + 设备回在用） -->
+    <Grid Visibility="{Binding IsRepairDoneVisible, Converter={StaticResource BoolToVis}}">
+        <Border Background="#66000000" />
+        <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+            <StackPanel>
+                <TextBlock Text="维修完成确认" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                <TextBlock Text="{Binding RepairDoneTitle}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,8,0,14" />
+                <TextBlock Text="故障原因（可修改/留空）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <TextBox Style="{StaticResource HintTextBox}" Text="{Binding RepairCause, UpdateSourceTrigger=PropertyChanged}" Margin="0,6,0,12"
+                         hc:InfoElement.Placeholder="如：接触不良 / 元器件老化" />
+                <TextBlock Text="处理结果（必填）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <TextBox Style="{StaticResource HintTextBox}" Text="{Binding RepairHandle, UpdateSourceTrigger=PropertyChanged}" Height="72" AcceptsReturn="True"
+                         TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" VerticalContentAlignment="Top" Margin="0,6,0,0"
+                         hc:InfoElement.Placeholder="如：重新接线并测试通过，设备恢复正常运行" />
+                <TextBlock Text="{Binding RepairErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" />
+                <TextBlock Text="确认后：故障单置「已修复」，设备状态自动同步回「在用」（仍有其它未闭环故障的设备保持维修中）。"
+                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,10,0,0" />
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                    <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelRepairDoneCommand}" />
+                    <Button Style="{StaticResource ButtonPrimary}" Content="确认维修完成" Command="{Binding ConfirmRepairDoneCommand}" Margin="10,0,0,0" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Grid>
+    </Grid>
+</UserControl>
