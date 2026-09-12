@@ -3,6 +3,58 @@
                     xmlns:hc="https://handyorg.github.io/handycontrol">
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
+    <!-- 表格勾选框（R13 批量删除选择）：HandyControl 默认勾选框样式在本应用不可见，显式定义方框 + 勾号 -->
+    <!-- 勾选框列专用单元格：去内边距，保证窄窗口压缩时勾选框仍可见可点（默认单元格左右各 12px 内边距会把列压空） -->
+    <Style x:Key="GridCheckCell" TargetType="DataGridCell">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="DataGridCell">
+                    <Border Background="Transparent">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="GridCheckBox" TargetType="CheckBox">
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="CheckBox">
+                    <StackPanel Orientation="Horizontal">
+                        <Border x:Name="Box" Width="16" Height="16" Background="#FFFFFF"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="4">
+                            <Path x:Name="Check" Data="{StaticResource Icon.Check}" Stroke="White" StrokeThickness="2"
+                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"
+                                  Fill="Transparent" Stretch="Uniform" Width="10" Height="10" Visibility="Collapsed" />
+                        </Border>
+                        <ContentPresenter Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Box" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            <Setter TargetName="Check" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Box" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter TargetName="Box" Property="Opacity" Value="0.5" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <Style x:Key="GridStyle" TargetType="DataGrid">
         <Setter Property="AutoGenerateColumns" Value="False" />
         <Setter Property="HeadersVisibility" Value="Column" />
@@ -67,7 +119,7 @@
                     <Setter Property="Template">
                         <Setter.Value>
                             <ControlTemplate TargetType="DataGridCell">
-                                <Border Background="Transparent" Padding="{TemplateBinding Padding}" VerticalAlignment="Center">
+                                <Border Background="Transparent" Padding="{TemplateBinding Padding}">
                                     <ContentPresenter VerticalAlignment="Center" />
                                 </Border>
                             </ControlTemplate>
@@ -100,6 +152,50 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter TargetName="Bg" Property="Background" Value="#EAF3FF" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 普通输入框（含可见文字提示）：下拉/日期同款圆角描边；hc:InfoElement.Placeholder 占位文案灰显，
+         多行输入框显式设置 VerticalContentAlignment="Top" 使提示与正文顶部对齐 -->
+    <Style x:Key="HintTextBox" TargetType="TextBox">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="Padding" Value="10,0" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="Background" Value="{StaticResource SurfaceBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CaretBrush" Value="{StaticResource PrimaryBrush}" />
+        <!-- 文字操作提示同步暴露给辅助功能（读屏）与自动化校验 -->
+        <Setter Property="AutomationProperties.HelpText"
+                Value="{Binding Path=(hc:InfoElement.Placeholder), RelativeSource={RelativeSource Self}}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TextBox">
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6">
+                        <Grid>
+                            <TextBlock x:Name="PART_Placeholder"
+                                       Text="{Binding Path=(hc:InfoElement.Placeholder), RelativeSource={RelativeSource TemplatedParent}}"
+                                       Foreground="{StaticResource TextMutedBrush}" FontSize="12"
+                                       VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                       Margin="{TemplateBinding Padding}" TextTrimming="CharacterEllipsis"
+                                       IsHitTestVisible="False" Visibility="Collapsed" />
+                            <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Text" Value="">
+                            <Setter TargetName="PART_Placeholder" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                        <Trigger Property="Text" Value="{x:Null}">
+                            <Setter TargetName="PART_Placeholder" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>

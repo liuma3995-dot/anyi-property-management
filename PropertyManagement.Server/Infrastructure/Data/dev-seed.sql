@@ -14,9 +14,9 @@ SELECT id, '1号楼', 6 FROM t_community WHERE name = '澜庭小区';
 INSERT OR IGNORE INTO t_unit (building_id, unit_no)
 SELECT id, '1单元' FROM t_building WHERE building_no = '1号楼';
 
--- 房产 8 套（UNIQUE(unit_id, room_no) 幂等）
-INSERT OR IGNORE INTO t_property (unit_id, room_no, area, usage, status)
-SELECT u.id, r.room, r.area, 0, 1
+-- 房产 8 套（幂等：unit_id + room_no 去重；building_id 由单元所属楼栋带出）
+INSERT OR IGNORE INTO t_property (building_id, unit_id, room_no, area, usage, status)
+SELECT u.building_id, u.id, r.room, r.area, 0, 1
 FROM t_unit u
 JOIN (
     SELECT '101' room, 88.50 area UNION ALL SELECT '102', 82.30
@@ -183,3 +183,127 @@ UPDATE t_dict_item SET remark = '㎡'   WHERE type_code = 'charge_method' AND it
 UPDATE t_dict_item SET remark = '户'   WHERE type_code = 'charge_method' AND item_code IN ('house','share','onetime');
 UPDATE t_dict_item SET remark = '车位' WHERE type_code = 'charge_method' AND item_code = 'parking';
 UPDATE t_dict_item SET remark = ''    WHERE type_code = 'charge_method' AND item_code = 'step';
+
+-- ============================================================
+-- 设备资产台账（PG-EQP-01~04）演示基线
+-- 目的：设备列表 / 保养年检登记 / 故障登记 / 到期提醒 四页具备可演示、可验收数据
+-- 说明：全部幂等（NOT EXISTS 守卫）；仅 DevSeedEnabled=true 的开发机执行
+-- ============================================================
+
+-- 1) 设备类型：原型 8 大类（BR-EQP-05 类型可扩展；含 P-04 默认保养周期）
+INSERT INTO t_device_type (name, maintenance_cycle, status, del_flag)
+SELECT v.name, v.cycle, 0, 0 FROM (
+    SELECT '电梯' AS name, 90 AS cycle UNION ALL
+    SELECT '消防', 90 UNION ALL
+    SELECT '给排水', 90 UNION ALL
+    SELECT '门禁', 180 UNION ALL
+    SELECT '安防', 180 UNION ALL
+    SELECT '供配电', 180 UNION ALL
+    SELECT '暖通', 180 UNION ALL
+    SELECT '照明', 365) v
+WHERE NOT EXISTS (SELECT 1 FROM t_device_type t WHERE t.name = v.name);
+
+-- migration_019 遗留演示类型若无在册设备则停用，保持类别下拉与原型 8 大类一致
+UPDATE t_device_type SET status = 1
+WHERE del_flag = 0 AND status = 0 AND name IN ('客梯', '消防设施', '水泵', '监控系统')
+  AND NOT EXISTS (SELECT 1 FROM t_device d WHERE d.type_id = t_device_type.id AND d.del_flag = 0);
+
+-- 2) 维保单位（BR-EQP-06 可复用，与设备/支出关联）
+INSERT INTO t_vendor (name, contact, phone, del_flag)
+SELECT v.name, v.contact, v.phone, 0 FROM (
+    SELECT '迅达电梯维保' AS name, '马师傅' AS contact, '13900001122' AS phone UNION ALL
+    SELECT '消防设施维保', '高工', '13900002233' UNION ALL
+    SELECT '安泰消防', '陈工', '13900003344' UNION ALL
+    SELECT '水务设备维保', '刘师傅', '13900004455' UNION ALL
+    SELECT '物业工程部', '王工', '13900006789') v
+WHERE NOT EXISTS (SELECT 1 FROM t_vendor t WHERE t.name = v.name AND t.del_flag = 0);
+
+-- 3) 设备台账（显式编号对齐原型 EQP-xxxx；品牌型号/投运日期/质保/合同到期）
+INSERT INTO t_device (id, type_id, name, location, status, enable_date, brand_model, warranty_end, contract_end, maintenance_cycle_override, del_flag, created_at, updated_at)
+SELECT v.id, (SELECT id FROM t_device_type WHERE name = v.type_name LIMIT 1), v.name, v.location, v.status, v.enable_date, v.brand_model,
+       CASE WHEN v.warranty_days IS NULL THEN NULL ELSE date('now', 'localtime', '+' || v.warranty_days || ' days') END,
+       CASE WHEN v.contract_days IS NULL THEN NULL ELSE date('now', 'localtime', '+' || v.contract_days || ' days') END,
+       v.cycle_override, 0, datetime('now', 'localtime'), datetime('now', 'localtime')
+FROM (
+    SELECT  9 AS id, '电梯' AS type_name, '老扶梯（已封存）' AS name, '商业裙房' AS location, 2 AS status, '2012-04-10' AS enable_date, '三菱 / J 系列' AS brand_model, NULL AS warranty_days, NULL AS contract_days, NULL AS cycle_override UNION ALL
+    SELECT 42, '门禁', '东门道闸', '小区东门', 0, '2021-07-01', '捷顺 / JSD40', NULL, NULL, NULL UNION ALL
+    SELECT 63, '供配电', '发电机组', '配电房 B1', 0, '2019-05-18', '康明斯 / C90', NULL, NULL, NULL UNION ALL
+    SELECT 87, '电梯', '3 单元客梯', '3栋3单元', 0, '2019-05-20', '迅达 / S3300', 120, NULL, 180 UNION ALL
+    SELECT 102, '消防', '消防泵组', '泵房 B1', 0, '2019-05-18', '正压 / XBD6', NULL, 45, NULL UNION ALL
+    SELECT 115, '给排水', '二次供水泵 2#', '泵房 B1', 1, '2020-03-11', '南方 / CDL32', 33, NULL, NULL UNION ALL
+    SELECT 128, '安防', '监控摄像头 N23', '2栋周界', 1, '2022-01-15', '海康 / DS-2CD3', NULL, NULL, NULL UNION ALL
+    SELECT 140, '照明', '园区路灯回路 A', '园区主干道', 0, '2021-09-01', '亚明 / LED-120W', NULL, NULL, NULL UNION ALL
+    SELECT 151, '暖通', '中央空调机组', '裙房屋顶', 1, '2021-03-15', '格力 / LSBLG', NULL, NULL, NULL) v
+WHERE NOT EXISTS (SELECT 1 FROM t_device d WHERE d.id = v.id);
+
+-- 4) 设备状态留痕（BR-EQP-01 只追加）
+INSERT INTO t_device_status_log (device_id, old_status, new_status, reason)
+SELECT v.device_id, v.old_status, v.new_status, v.reason FROM (
+    SELECT  9 AS device_id, 0 AS old_status, 2 AS new_status, '设备封存停用' AS reason UNION ALL
+    SELECT 102, -1, 0, '登记' UNION ALL
+    SELECT 115, 0, 1, '年检不合格转维修' UNION ALL
+    SELECT 128, 0, 1, '故障未修复' UNION ALL
+    SELECT 151, 0, 1, '故障未修复') v
+WHERE EXISTS (SELECT 1 FROM t_device d WHERE d.id = v.device_id)
+  AND NOT EXISTS (SELECT 1 FROM t_device_status_log l
+                  WHERE l.device_id = v.device_id AND l.new_status = v.new_status AND COALESCE(l.reason, '') = v.reason);
+
+-- 5) 保养记录（P-04：下次保养 = 最近保养日期 + 周期，登记即顺延）
+INSERT INTO t_maintenance_record (device_id, vendor_id, m_date, content, result, cost)
+SELECT v.device_id, (SELECT id FROM t_vendor WHERE name = v.vendor AND del_flag = 0 LIMIT 1), date('now', 'localtime', v.offset), v.content, '合格', v.cost
+FROM (
+    SELECT 102 AS device_id, '安泰消防' AS vendor, '-79 days' AS offset, '主备泵切换正常，压力表读数 0.6MPa，阀门无渗漏，更换润滑脂 1 支。' AS content, 350.00 AS cost UNION ALL
+    SELECT 87, '迅达电梯维保', '-162 days', '季度保养：门机与层门间隙调整，曳引机润滑，平层精度复核合格。', 900.00 UNION ALL
+    SELECT 42, '物业工程部', '-155 days', '道闸起落杆限位校准，齿轮油补充，遥控与地感联动测试正常。', 120.00 UNION ALL
+    SELECT 63, '物业工程部', '-75 days', '发电机组空载试机 30 分钟，更换机油与滤芯，蓄电池电压正常。', 480.00 UNION ALL
+    SELECT 140, '物业工程部', '-165 days', '园区路灯回路 A 绝缘检测，更换故障灯头 3 只。', 260.00 UNION ALL
+    SELECT 151, '物业工程部', '-70 days', '冷媒压力检测与补充，冷凝器清洗，风机皮带张紧度调整。', 420.00) v
+WHERE EXISTS (SELECT 1 FROM t_device d WHERE d.id = v.device_id AND d.del_flag = 0)
+  AND NOT EXISTS (SELECT 1 FROM t_maintenance_record m WHERE m.device_id = v.device_id);
+
+-- 6) 年检记录（BR-EQP-02：年检按年度，下次年检 = 最近年检 + 1 年）
+INSERT INTO t_inspection_record (device_id, vendor_id, i_date, result, cost)
+SELECT v.device_id, (SELECT id FROM t_vendor WHERE name = v.vendor AND del_flag = 0 LIMIT 1), date('now', 'localtime', v.offset), '合格', v.cost
+FROM (
+    SELECT 102 AS device_id, '消防设施维保' AS vendor, '-103 days' AS offset, 800.00 AS cost UNION ALL
+    SELECT 9, '消防设施维保', '-383 days', 600.00 UNION ALL
+    SELECT 42, '物业工程部', '-150 days', 200.00 UNION ALL
+    SELECT 63, '物业工程部', '-150 days', 300.00 UNION ALL
+    SELECT 87, '迅达电梯维保', '-200 days', 1200.00 UNION ALL
+    SELECT 115, '水务设备维保', '-150 days', 300.00 UNION ALL
+    SELECT 128, '物业工程部', '-150 days', 150.00 UNION ALL
+    SELECT 140, '物业工程部', '-150 days', 150.00 UNION ALL
+    SELECT 151, '物业工程部', '-100 days', 400.00) v
+WHERE EXISTS (SELECT 1 FROM t_device d WHERE d.id = v.device_id AND d.del_flag = 0)
+  AND NOT EXISTS (SELECT 1 FROM t_inspection_record i WHERE i.device_id = v.device_id);
+
+-- 7) 应急事件（PG-EQP-03 关联应急下拉 + 故障单 EM 弱关联）
+INSERT INTO t_emergency_event (scene_id, event_time, location, description, status, step_version, record_pending, del_flag, event_no, level, detail_location)
+SELECT (SELECT id FROM t_emergency_scene WHERE name = v.scene LIMIT 1), v.event_time, v.location, v.description,
+       v.status, 'v1', 0, 0, v.event_no, v.level, v.location
+FROM (
+    SELECT '电梯困人' AS scene, date('now', 'localtime', '-14 days') || ' 06:40' AS event_time, '3栋3单元' AS location,
+           '客梯 3 单元运行中急停，2 人被困 6 层，维保到场盘车放人。' AS description, 2 AS status,
+           'EM-' || replace(substr(date('now', 'localtime'), 3, 5), '-', '') || '-10' AS event_no, 1 AS level UNION ALL
+    SELECT '火灾', date('now', 'localtime', '-30 days') || ' 14:26', '1栋2单元',
+           '巡逻发现楼梯间有烟雾，疑似配电井过热，无明火。', 2,
+           'EM-' || replace(substr(date('now', 'localtime'), 3, 5), '-', '') || '-11', 2) v
+WHERE EXISTS (SELECT 1 FROM t_emergency_scene WHERE name = v.scene)
+  AND NOT EXISTS (SELECT 1 FROM t_emergency_event e WHERE e.event_no = v.event_no);
+
+-- 8) 故障记录（BR-EQP-04；状态 0 待接单 / 1 维修中 / 2 已修复；WX-yyMM-序号）
+INSERT INTO t_fault_record (device_id, event_id, f_time, symptom, cause, handle, fault_no, level, reporter, status)
+SELECT v.device_id, (SELECT id FROM t_emergency_event WHERE event_no = v.event_no LIMIT 1), v.f_time, v.symptom, v.cause, v.handle,
+       'WX-' || replace(substr(date('now', 'localtime'), 3, 5), '-', '') || v.seq, v.level, v.reporter, v.status
+FROM (
+    SELECT 128 AS device_id, NULL AS event_no, date('now', 'localtime', '-14 days') || ' 06:55' AS f_time,
+           '摄像头画面黑屏，重启无效，初步判断供电线路或机芯故障，影响 2 栋东南侧周界监控。' AS symptom,
+           '' AS cause, '' AS handle, '-05' AS seq, 0 AS level, '保安 · 李伟（巡查）' AS reporter, 0 AS status UNION ALL
+    SELECT 151, NULL, date('now', 'localtime', '-19 days') || ' 10:12',
+           '中央空调机组压缩机异响，制冷量下降，疑似冷媒泄漏或压缩机故障。', '', '', '-03', 0, '工程值班 · 陈勇', 1 UNION ALL
+    SELECT 115, NULL, date('now', 'localtime', '-43 days') || ' 15:03',
+           '二次供水泵 2# 压力波动，运行噪声偏大。', '轴承磨损', '更换轴承并调试，运行恢复正常。', '-11', 0, '工程值班 · 陈勇', 2 UNION ALL
+    SELECT 87, 'EM-' || replace(substr(date('now', 'localtime'), 3, 5), '-', '') || '-10', date('now', 'localtime', '-61 days') || ' 08:47',
+           '客梯 3 单元运行中急停，2 人被困 6 层。', '门锁触点氧化接触不良', '维保到场盘车放人，更换门锁触点，试运行正常。', '-08', 1, '监控中心 · 刘芳', 2) v
+WHERE EXISTS (SELECT 1 FROM t_device d WHERE d.id = v.device_id AND d.del_flag = 0)
+  AND NOT EXISTS (SELECT 1 FROM t_fault_record f WHERE f.device_id = v.device_id);

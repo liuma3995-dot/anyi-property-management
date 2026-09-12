@@ -32,6 +32,8 @@ namespace PropertyManagement.Server.Infrastructure.Data
         public static string LogDirectory => Path.Combine(RootDirectory, "logs");
         public static string BackupDirectory => Path.Combine(RootDirectory, "backups");
         public static string ExportDirectory => Path.Combine(RootDirectory, "exports");
+        /// <summary>附件物理存储根目录（data/attachments；纠纷扫描件在 dispute\{caseId}\ 下）。</summary>
+        public static string AttachmentsDirectory => Path.Combine(DataDirectory, "attachments");
         public static string ConfigDirectory => Path.Combine(RootDirectory, "config");
 
         public static string DatabaseFile => Path.Combine(DataDirectory, "property.db");
@@ -50,6 +52,7 @@ namespace PropertyManagement.Server.Infrastructure.Data
                 LogDirectory,
                 BackupDirectory,
                 ExportDirectory,
+                AttachmentsDirectory,
                 ConfigDirectory
             };
 

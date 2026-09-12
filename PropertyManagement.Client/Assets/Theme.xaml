@@ -4,6 +4,8 @@
 
     <!-- M3 修版设计令牌（对齐前端原型 v1.0 / quanju.pen variables，2026-08-31） -->
     <SolidColorBrush x:Key="PrimaryBrush" Color="#2B7DE9" />
+    <!-- 主色深一档（页签选中态悬停：保持白字可读的对比度） -->
+    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#1B62BF" />
     <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#1F6FD4" />
     <SolidColorBrush x:Key="PrimarySoftBrush" Color="#EAF3FF" />
     <SolidColorBrush x:Key="NavyBrush" Color="#12345B" />
@@ -21,6 +23,7 @@
     <SolidColorBrush x:Key="DangerBrush" Color="#D64545" />
     <SolidColorBrush x:Key="DangerSoftBrush" Color="#FDECEC" />
     <SolidColorBrush x:Key="InfoBrush" Color="#7A5AF8" />
+    <SolidColorBrush x:Key="InfoSoftBrush" Color="#F1EDFD" />
     <SolidColorBrush x:Key="TrackBrush" Color="#E7EEF7" />
     <SolidColorBrush x:Key="OnlineBrush" Color="#36C993" />
     <SolidColorBrush x:Key="NavIconBrush" Color="#B8CBE0" />
@@ -441,6 +444,4 @@
     </Style>
 
 </ResourceDictionary>
-
-
 

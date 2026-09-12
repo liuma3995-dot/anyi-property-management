@@ -164,6 +164,74 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Views\EmployeeListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ScheduleView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\AttendanceView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\PhoneQueryView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\PhoneEntryMaintainView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DisputeListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DisputeCreateView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DisputeHandleView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\EmergencySceneStepView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DeviceListView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DeviceMaintainView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DeviceFaultView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DeviceReminderView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\DictParamView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\BackupView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\AuditLogView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Include="Views\ChangePasswordPageView.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs">
@@ -198,6 +266,9 @@
     <Compile Include="ViewModels\NavNode.cs" />
     <Compile Include="ViewModels\IconKeyConverter.cs" />
     <Compile Include="Converters\IntEqualsConverter.cs" />
+    <Compile Include="Converters\ShiftLegendConverter.cs" />
+    <Compile Include="Converters\BindingProxy.cs" />
+    <Compile Include="Converters\StringToVisibilityConverter.cs" />
     <Compile Include="Services\ClientPrefs.cs" />
     <Compile Include="ViewModels\LoginViewModel.cs" />
     <Compile Include="ViewModels\PlaceholderViewModel.cs" />
@@ -241,6 +312,23 @@
     <Compile Include="ViewModels\OwnerRelationViewModel.cs" />
     <Compile Include="ViewModels\ParkingViewModel.cs" />
     <Compile Include="ViewModels\DataImportViewModel.cs" />
+    <Compile Include="ViewModels\EmployeeListViewModel.cs" />
+    <Compile Include="ViewModels\ScheduleViewModel.cs" />
+    <Compile Include="ViewModels\AttendanceViewModel.cs" />
+    <Compile Include="ViewModels\PhoneQueryViewModel.cs" />
+    <Compile Include="ViewModels\PhoneEntryMaintainViewModel.cs" />
+    <Compile Include="ViewModels\DisputeListViewModel.cs" />
+    <Compile Include="ViewModels\DisputeCreateViewModel.cs" />
+    <Compile Include="ViewModels\DisputeHandleViewModel.cs" />
+    <Compile Include="ViewModels\EmergencySceneStepViewModel.cs" />
+    <Compile Include="ViewModels\DeviceListViewModel.cs" />
+    <Compile Include="ViewModels\DeviceMaintainViewModel.cs" />
+    <Compile Include="ViewModels\DeviceFaultViewModel.cs" />
+    <Compile Include="ViewModels\DeviceReminderViewModel.cs" />
+    <Compile Include="ViewModels\DictParamViewModel.cs" />
+    <Compile Include="ViewModels\BackupViewModel.cs" />
+    <Compile Include="ViewModels\AuditLogViewModel.cs" />
+    <Compile Include="ViewModels\ChangePasswordPageViewModel.cs" />
     <Compile Include="Views\PropertyListView.xaml.cs">
       <DependentUpon>PropertyListView.xaml</DependentUpon>
     </Compile>
@@ -256,6 +344,57 @@
     <Compile Include="Views\DataImportView.xaml.cs">
       <DependentUpon>DataImportView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\EmployeeListView.xaml.cs">
+      <DependentUpon>EmployeeListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ScheduleView.xaml.cs">
+      <DependentUpon>ScheduleView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\AttendanceView.xaml.cs">
+      <DependentUpon>AttendanceView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\PhoneQueryView.xaml.cs">
+      <DependentUpon>PhoneQueryView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\PhoneEntryMaintainView.xaml.cs">
+      <DependentUpon>PhoneEntryMaintainView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DisputeListView.xaml.cs">
+      <DependentUpon>DisputeListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DisputeCreateView.xaml.cs">
+      <DependentUpon>DisputeCreateView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DisputeHandleView.xaml.cs">
+      <DependentUpon>DisputeHandleView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\EmergencySceneStepView.xaml.cs">
+      <DependentUpon>EmergencySceneStepView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DeviceListView.xaml.cs">
+      <DependentUpon>DeviceListView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DeviceMaintainView.xaml.cs">
+      <DependentUpon>DeviceMaintainView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DeviceFaultView.xaml.cs">
+      <DependentUpon>DeviceFaultView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DeviceReminderView.xaml.cs">
+      <DependentUpon>DeviceReminderView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\DictParamView.xaml.cs">
+      <DependentUpon>DictParamView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\BackupView.xaml.cs">
+      <DependentUpon>BackupView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\AuditLogView.xaml.cs">
+      <DependentUpon>AuditLogView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ChangePasswordPageView.xaml.cs">
+      <DependentUpon>ChangePasswordPageView.xaml</DependentUpon>
+    </Compile>
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PropertyManagement.Contract\PropertyManagement.Contract.csproj">
@@ -265,4 +404,3 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
-

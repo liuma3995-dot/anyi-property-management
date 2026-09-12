@@ -166,12 +166,39 @@
     <Compile Include="Api\ExpensesController.cs" />
     <Compile Include="Api\PaymentsController.cs" />
     <Compile Include="Api\ReportsController.cs" />
+    <Compile Include="Api\OrgController.cs" />
+    <Compile Include="Api\PhoneBookController.cs" />
+    <Compile Include="Api\DisputeController.cs" />
+    <Compile Include="Api\EmergencyController.cs" />
+    <Compile Include="Api\EquipmentController.cs" />
+    <Compile Include="Api\SystemController.cs" />
     <Compile Include="Domain\Repositories\IFinanceRepository.cs" />
+    <Compile Include="Domain\Repositories\IOrgRepository.cs" />
+    <Compile Include="Domain\Repositories\IPhoneBookRepository.cs" />
+    <Compile Include="Domain\Repositories\IDisputeRepository.cs" />
+    <Compile Include="Domain\Repositories\IDisputeAttachmentRepository.cs" />
+    <Compile Include="Domain\Repositories\IEmergencyRepository.cs" />
+    <Compile Include="Domain\Repositories\IEquipmentRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlFinanceRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlOrgRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlPhoneBookRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlDisputeRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlDisputeAttachmentRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlEmergencyRepository.cs" />
+    <Compile Include="Infrastructure\Repositories\SqlEquipmentRepository.cs" />
     <Compile Include="Services\BillingService.cs" />
     <Compile Include="Services\BaseInfoService.cs" />
     <Compile Include="Services\DictService.cs" />
+    <Compile Include="Services\DisputeService.cs" />
+    <Compile Include="Services\DisputeCloseReportService.cs" />
+    <Compile Include="Services\DisputeAttachmentService.cs" />
+    <Compile Include="Services\PdfFontSupport.cs" />
+    <Compile Include="Services\EmergencyService.cs" />
+    <Compile Include="Services\EquipmentService.cs" />
+    <Compile Include="Services\CommonService.cs" />
     <Compile Include="Services\ExpenseService.cs" />
+    <Compile Include="Services\OrgService.cs" />
+    <Compile Include="Services\PhoneBookService.cs" />
     <Compile Include="Services\PaymentService.cs" />
     <Compile Include="Services\ReportService.cs" />
     <Compile Include="Startup.cs" />
@@ -233,6 +260,48 @@
   </EmbeddedResource>
   <EmbeddedResource Include="Infrastructure\Data\migration_015.sql">
     <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_015.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_016.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_016.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_017.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_017.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_018.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_018.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_019.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_019.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_020.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_020.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_021.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_021.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_022.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_022.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_023.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_023.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_024.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_024.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_025.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_025.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_026.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_026.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_027.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_027.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_028.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_028.sql</LogicalName>
+  </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_029.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_029.sql</LogicalName>
   </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

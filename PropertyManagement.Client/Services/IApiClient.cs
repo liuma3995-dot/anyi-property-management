@@ -7,6 +7,11 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.Health;
+using PropertyManagement.Contract.Org;
+using PropertyManagement.Contract.PhoneBook;
+using PropertyManagement.Contract.Dispute;
+using PropertyManagement.Contract.Emergency;
+using PropertyManagement.Contract.Equipment;
 
 namespace PropertyManagement.Client.Services
 {
@@ -39,7 +44,7 @@ namespace PropertyManagement.Client.Services
         // ==================== M4 财务收费（PG-FIN-01~08） ====================
         Task<List<ChargeItemDto>> GetChargeItemsAsync(string keyword = null, string category = null);
         Task<List<DictItemDto>> GetDictItemsAsync(string typeCode);
-        Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemCreateRequest request);
+        Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemRequest request);
         Task<ChargeItemDto> CreateChargeItemAsync(ChargeItemRequest request);
         Task<ChargeItemDto> UpdateChargeItemAsync(int id, ChargeItemRequest request);
         Task DeleteChargeItemAsync(int id);
@@ -106,5 +111,185 @@ namespace PropertyManagement.Client.Services
         Task DownloadExportFileAsync(int id, string savePath);
         Task<string> GetParamAsync(string key);
         Task SetParamAsync(string key, string value);
+
+        // ==================== M6 人员组织（PG-ORG-01~03） ====================
+        Task<List<DepartmentDto>> GetDepartmentsAsync(string keyword = null);
+        Task<DepartmentDto> CreateDepartmentAsync(DepartmentRequest request);
+        Task<DepartmentDto> UpdateDepartmentAsync(int id, DepartmentRequest request);
+        Task DeleteDepartmentAsync(int id);
+        Task<List<PositionDto>> GetPositionsAsync(int? deptId = null);
+        Task<PositionDto> CreatePositionAsync(PositionRequest request);
+        Task<PositionDto> UpdatePositionAsync(int id, PositionRequest request);
+        Task DeletePositionAsync(int id);
+        Task<PageResult<EmployeeDto>> QueryEmployeesAsync(EmployeeQueryRequest request);
+        Task<EmployeeDto> GetEmployeeAsync(int id);
+        Task<EmployeeDto> CreateEmployeeAsync(EmployeeRequest request);
+        Task<EmployeeDto> UpdateEmployeeAsync(int id, EmployeeRequest request);
+        Task DeleteEmployeeAsync(int id);
+        Task<EmployeeDto> ChangeEmployeeStatusAsync(int id, EmployeeStatusRequest request);
+        Task<EmployeeDto> ResignEmployeeAsync(int id);
+        Task<List<EmployeeStatusLogDto>> GetEmployeeStatusLogsAsync(int id);
+        Task<List<ShiftDto>> GetShiftsAsync();
+        Task<ShiftDto> CreateShiftAsync(ShiftRequest request);
+        Task<ShiftDto> UpdateShiftAsync(int id, ShiftRequest request);
+        Task DeleteShiftAsync(int id);
+        Task<List<ScheduleDto>> QuerySchedulesAsync(DateTime from, DateTime to, int? employeeId = null);
+        Task<SchedulePlanDto> GenerateSchedulesAsync(ScheduleGenerateRequest request);
+        Task<SchedulePlanDto> PublishSchedulesAsync(SchedulePublishRequest request);
+        Task DeleteScheduleAsync(int id);
+        Task<int> DeleteSchedulesBatchAsync(ScheduleBatchDeleteRequest request);
+        Task<List<ScheduleConflictLogDto>> GetScheduleConflictsAsync(DateTime from, DateTime to);
+        Task<List<ScheduleTemplateDto>> GetScheduleTemplatesAsync();
+        Task<ScheduleTemplateDto> GetScheduleTemplateAsync(int id);
+        Task<ScheduleTemplateDto> SaveScheduleTemplateAsync(ScheduleTemplateSaveRequest request);
+        Task DeleteScheduleTemplateAsync(int id);
+        Task<PageResult<AttendanceDto>> QueryAttendanceAsync(AttendanceQueryRequest request);
+        Task<AttendanceDto> RecordAttendanceAsync(AttendanceRequest request);
+        Task<AttendanceSummaryDto> GetAttendanceSummaryAsync(int? year = null, int? month = null, int? deptId = null);
+        Task<string> ExportAttendanceCsvAsync(int? year = null, int? month = null, int? deptId = null);
+        Task<AttendanceDto> ReviewAttendanceAsync(int id, AttendanceReviewRequest request);
+        Task<int> BatchReviewAttendanceAsync(AttendanceBatchReviewRequest request);
+
+        // ==================== M6 便民电话簿（PG-TEL-01/02） ====================
+        Task<List<PhoneCategoryDto>> GetPhoneCategoriesAsync();
+        Task<PhoneCategoryDto> CreatePhoneCategoryAsync(PhoneCategoryRequest request);
+        Task DeletePhoneCategoryAsync(int id);
+        Task<List<PhoneTypeDto>> GetPhoneTypesAsync();
+        Task<PhoneTypeDto> CreatePhoneTypeAsync(PhoneTypeRequest request);
+        Task<PhoneTypeDto> UpdatePhoneTypeAsync(int id, PhoneTypeRequest request);
+        Task DeletePhoneTypeAsync(int id);
+        Task<PageResult<PhoneEntryDto>> QueryPhoneEntriesAsync(PhoneEntryQueryRequest request);
+        Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request);
+        Task<PhoneEntryDto> UpdatePhoneEntryAsync(int id, PhoneEntryRequest request);
+        Task<PhoneEntryDto> SetPhoneEntryStatusAsync(int id, PhoneEntryStatus status);
+        Task<PhoneEntryBatchStatusResultDto> BatchDisablePhoneEntriesAsync(PhoneEntryBatchStatusRequest request);
+        Task<PhoneEntryDto> SetPhoneEntryTopAsync(int id, bool isTop);
+        Task<EmployeeSyncResultDto> SyncEmployeePhoneEntriesAsync(int categoryId);
+
+        // ==================== M6 纠纷调解（PG-DIS-01~03） ====================
+        Task<List<DisputeTypeDto>> GetDisputeTypesAsync();
+        Task<DisputeTypeDto> CreateDisputeTypeAsync(DisputeTypeRequest request);
+        Task DeleteDisputeTypeAsync(int id);
+        Task<PageResult<DisputeCaseDto>> QueryDisputesAsync(DisputeQueryRequest request);
+        Task<DisputeCaseDetailDto> GetDisputeAsync(int id);
+        Task<DisputeCaseDto> CreateDisputeAsync(DisputeCaseCreateRequest request);
+        Task<DisputeCaseDto> UpdateDisputeAsync(int id, DisputeCaseUpdateRequest request);
+        Task<DisputeRecordDto> AddDisputeRecordAsync(int caseId, DisputeRecordRequest request);
+        Task DeleteDisputeAsync(int id);
+        Task<DisputeCaseDto> UpdateDisputeStatusAsync(int id, DisputeCaseStatusRequest request);
+        Task<DisputeCaseDto> CloseDisputeAsync(int id, DisputeCloseRequest request);
+        Task<DisputeRecordDto> SupplementDisputeCaseAsync(int caseId, DisputeSupplementRequest request);
+        Task<List<DisputeMediatorDto>> GetMediatorRecommendationsAsync(int? typeId = null, int? propertyId = null);
+        Task<DisputeStatisticsDto> GetDisputeStatisticsAsync();
+        /// <summary>导出结案报告（F2，仅已结案）：返回导出留痕（含文件路径），文件由 /reports/files/{id} 取回。</summary>
+        Task<ReportLogDto> ExportDisputeCloseReportAsync(int caseId, ExportFormat format);
+        /// <summary>按导出留痕 id 下载报表文件到本机指定路径。</summary>
+        Task DownloadReportFileAsync(int logId, string savePath);
+        /// <summary>调解协议扫描件清单（F1）。</summary>
+        Task<List<DisputeAttachmentDto>> GetDisputeAttachmentsAsync(int caseId);
+        /// <summary>上传扫描件（multipart；pdf/jpg/jpeg/png，≤20MB，单案 ≤10 份）。</summary>
+        Task<DisputeAttachmentDto> UploadDisputeAttachmentAsync(int caseId, string filePath);
+        /// <summary>下载扫描件到本机指定路径。</summary>
+        Task DownloadDisputeAttachmentAsync(int caseId, int attachmentId, string savePath);
+        /// <summary>删除扫描件（仅管理员，连物理文件一并删除）。</summary>
+        Task DeleteDisputeAttachmentAsync(int caseId, int attachmentId);
+
+        // ==================== M6 应急处置（PG-EMG-01~04） ====================
+        Task<List<EmergencySceneDto>> GetEmergencyScenesAsync(string keyword = null);
+        Task<EmergencySceneDto> CreateEmergencySceneAsync(EmergencySceneRequest request);
+        Task<EmergencySceneDto> UpdateEmergencySceneAsync(int id, EmergencySceneRequest request);
+        Task DeleteEmergencySceneAsync(int id);
+        Task<List<EmergencyStepDto>> GetEmergencyStepsAsync(int sceneId);
+        Task<EmergencyStepDto> CreateEmergencyStepAsync(int sceneId, EmergencyStepRequest request);
+        Task<EmergencyStepDto> UpdateEmergencyStepAsync(int id, EmergencyStepRequest request);
+        Task DeleteEmergencyStepAsync(int id);
+        Task<PageResult<EmergencyEventDto>> QueryEmergencyEventsAsync(EmergencyEventQueryRequest request);
+        Task<EmergencyEventDetailDto> GetEmergencyEventAsync(int id);
+        Task<EmergencyEventDetailDto> CreateEmergencyEventAsync(EmergencyEventCreateRequest request);
+        Task<EmergencyEventDetailDto> AssignEmergencyAsync(int id, EmergencyAssignRequest request);
+        Task<EmergencyRecordDto> AddEmergencyRecordAsync(int id, EmergencyRecordRequest request);
+        Task<EmergencyEventDetailDto> CloseEmergencyAsync(int id, EmergencyCloseRequest request);
+        Task<List<EmergencyMatchDto>> GetEmergencyMatchesAsync(int sceneId);
+        Task<EmergencySceneDto> SetEmergencySceneStatusAsync(int id, EmergencySceneStatusRequest request);
+        Task ReorderEmergencyStepsAsync(int sceneId, System.Collections.Generic.List<int> orderedIds);
+        Task<EmergencyEventStatsDto> GetEmergencyEventStatsAsync();
+        Task CancelEmergencyEventAsync(int id);
+        Task<PageResult<EmergencyReviewDto>> QueryEmergencyReviewsAsync(PageRequest request);
+        Task<EmergencyReviewDto> GetEmergencyReviewAsync(int eventId);
+        Task<EmergencyReviewDto> ReviewEmergencyAsync(int id, EmergencyReviewRequest request);
+
+        // ==================== M6 设备台账（PG-EQP-01~04） ====================
+        Task<List<DeviceTypeDto>> GetDeviceTypesAsync();
+        Task<DeviceTypeDto> CreateDeviceTypeAsync(DeviceTypeRequest request);
+        Task DeleteDeviceTypeAsync(int id);
+        /// <summary>R6：登记类型固定为系统内置 保养/年检（无自定义增删）；includeDisabled=true 附带历史停用类型。</summary>
+        Task<List<MaintainTypeDto>> GetMaintainTypesAsync(bool includeDisabled = false);
+        Task<PageResult<DeviceDto>> QueryDevicesAsync(DeviceQueryRequest request);
+        Task<DeviceDto> GetDeviceAsync(int id);
+        Task<DeviceDto> CreateDeviceAsync(DeviceRequest request);
+        Task<DeviceDto> UpdateDeviceAsync(int id, DeviceRequest request);
+        Task DeleteDeviceAsync(int id);
+        Task<DeviceDto> ChangeDeviceStatusAsync(int id, DeviceStatusRequest request);
+        /// <summary>设备状态变更留痕（R8，详情浮层「状态留痕」页签；含首次登记行 oldStatus=-1）。</summary>
+        Task<List<DeviceStatusLogDto>> GetDeviceStatusLogsAsync(int deviceId);
+        Task<List<MaintenanceRecordDto>> GetMaintenanceAsync(int deviceId);
+        Task<MaintenanceRecordDto> AddMaintenanceAsync(int deviceId, MaintenanceRecordRequest request);
+        Task<List<InspectionRecordDto>> GetInspectionAsync(int deviceId);
+        Task<InspectionRecordDto> AddInspectionAsync(int deviceId, InspectionRecordRequest request);
+        Task<List<FaultRecordDto>> GetFaultsAsync(int deviceId);
+        Task<FaultRecordDto> AddFaultAsync(int deviceId, FaultRecordRequest request);
+        Task<List<VendorDto>> GetVendorsAsync();
+        Task<VendorDto> CreateVendorAsync(VendorRequest request);
+        Task DeleteVendorAsync(int id);
+        /// <summary>R6：status=-1 全部（含已处理，默认）/0 待处理/1 已处理。</summary>
+        Task<List<EquipmentReminderDto>> GetEquipmentRemindersAsync(int days = 30, string type = null, int status = -1);
+        Task<ReminderSummaryDto> GetEquipmentReminderSummaryAsync();
+        Task<EquipmentReminderDto> HandleEquipmentReminderAsync(int reminderId);
+        /// <summary>R7：指派责任班组（team 传空 = 恢复默认规则：逾期→物业办 / 其余→工程部）。</summary>
+        Task<EquipmentReminderDto> SaveEquipmentReminderTeamAsync(int reminderId, ReminderTeamRequest request);
+        /// <summary>R6：批量删除提醒记录（仅已处理可删；命中待处理整批拒绝并返回明细）。</summary>
+        Task<ReminderBatchDeleteResultDto> BatchDeleteEquipmentRemindersAsync(ReminderBatchDeleteRequest request);
+        /// <summary>R6：设备自定义类型记录（登记类型解耦）。</summary>
+        Task<List<DeviceCustomRecordDto>> GetDeviceCustomRecordsAsync(int deviceId);
+        Task<DeviceCustomRecordDto> CreateDeviceCustomRecordAsync(int deviceId, DeviceCustomRecordRequest request);
+        Task<DeviceCustomRecordDto> UpdateDeviceCustomRecordAsync(int recordId, DeviceCustomRecordRequest request);
+        Task DeleteDeviceCustomRecordAsync(int recordId);
+        /// <summary>自定义类型名称候选（历史自定义登记类型 + 已录入记录类型，去重）。</summary>
+        Task<List<string>> GetCustomRecordTypesAsync();
+        Task<DeviceSummaryDto> GetDeviceSummaryAsync();
+        Task<EquipmentExportResultDto> ExportDevicesAsync(DeviceQueryRequest request);
+        Task<DeviceTypeDto> UpdateDeviceTypeAsync(int id, DeviceTypeRequest request);
+        Task<VendorDto> UpdateVendorAsync(int id, VendorRequest request);
+        Task<List<FaultRecordDto>> GetAllFaultsAsync();
+        Task<FaultRecordDto> HandleFaultAsync(int faultId, FaultHandleRequest request);
+        /// <summary>
+        /// 生成维修工单（R5）：以 Excel 派工单形式落盘（导出留痕），故障单转维修中并同步设备状态；
+        /// 返回结果后按 Id 调 DownloadExportFileAsync 另存到本机。
+        /// </summary>
+        Task<EquipmentExportResultDto> GenerateFaultWorkOrderAsync(int faultId);
+
+        // ==================== M6 系统设置（PG-COM-01~04） ====================
+        Task<List<DictTypeDto>> GetSystemDictTypesAsync();
+        Task<DictTypeDto> CreateSystemDictTypeAsync(DictTypeRequest request);
+        Task<List<DictItemDto>> GetSystemDictItemsAsync(string typeCode, bool includeDisabled = false, int? status = null);
+        Task<DictItemDto> UpdateDictItemAsync(int id, DictItemRequest request);
+        Task<DictItemDto> SetDictItemStatusAsync(int id, DictItemStatus status);
+        /// <summary>R12：批量删除字典项（仅已停用项可删；命中未停用项整批拒绝并返回 blocked 明细）。</summary>
+        Task<DictItemBatchDeleteResultDto> BatchDeleteDictItemsAsync(DictItemBatchDeleteRequest request);
+        /// <summary>R13：审计日志批量删除（软删留痕）。</summary>
+        Task<RecordBatchDeleteResultDto> BatchDeleteAuditLogsAsync(RecordBatchDeleteRequest request);
+        /// <summary>R13：备份/恢复记录批量删除（软删留痕）。</summary>
+        Task<RecordBatchDeleteResultDto> BatchDeleteBackupRecordsAsync(RecordBatchDeleteRequest request);
+        /// <summary>R13：一键清理残余数据（物理删除全库软删留痕行）。</summary>
+        Task<PurgeSoftDeletedResultDto> PurgeSoftDeletedAsync();
+        Task<List<ParamDto>> GetSystemParamsAsync();
+        Task SetSystemParamAsync(string key, string value);
+        Task<List<BackupDto>> GetSystemBackupsAsync();
+        /// <summary>手动备份；targetPath 非空时按用户选择的保存路径落盘（R12）。</summary>
+        Task<BackupDto> RunSystemBackupAsync(string note, string targetPath = null);
+        Task<BackupDto> RestoreSystemBackupAsync(BackupRestoreRequest request);
+        Task<BackupStatusDto> GetSystemBackupStatusAsync();
+        Task<AuditExportDto> ExportAuditLogsAsync(AuditLogQueryRequest request);
+        Task<PageResult<AuditLogDto>> QueryAuditLogsAsync(AuditLogQueryRequest request);
     }
 }

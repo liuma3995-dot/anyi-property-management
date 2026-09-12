@@ -8,6 +8,11 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.Health;
+using PropertyManagement.Contract.Org;
+using PropertyManagement.Contract.PhoneBook;
+using PropertyManagement.Contract.Dispute;
+using PropertyManagement.Contract.Emergency;
+using PropertyManagement.Contract.Equipment;
 
 namespace PropertyManagement.Client.Services
 {
@@ -265,7 +270,7 @@ namespace PropertyManagement.Client.Services
             return Task.FromResult(list.ToList());
         }
 
-        public Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemCreateRequest request)
+        public Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemRequest request)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.ItemName))
             {
@@ -676,10 +681,10 @@ namespace PropertyManagement.Client.Services
             });
 
         public Task<PropertyDto> CreatePropertyAsync(PropertyRequest request) =>
-            Task.FromResult(new PropertyDto { Id = 99, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
+            Task.FromResult(new PropertyDto { Id = 99, BuildingId = request.BuildingId, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
 
         public Task<PropertyDto> UpdatePropertyAsync(int id, PropertyRequest request) =>
-            Task.FromResult(new PropertyDto { Id = id, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
+            Task.FromResult(new PropertyDto { Id = id, BuildingId = request.BuildingId, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
 
         public Task DeletePropertyAsync(int id) => Task.CompletedTask;
 
@@ -756,5 +761,606 @@ namespace PropertyManagement.Client.Services
 
         public Task SetParamAsync(string key, string value) =>
             Task.CompletedTask;
+
+        // ==================== M6 人员组织（演示夹具） ====================
+        private readonly List<EmployeeDto> _employees = new List<EmployeeDto>
+        {
+            Emp(8, 1, 1, "张强", "138****2233", new DateTime(2021, 3, 15), EmployeeStatus.Active, "安保部", "保安班长"),
+            Emp(12, 1, 2, "李伟", "137****9080", new DateTime(2022, 6, 1), EmployeeStatus.Active, "安保部", "保安"),
+            Emp(21, 2, 3, "王平安", "135****7712", new DateTime(2020, 11, 20), EmployeeStatus.Active, "工程部", "维修技工"),
+            Emp(25, 3, 4, "赵敏", "136****5541", new DateTime(2023, 2, 13), EmployeeStatus.Active, "客服部", "客服专员"),
+            Emp(31, 3, 5, "刘芳", "133****2276", new DateTime(2019, 8, 5), EmployeeStatus.Active, "客服部", "客服主管"),
+            Emp(7, 1, 2, "孙浩", "188****6653", new DateTime(2021, 9, 1), EmployeeStatus.Resigned, "安保部", "保安")
+        };
+
+        private static EmployeeDto Emp(int id, int dept, int pos, string name, string phone, DateTime hire, EmployeeStatus status, string deptName, string posName)
+        {
+            return new EmployeeDto
+            {
+                Id = id, DeptId = dept, PositionId = pos, Name = name, Phone = phone, HireDate = hire, Status = status,
+                EmpNo = "YG-" + id.ToString("000"), DeptName = deptName, PositionName = posName,
+                StatusText = status == EmployeeStatus.Active ? "在岗" : (status == EmployeeStatus.OffDuty ? "离岗" : "离职"),
+                PhoneMask = phone
+            };
+        }
+
+        public Task<List<DepartmentDto>> GetDepartmentsAsync(string keyword = null) =>
+            Task.FromResult(new List<DepartmentDto> { new DepartmentDto { Id = 1, Name = "安保部" }, new DepartmentDto { Id = 2, Name = "工程部" }, new DepartmentDto { Id = 3, Name = "客服部" } });
+
+        public Task<DepartmentDto> CreateDepartmentAsync(DepartmentRequest request) =>
+            Task.FromResult(new DepartmentDto { Id = 10, Name = request.Name, ParentId = request.ParentId });
+
+        public Task<DepartmentDto> UpdateDepartmentAsync(int id, DepartmentRequest request) =>
+            Task.FromResult(new DepartmentDto { Id = id, Name = request.Name, ParentId = request.ParentId });
+
+        public Task DeleteDepartmentAsync(int id) => Task.CompletedTask;
+
+        public Task<List<PositionDto>> GetPositionsAsync(int? deptId = null) =>
+            Task.FromResult(new List<PositionDto>{ new PositionDto { Id = 1, DeptId = 1, Name = "保安班长" }, new PositionDto { Id = 2, DeptId = 1, Name = "保安" }, new PositionDto { Id = 3, DeptId = 2, Name = "维修技工" }, new PositionDto { Id = 4, DeptId = 3, Name = "客服专员" }, new PositionDto { Id = 5, DeptId = 3, Name = "客服主管" } });
+
+        public Task<PositionDto> CreatePositionAsync(PositionRequest request) =>
+            Task.FromResult(new PositionDto { Id = 99, DeptId = request.DeptId, Name = request.Name });
+
+        public Task<PositionDto> UpdatePositionAsync(int id, PositionRequest request) =>
+            Task.FromResult(new PositionDto { Id = id, DeptId = request.DeptId, Name = request.Name });
+
+        public Task DeletePositionAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<EmployeeDto>> QueryEmployeesAsync(EmployeeQueryRequest request) =>
+            Page(_employees.Where(e => !request.Status.HasValue || e.Status == request.Status.Value));
+
+        public Task<EmployeeDto> GetEmployeeAsync(int id) =>
+            Task.FromResult(_employees.FirstOrDefault(e => e.Id == id));
+
+        public Task<EmployeeDto> CreateEmployeeAsync(EmployeeRequest request) =>
+            Task.FromResult(new EmployeeDto { Id = 99, DeptId = request.DeptId, PositionId = request.PositionId, Name = request.Name, Phone = request.Phone, HireDate = request.HireDate, Status = EmployeeStatus.Active, EmpNo = "YG-099", StatusText = "在岗" });
+
+        public Task<EmployeeDto> UpdateEmployeeAsync(int id, EmployeeRequest request) =>
+            Task.FromResult(new EmployeeDto { Id = id, DeptId = request.DeptId, PositionId = request.PositionId, Name = request.Name, Phone = request.Phone, HireDate = request.HireDate, Status = EmployeeStatus.Active, EmpNo = "YG-" + id.ToString("000"), StatusText = "在岗" });
+
+        public Task DeleteEmployeeAsync(int id) => Task.CompletedTask;
+
+        public Task<EmployeeDto> ChangeEmployeeStatusAsync(int id, EmployeeStatusRequest request) =>
+            Task.FromResult(new EmployeeDto { Id = id, Status = request.Status, EmpNo = "YG-" + id.ToString("000") });
+
+        public Task<EmployeeDto> ResignEmployeeAsync(int id) =>
+            Task.FromResult<EmployeeDto>(null);
+        public Task<List<EmployeeStatusLogDto>> GetEmployeeStatusLogsAsync(int id) =>
+            Task.FromResult(new List<EmployeeStatusLogDto>());
+
+        public Task<List<ShiftDto>> GetShiftsAsync() =>
+            Task.FromResult(new List<ShiftDto> { new ShiftDto { Id = 1, Name = "早班", StartTime = "08:00", EndTime = "16:00" }, new ShiftDto { Id = 2, Name = "中班", StartTime = "16:00", EndTime = "24:00" }, new ShiftDto { Id = 3, Name = "晚班", StartTime = "00:00", EndTime = "08:00" } });
+
+        public Task<ShiftDto> CreateShiftAsync(ShiftRequest request) =>
+            Task.FromResult(new ShiftDto { Id = 99, Name = request.Name, StartTime = request.StartTime, EndTime = request.EndTime });
+
+        public Task<ShiftDto> UpdateShiftAsync(int id, ShiftRequest request) =>
+            Task.FromResult(new ShiftDto { Id = id, Name = request.Name, StartTime = request.StartTime, EndTime = request.EndTime });
+
+        public Task DeleteShiftAsync(int id) => Task.CompletedTask;
+
+        public Task<List<ScheduleDto>> QuerySchedulesAsync(DateTime from, DateTime to, int? employeeId = null) =>
+            Task.FromResult(new List<ScheduleDto>());
+
+        public Task<SchedulePlanDto> GenerateSchedulesAsync(ScheduleGenerateRequest request) =>
+            Task.FromResult(new SchedulePlanDto { Schedules = new List<ScheduleDto>(), Conflicts = new List<ScheduleConflictLogDto>() });
+
+        public Task<SchedulePlanDto> PublishSchedulesAsync(SchedulePublishRequest request) =>
+            Task.FromResult(new SchedulePlanDto { Schedules = new List<ScheduleDto>(), Conflicts = new List<ScheduleConflictLogDto>() });
+
+        public Task DeleteScheduleAsync(int id) => Task.CompletedTask;
+
+        public Task<int> DeleteSchedulesBatchAsync(ScheduleBatchDeleteRequest request) => Task.FromResult(0);
+
+        public Task<List<ScheduleConflictLogDto>> GetScheduleConflictsAsync(DateTime from, DateTime to) =>
+            Task.FromResult(new List<ScheduleConflictLogDto>());
+
+        public Task<List<ScheduleTemplateDto>> GetScheduleTemplatesAsync() =>
+            Task.FromResult(new List<ScheduleTemplateDto>());
+
+        public Task<ScheduleTemplateDto> GetScheduleTemplateAsync(int id) =>
+            Task.FromResult<ScheduleTemplateDto>(null);
+
+        public Task<ScheduleTemplateDto> SaveScheduleTemplateAsync(ScheduleTemplateSaveRequest request) =>
+            Task.FromResult(new ScheduleTemplateDto { Id = 1, Name = request.Name ?? "模板", FromDate = request.FromDate, ToDate = request.ToDate, ItemCount = 0 });
+
+        public Task DeleteScheduleTemplateAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<AttendanceDto>> QueryAttendanceAsync(AttendanceQueryRequest request) =>
+            Task.FromResult(new PageResult<AttendanceDto> { PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 0, Items = new List<AttendanceDto>() });
+
+        public Task<AttendanceDto> RecordAttendanceAsync(AttendanceRequest request) =>
+            Task.FromResult(new AttendanceDto { Id = 1, EmployeeId = request.EmployeeId, WorkDate = request.WorkDate, CheckIn = request.CheckIn, CheckOut = request.CheckOut, Result = AttendanceResult.Recorded });
+
+        public Task<AttendanceSummaryDto> GetAttendanceSummaryAsync(int? year = null, int? month = null, int? deptId = null) =>
+            Task.FromResult(new AttendanceSummaryDto { Year = year ?? DateTime.Now.Year, Month = month ?? DateTime.Now.Month, AttendanceRate = 98.2, LateCount = 2, AbsentCount = 1, LeaveCount = 0, PendingReviewCount = 1, TotalCount = 40 });
+
+        public Task<string> ExportAttendanceCsvAsync(int? year = null, int? month = null, int? deptId = null) =>
+            Task.FromResult("日期,工号,姓名,班次,上班打卡,下班打卡,状态,审核状态");
+
+        public Task<AttendanceDto> ReviewAttendanceAsync(int id, AttendanceReviewRequest request) =>
+            Task.FromResult(new AttendanceDto { Id = id, Result = AttendanceResult.Reviewed, ReviewNote = request.ReviewNote });
+
+        public Task<int> BatchReviewAttendanceAsync(AttendanceBatchReviewRequest request) =>
+            Task.FromResult(request?.Ids?.Count ?? 0);
+
+        // ==================== M6 便民电话簿（演示夹具） ====================
+        public Task<List<PhoneCategoryDto>> GetPhoneCategoriesAsync() =>
+            Task.FromResult(new List<PhoneCategoryDto>
+            {
+                new PhoneCategoryDto { Id = 1, Name = "物业服务中心", Sort = 1 },
+                new PhoneCategoryDto { Id = 2, Name = "工程维修", Sort = 2 },
+                new PhoneCategoryDto { Id = 3, Name = "紧急电话", Sort = 3 },
+                new PhoneCategoryDto { Id = 4, Name = "政府 / 市政", Sort = 4 }
+            });
+
+        public Task<PhoneCategoryDto> CreatePhoneCategoryAsync(PhoneCategoryRequest request) =>
+            Task.FromResult(new PhoneCategoryDto { Id = 99, Name = request.Name, Sort = request.Sort });
+
+        public Task DeletePhoneCategoryAsync(int id) => Task.CompletedTask;
+
+        public Task<List<PhoneTypeDto>> GetPhoneTypesAsync() =>
+            Task.FromResult(new List<PhoneTypeDto> { new PhoneTypeDto { Id = 1, Name = "紧急", Sort = 0 }, new PhoneTypeDto { Id = 2, Name = "普通", Sort = 1 }, new PhoneTypeDto { Id = 3, Name = "员工通讯录", Sort = 2 } });
+
+        public Task<PhoneTypeDto> CreatePhoneTypeAsync(PhoneTypeRequest request) =>
+            Task.FromResult(new PhoneTypeDto { Id = 99, Name = request.Name, Sort = request.Sort });
+
+        public Task<PhoneTypeDto> UpdatePhoneTypeAsync(int id, PhoneTypeRequest request) =>
+            Task.FromResult(new PhoneTypeDto { Id = id, Name = request.Name, Sort = request.Sort });
+
+        public Task DeletePhoneTypeAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<PhoneEntryDto>> QueryPhoneEntriesAsync(PhoneEntryQueryRequest request) =>
+            Task.FromResult(new PageResult<PhoneEntryDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 4,
+                Items = new List<PhoneEntryDto>
+                {
+                    new PhoneEntryDto { Id = 1, CategoryId = 1, EntryType = PhoneEntryType.Normal, Name = "物业服务中心", Phone = "0571-88021234", Note = "24 小时值班", IsTop = true, Status = PhoneEntryStatus.Enabled, CategoryName = "物业服务中心", StatusText = "启用" },
+                    new PhoneEntryDto { Id = 2, CategoryId = 2, EntryType = PhoneEntryType.Normal, Name = "电梯维保（急修）", Phone = "139****0087", Note = "迅达 · 30 分钟到场", IsTop = true, Status = PhoneEntryStatus.Enabled, CategoryName = "工程维修", StatusText = "启用" },
+                    new PhoneEntryDto { Id = 3, CategoryId = 3, EntryType = PhoneEntryType.Emergency, Name = "火警 / 报警", Phone = "119 / 110", Note = "", IsTop = true, Status = PhoneEntryStatus.Enabled, CategoryName = "紧急电话", StatusText = "启用" },
+                    new PhoneEntryDto { Id = 4, CategoryId = 2, EntryType = PhoneEntryType.Employee, Name = "水电班组 · 王平安", Phone = "135****7712", IsTop = false, Status = PhoneEntryStatus.Enabled, CategoryName = "工程维修", StatusText = "启用" }
+                }
+            });
+
+        public Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request) =>
+            Task.FromResult(new PhoneEntryDto { Id = 99, CategoryId = request.CategoryId, EntryType = request.EntryType, Name = request.Name, Phone = request.Phone, Note = request.Note, IsTop = request.IsTop, Status = PhoneEntryStatus.Enabled });
+
+        public Task<PhoneEntryDto> UpdatePhoneEntryAsync(int id, PhoneEntryRequest request) =>
+            Task.FromResult(new PhoneEntryDto { Id = id, CategoryId = request.CategoryId, EntryType = request.EntryType, Name = request.Name, Phone = request.Phone, Note = request.Note, IsTop = request.IsTop, Status = PhoneEntryStatus.Enabled });
+
+        public Task<PhoneEntryDto> SetPhoneEntryStatusAsync(int id, PhoneEntryStatus status) =>
+            Task.FromResult(new PhoneEntryDto { Id = id, Status = status });
+
+        public Task<PhoneEntryBatchStatusResultDto> BatchDisablePhoneEntriesAsync(PhoneEntryBatchStatusRequest request) =>
+            Task.FromResult(new PhoneEntryBatchStatusResultDto { Disabled = request?.Ids?.Count ?? 0, Skipped = 0 });
+
+        public Task<PhoneEntryDto> SetPhoneEntryTopAsync(int id, bool isTop) =>
+            Task.FromResult(new PhoneEntryDto { Id = id, IsTop = isTop });
+
+        public Task<EmployeeSyncResultDto> SyncEmployeePhoneEntriesAsync(int categoryId) =>
+            Task.FromResult(new EmployeeSyncResultDto { TotalEmployees = 5, Synced = 5, Skipped = 0 });
+
+        // ==================== M6 纠纷调解（演示夹具） ====================
+        public Task<List<DisputeTypeDto>> GetDisputeTypesAsync() =>
+            Task.FromResult(new List<DisputeTypeDto> { new DisputeTypeDto { Id = 1, Name = "漏水" }, new DisputeTypeDto { Id = 2, Name = "噪音" }, new DisputeTypeDto { Id = 3, Name = "装修" } });
+
+        public Task<DisputeTypeDto> CreateDisputeTypeAsync(DisputeTypeRequest request) =>
+            Task.FromResult(new DisputeTypeDto { Id = 99, Name = request.Name, Status = 0 });
+
+        public Task DeleteDisputeTypeAsync(int id)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<PageResult<DisputeCaseDto>> QueryDisputesAsync(DisputeQueryRequest request) =>
+            Task.FromResult(new PageResult<DisputeCaseDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 3,
+                Items = new List<DisputeCaseDto>
+                {
+                    new DisputeCaseDto { Id = 6, CaseNo = "JF-2608-06", TypeName = "漏水", StatusText = "调解中", OccurTimeText = "08-26", PartySummary = "502 张先生 / 402 李女士", RecordCount = 1 },
+                    new DisputeCaseDto { Id = 5, CaseNo = "JF-2608-05", TypeName = "噪音", StatusText = "调解中", OccurTimeText = "08-24", PartySummary = "1201 王先生 / 1101 赵小姐", RecordCount = 2 },
+                    new DisputeCaseDto { Id = 3, CaseNo = "JF-2608-03", TypeName = "漏水", StatusText = "已结案", OccurTimeText = "08-18", PartySummary = "902 周先生 / 802 吴先生", RecordCount = 2, CloseTypeText = "调解成功" }
+                }
+            });
+
+        public Task<DisputeCaseDetailDto> GetDisputeAsync(int id) =>
+            Task.FromResult(new DisputeCaseDetailDto
+            {
+                Case = new DisputeCaseDto { Id = id, CaseNo = "JF-2608-06", TypeName = "漏水", StatusText = "调解中", MediatorName = "刘芳" },
+                Parties = new List<DisputePartyDto> { new DisputePartyDto { PartyTypeText = "甲方", Name = "402 李女士" }, new DisputePartyDto { PartyTypeText = "乙方", Name = "502 张先生" } },
+                Records = new List<DisputeRecordDto>()
+            });
+
+        public Task<DisputeCaseDto> CreateDisputeAsync(DisputeCaseCreateRequest request) =>
+            Task.FromResult(new DisputeCaseDto { Id = 99, CaseNo = "JF-2608-99", StatusText = "待调解" });
+
+        public Task<DisputeCaseDto> UpdateDisputeAsync(int id, DisputeCaseUpdateRequest request) =>
+            Task.FromResult(new DisputeCaseDto { Id = id });
+
+        public Task<DisputeRecordDto> AddDisputeRecordAsync(int caseId, DisputeRecordRequest request) =>
+            Task.FromResult(new DisputeRecordDto { Id = 1, CaseId = caseId, Content = request.Content, Recorder = request.Recorder });
+
+        public Task DeleteDisputeAsync(int id)
+        {
+            return Task.CompletedTask;
+        }
+
+        public Task<DisputeCaseDto> UpdateDisputeStatusAsync(int id, DisputeCaseStatusRequest request) =>
+            Task.FromResult(new DisputeCaseDto { Id = id, Status = request.Status });
+
+        public Task<DisputeCaseDto> CloseDisputeAsync(int id, DisputeCloseRequest request) =>
+            Task.FromResult(new DisputeCaseDto { Id = id, Status = DisputeCaseStatus.Closed, CloseType = request.CloseType, CloseTypeText = "调解成功" });
+
+        public Task<DisputeRecordDto> SupplementDisputeCaseAsync(int caseId, DisputeSupplementRequest request) =>
+            Task.FromResult(new DisputeRecordDto { Id = 0, CaseId = caseId, RecordTime = DateTime.Now, Content = request != null ? request.Content : null, IsSupplement = true });
+
+        public Task<List<DisputeMediatorDto>> GetMediatorRecommendationsAsync(int? typeId = null, int? propertyId = null) =>
+            Task.FromResult(new List<DisputeMediatorDto>());
+
+        public Task<DisputeStatisticsDto> GetDisputeStatisticsAsync() =>
+            Task.FromResult(new DisputeStatisticsDto { Total = 23, Registered = 2, Handling = 3, Closed = 3 });
+
+        public Task<ReportLogDto> ExportDisputeCloseReportAsync(int caseId, ExportFormat format) =>
+            Task.FromResult(new ReportLogDto
+            {
+                Id = 1,
+                ReportType = "dispute_close",
+                Period = "JF-DEMO-" + caseId,
+                Format = format,
+                FilePath = format == ExportFormat.Excel ? "dispute_close_demo.xlsx" : "dispute_close_demo.pdf",
+                CreatedAt = DateTime.Now
+            });
+
+        public Task DownloadReportFileAsync(int logId, string savePath) =>
+            Task.CompletedTask;
+
+        public Task<List<DisputeAttachmentDto>> GetDisputeAttachmentsAsync(int caseId) =>
+            Task.FromResult(new List<DisputeAttachmentDto>());
+
+        public Task<DisputeAttachmentDto> UploadDisputeAttachmentAsync(int caseId, string filePath) =>
+            Task.FromResult(new DisputeAttachmentDto
+            {
+                Id = 1,
+                CaseId = caseId,
+                FileName = System.IO.Path.GetFileName(filePath),
+                SizeBytes = 1024,
+                SizeText = "1.0 KB",
+                UploadedBy = "admin",
+                UploadedAt = DateTime.Now,
+                UploadedAtText = DateTime.Now.ToString("yyyy-MM-dd HH:mm")
+            });
+
+        public Task DownloadDisputeAttachmentAsync(int caseId, int attachmentId, string savePath) =>
+            Task.CompletedTask;
+
+        public Task DeleteDisputeAttachmentAsync(int caseId, int attachmentId) =>
+            Task.CompletedTask;
+
+        // ==================== M6 应急处置（演示夹具） ====================
+        private readonly List<EmergencySceneDto> _scenes = new List<EmergencySceneDto>
+        {
+            new EmergencySceneDto { Id = 1, Name = "火灾", Category = "消防", IconKey = "Icon.Flame", Status = 0, StepCount = 6, StatusText = "启用" },
+            new EmergencySceneDto { Id = 2, Name = "电梯困人", Category = "特种设备", IconKey = "Icon.UserRound", Status = 0, StepCount = 5, StatusText = "启用" },
+            new EmergencySceneDto { Id = 3, Name = "水浸 / 爆管", Category = "给排水", IconKey = "Icon.Droplet", Status = 0, StepCount = 5, StatusText = "启用" }
+        };
+
+        public Task<List<EmergencySceneDto>> GetEmergencyScenesAsync(string keyword = null) =>
+            Task.FromResult(_scenes.ToList());
+
+        public Task<EmergencySceneDto> CreateEmergencySceneAsync(EmergencySceneRequest request) =>
+            Task.FromResult(new EmergencySceneDto { Id = 99, Name = request.Name, Category = request.Category, IconKey = request.IconKey, Status = 0, StatusText = "启用" });
+
+        public Task<EmergencySceneDto> UpdateEmergencySceneAsync(int id, EmergencySceneRequest request) =>
+            Task.FromResult(new EmergencySceneDto { Id = id, Name = request.Name, Category = request.Category, IconKey = request.IconKey, Status = 0, StatusText = "启用" });
+
+        public Task DeleteEmergencySceneAsync(int id) => Task.CompletedTask;
+
+        public Task<List<EmergencyStepDto>> GetEmergencyStepsAsync(int sceneId) =>
+            Task.FromResult(new List<EmergencyStepDto>
+            {
+                new EmergencyStepDto { Id = 1, SceneId = sceneId, StepNo = 1, Content = "确认火情位置与火势", Role = "值班保安", TimeLimit = "立即", Action = "一键拨打 119", StatusText = "启用" }
+            });
+
+        public Task<EmergencyStepDto> CreateEmergencyStepAsync(int sceneId, EmergencyStepRequest request) =>
+            Task.FromResult(new EmergencyStepDto { Id = 99, SceneId = sceneId, StepNo = request.StepNo, Content = request.Content, Role = request.Role, TimeLimit = request.TimeLimit, Action = request.Action, StatusText = "启用" });
+
+        public Task<EmergencyStepDto> UpdateEmergencyStepAsync(int id, EmergencyStepRequest request) =>
+            Task.FromResult(new EmergencyStepDto { Id = id, SceneId = request.SceneId, StepNo = request.StepNo, Content = request.Content, Role = request.Role, TimeLimit = request.TimeLimit, Action = request.Action, StatusText = "启用" });
+
+        public Task DeleteEmergencyStepAsync(int id) => Task.CompletedTask;
+
+        public Task<PageResult<EmergencyEventDto>> QueryEmergencyEventsAsync(EmergencyEventQueryRequest request) =>
+            Task.FromResult(new PageResult<EmergencyEventDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 2,
+                Items = new List<EmergencyEventDto>
+                {
+                    new EmergencyEventDto { Id = 12, EventNo = "EM-2608-12", SceneName = "火灾", Location = "1栋2单元 3F 楼梯间", LevelText = "Ⅱ 级", EventTimeText = "08-28 14:26", MainPerson = "张强", ElapsedText = "已 38 分钟", StatusText = "处置中" },
+                    new EmergencyEventDto { Id = 11, EventNo = "EM-2608-11", SceneName = "水浸", Location = "2栋地下车库 B1", LevelText = "Ⅲ 级", EventTimeText = "08-27 09:12", MainPerson = "王平安", ElapsedText = "已结案", StatusText = "已结案" }
+                }
+            });
+
+        public Task<EmergencyEventDetailDto> GetEmergencyEventAsync(int id) =>
+            Task.FromResult(new EmergencyEventDetailDto
+            {
+                Event = new EmergencyEventDto { Id = id, EventNo = "EM-2608-12", SceneName = "火灾", StatusText = "处置中", LevelText = "Ⅱ 级" },
+                Steps = new List<EmergencyStepDto>(), Assignments = new List<EmergencyAssignDto>(), Records = new List<EmergencyRecordDto>()
+            });
+
+        public Task<EmergencyEventDetailDto> CreateEmergencyEventAsync(EmergencyEventCreateRequest request) =>
+            Task.FromResult(new EmergencyEventDetailDto { Event = new EmergencyEventDto { Id = 99, EventNo = "EM-2608-99", StatusText = "已发起" } });
+
+        public Task<EmergencyEventDetailDto> AssignEmergencyAsync(int id, EmergencyAssignRequest request) =>
+            Task.FromResult(new EmergencyEventDetailDto { Event = new EmergencyEventDto { Id = id } });
+
+        public Task<EmergencyRecordDto> AddEmergencyRecordAsync(int id, EmergencyRecordRequest request) =>
+            Task.FromResult(new EmergencyRecordDto { Id = 1, EventId = id, Content = request.Content, Result = request.Result, Recorder = request.Recorder });
+
+        public Task<EmergencyEventDetailDto> CloseEmergencyAsync(int id, EmergencyCloseRequest request) =>
+            Task.FromResult(new EmergencyEventDetailDto { Event = new EmergencyEventDto { Id = id, Status = EmergencyEventStatus.Closed, StatusText = "已结案" } });
+
+        public Task<List<EmergencyMatchDto>> GetEmergencyMatchesAsync(int sceneId) =>
+            Task.FromResult(new List<EmergencyMatchDto>());
+
+        public Task<EmergencySceneDto> SetEmergencySceneStatusAsync(int id, EmergencySceneStatusRequest request) =>
+            Task.FromResult<EmergencySceneDto>(null);
+
+        public Task ReorderEmergencyStepsAsync(int sceneId, List<int> orderedIds) =>
+            Task.CompletedTask;
+
+        public Task<EmergencyEventStatsDto> GetEmergencyEventStatsAsync() =>
+            Task.FromResult(new EmergencyEventStatsDto());
+
+        public Task CancelEmergencyEventAsync(int id) =>
+            Task.CompletedTask;
+
+        public Task<PageResult<EmergencyReviewDto>> QueryEmergencyReviewsAsync(PageRequest request) =>
+            Task.FromResult(new PageResult<EmergencyReviewDto> { Items = new List<EmergencyReviewDto>() });
+
+        public Task<EmergencyReviewDto> GetEmergencyReviewAsync(int eventId) =>
+            Task.FromResult<EmergencyReviewDto>(null);
+
+        public Task<EmergencyReviewDto> ReviewEmergencyAsync(int id, EmergencyReviewRequest request) =>
+            Task.FromResult(new EmergencyReviewDto { Id = 1, EventId = id, Cause = request.Cause, Measure = request.Measure, CreatedAt = DateTime.Now });
+
+        // ==================== M6 设备台账（演示夹具） ====================
+        public Task<List<DeviceTypeDto>> GetDeviceTypesAsync() =>
+            Task.FromResult(new List<DeviceTypeDto>
+            {
+                new DeviceTypeDto { Id = 1, Name = "电梯", MaintenanceCycle = 15 },
+                new DeviceTypeDto { Id = 2, Name = "消防", MaintenanceCycle = 30 },
+                new DeviceTypeDto { Id = 3, Name = "给排水", MaintenanceCycle = 30 }
+            });
+
+        public Task<DeviceTypeDto> CreateDeviceTypeAsync(DeviceTypeRequest request) =>
+            Task.FromResult(new DeviceTypeDto { Id = 99, Name = request.Name, MaintenanceCycle = request.MaintenanceCycle });
+
+        public Task DeleteDeviceTypeAsync(int id) => Task.CompletedTask;
+
+        public Task<List<MaintainTypeDto>> GetMaintainTypesAsync(bool includeDisabled = false) =>
+            Task.FromResult(new List<MaintainTypeDto>
+            {
+                new MaintainTypeDto { Id = 1, Name = "保养", Kind = 0, IsSystem = true },
+                new MaintainTypeDto { Id = 2, Name = "年检", Kind = 1, IsSystem = true }
+            });
+
+        public Task<PageResult<DeviceDto>> QueryDevicesAsync(DeviceQueryRequest request) =>
+            Task.FromResult(new PageResult<DeviceDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 2,
+                Items = new List<DeviceDto>
+                {
+                    new DeviceDto { Id = 87, DeviceNo = "EQP-0087", Name = "3 单元客梯", TypeName = "电梯", Location = "3栋3单元", BrandModel = "迅达 / S3300", Status = DeviceStatus.InUse, StatusText = "在用", NextMaintenanceText = "09-15" },
+                    new DeviceDto { Id = 102, DeviceNo = "EQP-0102", Name = "消防泵组", TypeName = "消防", Location = "泵房 B1", BrandModel = "正压 / XBD6", Status = DeviceStatus.InUse, StatusText = "在用", NextMaintenanceText = "09-08" }
+                }
+            });
+
+        public Task<DeviceDto> GetDeviceAsync(int id) =>
+            Task.FromResult(new DeviceDto { Id = id, DeviceNo = "EQP-" + id.ToString("0000"), Name = "设备", StatusText = "在用" });
+
+        public Task<DeviceDto> CreateDeviceAsync(DeviceRequest request) =>
+            Task.FromResult(new DeviceDto { Id = 99, DeviceNo = "EQP-0099", Name = request.Name, TypeName = "类型", Status = DeviceStatus.InUse, StatusText = "在用" });
+
+        public Task<DeviceDto> UpdateDeviceAsync(int id, DeviceRequest request) =>
+            Task.FromResult(new DeviceDto { Id = id, Name = request.Name, Status = DeviceStatus.InUse, StatusText = "在用" });
+
+        public Task DeleteDeviceAsync(int id) => Task.CompletedTask;
+
+        public Task<DeviceDto> ChangeDeviceStatusAsync(int id, DeviceStatusRequest request) =>
+            Task.FromResult(new DeviceDto { Id = id, Status = request.Status, StatusText = "维修中" });
+
+        public Task<List<DeviceStatusLogDto>> GetDeviceStatusLogsAsync(int deviceId) =>
+            Task.FromResult(new List<DeviceStatusLogDto>
+            {
+                new DeviceStatusLogDto { Id = 2, DeviceId = deviceId, OldStatus = (DeviceStatus)(-1), NewStatus = DeviceStatus.InUse, Reason = "登记", ChangedAt = DateTime.Today.AddDays(-30) },
+                new DeviceStatusLogDto { Id = 1, DeviceId = deviceId, OldStatus = DeviceStatus.InUse, NewStatus = DeviceStatus.Disabled, Reason = "年度停用检修", ChangedAt = DateTime.Today.AddDays(-1) }
+            });
+
+        public Task<List<MaintenanceRecordDto>> GetMaintenanceAsync(int deviceId) =>
+            Task.FromResult(new List<MaintenanceRecordDto>());
+
+        public Task<MaintenanceRecordDto> AddMaintenanceAsync(int deviceId, MaintenanceRecordRequest request) =>
+            Task.FromResult(new MaintenanceRecordDto { Id = 1, DeviceId = deviceId, MDate = request.MDate, Content = request.Content, Result = request.Result });
+
+        public Task<List<InspectionRecordDto>> GetInspectionAsync(int deviceId) =>
+            Task.FromResult(new List<InspectionRecordDto>());
+
+        public Task<InspectionRecordDto> AddInspectionAsync(int deviceId, InspectionRecordRequest request) =>
+            Task.FromResult(new InspectionRecordDto { Id = 1, DeviceId = deviceId, IDate = request.IDate, Result = request.Result });
+
+        public Task<List<FaultRecordDto>> GetFaultsAsync(int deviceId) =>
+            Task.FromResult(new List<FaultRecordDto>());
+
+        public Task<FaultRecordDto> AddFaultAsync(int deviceId, FaultRecordRequest request) =>
+            Task.FromResult(new FaultRecordDto { Id = 1, DeviceId = deviceId, Symptom = request.Symptom, Cause = request.Cause, Handle = request.Handle, FTime = request.FTime });
+
+        public Task<List<VendorDto>> GetVendorsAsync() =>
+            Task.FromResult(new List<VendorDto> { new VendorDto { Id = 1, Name = "安泰消防", Contact = "李工", Phone = "13800001234" } });
+
+        public Task<VendorDto> CreateVendorAsync(VendorRequest request) =>
+            Task.FromResult(new VendorDto { Id = 99, Name = request.Name, Contact = request.Contact, Phone = request.Phone });
+
+        public Task DeleteVendorAsync(int id) => Task.CompletedTask;
+
+        public Task<List<EquipmentReminderDto>> GetEquipmentRemindersAsync(int days = 30, string type = null, int status = -1) =>
+            Task.FromResult(new List<EquipmentReminderDto>
+            {
+                new EquipmentReminderDto { ReminderId = 1, Type = "maintenance", DeviceId = 102, DeviceName = "消防泵组", DueAt = DateTime.Today.AddDays(11), Status = ReminderStatus.Pending },
+                new EquipmentReminderDto { ReminderId = 2, Type = "maintenance", DeviceId = 87, DeviceName = "3 单元客梯", DueAt = DateTime.Today.AddDays(18), Status = ReminderStatus.Pending }
+            });
+
+        public Task<ReminderSummaryDto> GetEquipmentReminderSummaryAsync() =>
+            Task.FromResult(new ReminderSummaryDto { Within30 = 2, Within7 = 1, MonthHandled = 3, OverdueUnhandled = 1 });
+
+        public Task<EquipmentReminderDto> HandleEquipmentReminderAsync(int reminderId) =>
+            Task.FromResult(new EquipmentReminderDto { ReminderId = reminderId, Type = "maintenance", DeviceName = "消防泵组", DueAt = DateTime.Today.AddDays(11), Status = ReminderStatus.Processed });
+
+        public Task<EquipmentReminderDto> SaveEquipmentReminderTeamAsync(int reminderId, ReminderTeamRequest request) =>
+            Task.FromResult(new EquipmentReminderDto
+            {
+                ReminderId = reminderId, Type = "maintenance", DeviceName = "消防泵组",
+                DueAt = DateTime.Today.AddDays(11), Status = ReminderStatus.Pending,
+                ResponsibleTeam = request == null || string.IsNullOrWhiteSpace(request.Team) ? "工程部" : request.Team.Trim(),
+                ResponsibleTeamOverride = request == null ? string.Empty : request.Team
+            });
+
+        public Task<ReminderBatchDeleteResultDto> BatchDeleteEquipmentRemindersAsync(ReminderBatchDeleteRequest request) =>
+            Task.FromResult(new ReminderBatchDeleteResultDto { Deleted = request == null || request.Ids == null ? 0 : request.Ids.Count, Blocked = new List<ReminderDeleteBlockedDto>() });
+
+        public Task<List<DeviceCustomRecordDto>> GetDeviceCustomRecordsAsync(int deviceId) =>
+            Task.FromResult(new List<DeviceCustomRecordDto>
+            {
+                new DeviceCustomRecordDto { Id = 1, DeviceId = deviceId, TypeName = "清洁保养", RDate = DateTime.Today.AddDays(-7), Content = "机房清洁与除尘", Result = "合格", Operator = "张工" }
+            });
+
+        public Task<DeviceCustomRecordDto> CreateDeviceCustomRecordAsync(int deviceId, DeviceCustomRecordRequest request) =>
+            Task.FromResult(new DeviceCustomRecordDto { Id = 99, DeviceId = deviceId, TypeName = request.TypeName, RDate = request.RDate, Content = request.Content, Result = request.Result });
+
+        public Task<DeviceCustomRecordDto> UpdateDeviceCustomRecordAsync(int recordId, DeviceCustomRecordRequest request) =>
+            Task.FromResult(new DeviceCustomRecordDto { Id = recordId, DeviceId = request.DeviceId, TypeName = request.TypeName, RDate = request.RDate, Content = request.Content, Result = request.Result });
+
+        public Task DeleteDeviceCustomRecordAsync(int recordId) => Task.CompletedTask;
+
+        public Task<List<string>> GetCustomRecordTypesAsync() =>
+            Task.FromResult(new List<string> { "清洁保养", "月度保养", "季度保养", "年检登记" });
+
+        public Task<DeviceSummaryDto> GetDeviceSummaryAsync() =>
+            Task.FromResult(new DeviceSummaryDto { Total = 2, InUse = 1, Repairing = 1, FaultCount = 1, DisabledOrScrapped = 0, TypeCount = 2 });
+
+        public Task<EquipmentExportResultDto> ExportDevicesAsync(DeviceQueryRequest request) =>
+            Task.FromResult(new EquipmentExportResultDto { Id = 1, FileName = "设备台账.xlsx", Format = "xlsx", Total = 2, ExportedAt = DateTime.Now });
+
+        public Task<DeviceTypeDto> UpdateDeviceTypeAsync(int id, DeviceTypeRequest request) =>
+            Task.FromResult(new DeviceTypeDto { Id = id, Name = request != null ? request.Name : null, MaintenanceCycle = request != null ? request.MaintenanceCycle : 0 });
+
+        public Task<VendorDto> UpdateVendorAsync(int id, VendorRequest request) =>
+            Task.FromResult(new VendorDto { Id = id, Name = request != null ? request.Name : null, Contact = request != null ? request.Contact : null, Phone = request != null ? request.Phone : null });
+
+        public Task<List<FaultRecordDto>> GetAllFaultsAsync() =>
+            Task.FromResult(new List<FaultRecordDto>());
+
+        public Task<FaultRecordDto> HandleFaultAsync(int faultId, FaultHandleRequest request) =>
+            Task.FromResult(new FaultRecordDto { Id = faultId, FaultNo = "WX-2608-01", StatusText = "已修复" });
+
+        public Task<EquipmentExportResultDto> GenerateFaultWorkOrderAsync(int faultId) =>
+            Task.FromResult(new EquipmentExportResultDto
+            {
+                Id = 0, Module = "equipment", FileName = "维修工单_WX-2608-01.xlsx",
+                Total = 1, Format = "xlsx", ExportedAt = DateTime.Now
+            });
+
+        // ==================== M6 系统设置（演示夹具） ====================
+        public Task<List<DictTypeDto>> GetSystemDictTypesAsync() =>
+            Task.FromResult(new List<DictTypeDto>
+            {
+                new DictTypeDto { Id = 1, TypeCode = "charge_method", TypeName = "计费方式" },
+                new DictTypeDto { Id = 2, TypeCode = "id_card_type", TypeName = "证件类型" },
+                new DictTypeDto { Id = 3, TypeCode = "parking_type", TypeName = "车位类型" }
+            });
+
+        public Task<DictTypeDto> CreateSystemDictTypeAsync(DictTypeRequest request) =>
+            Task.FromResult(new DictTypeDto { TypeCode = request.TypeCode, TypeName = request.TypeName });
+
+        public Task<List<DictItemDto>> GetSystemDictItemsAsync(string typeCode, bool includeDisabled = false, int? status = null) =>
+            Task.FromResult(new List<DictItemDto>
+            {
+                new DictItemDto { Id = 1, TypeCode = typeCode, ItemCode = "JFFS-01", ItemName = "按面积计费", Remark = "按建筑面积", Sort = 1, Status = DictItemStatus.Enabled },
+                new DictItemDto { Id = 2, TypeCode = typeCode, ItemCode = "JFFS-02", ItemName = "按户计费", Remark = "按户", Sort = 2, Status = DictItemStatus.Enabled }
+            });
+
+        public Task<DictItemDto> UpdateDictItemAsync(int id, DictItemRequest request) =>
+            Task.FromResult(new DictItemDto { Id = id, TypeCode = request.TypeCode, ItemCode = request.ItemCode, ItemName = request.ItemName, Remark = request.Remark, Sort = request.Sort, Status = request.Status });
+
+        public Task<DictItemDto> SetDictItemStatusAsync(int id, DictItemStatus status) =>
+            Task.FromResult(new DictItemDto { Id = id, Status = status });
+
+        public Task<DictItemBatchDeleteResultDto> BatchDeleteDictItemsAsync(DictItemBatchDeleteRequest request) =>
+            Task.FromResult(new DictItemBatchDeleteResultDto
+            {
+                Deleted = request != null && request.Ids != null ? request.Ids.Count : 0,
+                Blocked = new List<DictItemDeleteBlockedDto>()
+            });
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteAuditLogsAsync(RecordBatchDeleteRequest request) =>
+            Task.FromResult(new RecordBatchDeleteResultDto
+            {
+                Deleted = request != null && request.Ids != null ? request.Ids.Count : 0
+            });
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteBackupRecordsAsync(RecordBatchDeleteRequest request) =>
+            Task.FromResult(new RecordBatchDeleteResultDto
+            {
+                Deleted = request != null && request.Ids != null ? request.Ids.Count : 0
+            });
+
+        public Task<PurgeSoftDeletedResultDto> PurgeSoftDeletedAsync() =>
+            Task.FromResult(new PurgeSoftDeletedResultDto { TotalPurged = 0 });
+
+        public Task<List<ParamDto>> GetSystemParamsAsync() =>
+            Task.FromResult(new List<ParamDto> { new ParamDto { Id = 1, ParamKey = "p_login_lock_count", ParamValue = "5" }, new ParamDto { Id = 2, ParamKey = "p_review_days", ParamValue = "3" } });
+
+        public Task SetSystemParamAsync(string key, string value) => Task.CompletedTask;
+
+        public Task<List<BackupDto>> GetSystemBackupsAsync() =>
+            Task.FromResult(new List<BackupDto>());
+
+        public Task<BackupDto> RunSystemBackupAsync(string note) =>
+            RunSystemBackupAsync(note, null);
+
+        public Task<BackupDto> RunSystemBackupAsync(string note, string targetPath) =>
+            Task.FromResult(new BackupDto
+            {
+                Id = 1,
+                FilePath = string.IsNullOrWhiteSpace(targetPath)
+                    ? "C:\\ProgramData\\PropertyManagement\\backups\\demo.db"
+                    : targetPath,
+                Size = 1024,
+                CreatedAt = DateTime.Now
+            });
+
+        public Task<BackupDto> RestoreSystemBackupAsync(BackupRestoreRequest request) =>
+            Task.FromResult(new BackupDto { Id = request != null ? request.BackupId : 0, FilePath = "backup.db", Size = 1024, CreatedAt = DateTime.Now, Kind = "restore", Result = "成功（演练）" });
+
+        public Task<BackupStatusDto> GetSystemBackupStatusAsync() =>
+            Task.FromResult(new BackupStatusDto
+            {
+                RetainCount = 30,
+                AutoDailyEnabled = true,
+                PendingRestoreDrill = 1,
+                DatabaseSizeText = "演示 2.3 GB",
+                AttachmentsSizeText = "6.8 GB"
+            });
+
+        public Task<AuditExportDto> ExportAuditLogsAsync(AuditLogQueryRequest request) =>
+            Task.FromResult(new AuditExportDto { Content = "时间,操作人,角色,模块,动作,对象,结果,IP", Total = 0 });
+
+        public Task<PageResult<AuditLogDto>> QueryAuditLogsAsync(AuditLogQueryRequest request) =>
+            Task.FromResult(new PageResult<AuditLogDto>
+            {
+                PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 1,
+                Items = new List<AuditLogDto> { new AuditLogDto { Id = 1, Action = "收款登记", TargetType = "财务收费", Detail = "SK-2026-00345 ¥1,280.00", CreatedAt = DateTime.Now } }
+            });
     }
 }

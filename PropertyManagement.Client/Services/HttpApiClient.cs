@@ -13,6 +13,11 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.Health;
+using PropertyManagement.Contract.Org;
+using PropertyManagement.Contract.PhoneBook;
+using PropertyManagement.Contract.Dispute;
+using PropertyManagement.Contract.Emergency;
+using PropertyManagement.Contract.Equipment;
 
 namespace PropertyManagement.Client.Services
 {
@@ -75,9 +80,10 @@ namespace PropertyManagement.Client.Services
             return GetAsync<List<DictItemDto>>("dicts/" + Uri.EscapeDataString(typeCode));
         }
 
-        public Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemCreateRequest request)
+        public Task<DictItemDto> CreateDictItemAsync(string typeCode, DictItemRequest request)
         {
-            return PostAsync<DictItemCreateRequest, DictItemDto>("dicts/" + Uri.EscapeDataString(typeCode) + "/items", request);
+            // PG-COM-01：走 system 端点以支持 显示值/排序（DictItemRequest）
+            return PostAsync<DictItemRequest, DictItemDto>("system/dict-types/" + Uri.EscapeDataString(typeCode) + "/items", request);
         }
 
         public Task<ChargeItemDto> CreateChargeItemAsync(ChargeItemRequest request)
@@ -415,6 +421,816 @@ namespace PropertyManagement.Client.Services
                 "baseinfo/params/" + Uri.EscapeDataString(key), new ParamValueRequest { Value = value });
         }
 
+        // ==================== M6 人员组织（PG-ORG-01~03） ====================
+        public Task<List<DepartmentDto>> GetDepartmentsAsync(string keyword = null)
+        {
+            return GetAsync<List<DepartmentDto>>("org/departments" + Query(new { keyword }));
+        }
+
+        public Task<DepartmentDto> CreateDepartmentAsync(DepartmentRequest request)
+        {
+            return PostAsync<DepartmentRequest, DepartmentDto>("org/departments", request);
+        }
+
+        public Task<DepartmentDto> UpdateDepartmentAsync(int id, DepartmentRequest request)
+        {
+            return PutAsync<DepartmentRequest, DepartmentDto>("org/departments/" + id, request);
+        }
+
+        public Task DeleteDepartmentAsync(int id)
+        {
+            return DeleteAsync<object>("org/departments/" + id);
+        }
+
+        public Task<List<PositionDto>> GetPositionsAsync(int? deptId = null)
+        {
+            return GetAsync<List<PositionDto>>("org/positions" + Query(new { deptId }));
+        }
+
+        public Task<PositionDto> CreatePositionAsync(PositionRequest request)
+        {
+            return PostAsync<PositionRequest, PositionDto>("org/positions", request);
+        }
+
+        public Task<PositionDto> UpdatePositionAsync(int id, PositionRequest request)
+        {
+            return PutAsync<PositionRequest, PositionDto>("org/positions/" + id, request);
+        }
+
+        public Task DeletePositionAsync(int id)
+        {
+            return DeleteAsync<object>("org/positions/" + id);
+        }
+
+        public Task<PageResult<EmployeeDto>> QueryEmployeesAsync(EmployeeQueryRequest request)
+        {
+            return GetAsync<PageResult<EmployeeDto>>("org/employees" + Query(request));
+        }
+
+        public Task<EmployeeDto> GetEmployeeAsync(int id)
+        {
+            return GetAsync<EmployeeDto>("org/employees/" + id);
+        }
+
+        public Task<EmployeeDto> CreateEmployeeAsync(EmployeeRequest request)
+        {
+            return PostAsync<EmployeeRequest, EmployeeDto>("org/employees", request);
+        }
+
+        public Task<EmployeeDto> UpdateEmployeeAsync(int id, EmployeeRequest request)
+        {
+            return PutAsync<EmployeeRequest, EmployeeDto>("org/employees/" + id, request);
+        }
+
+        public Task DeleteEmployeeAsync(int id)
+        {
+            return DeleteAsync<object>("org/employees/" + id);
+        }
+
+        public Task<EmployeeDto> ChangeEmployeeStatusAsync(int id, EmployeeStatusRequest request)
+        {
+            return PostAsync<EmployeeStatusRequest, EmployeeDto>("org/employees/" + id + "/status", request);
+        }
+
+        public Task<EmployeeDto> ResignEmployeeAsync(int id)
+        {
+            return PostAsync<object, EmployeeDto>("org/employees/" + id + "/resign", null);
+        }
+
+        public Task<List<EmployeeStatusLogDto>> GetEmployeeStatusLogsAsync(int id)
+        {
+            return GetAsync<List<EmployeeStatusLogDto>>("org/employees/" + id + "/status-logs");
+        }
+
+        public Task<List<ShiftDto>> GetShiftsAsync()
+        {
+            return GetAsync<List<ShiftDto>>("org/shifts");
+        }
+
+        public Task<ShiftDto> CreateShiftAsync(ShiftRequest request)
+        {
+            return PostAsync<ShiftRequest, ShiftDto>("org/shifts", request);
+        }
+
+        public Task<ShiftDto> UpdateShiftAsync(int id, ShiftRequest request)
+        {
+            return PutAsync<ShiftRequest, ShiftDto>("org/shifts/" + id, request);
+        }
+
+        public Task DeleteShiftAsync(int id)
+        {
+            return DeleteAsync<object>("org/shifts/" + id);
+        }
+
+        public Task<List<ScheduleDto>> QuerySchedulesAsync(DateTime from, DateTime to, int? employeeId = null)
+        {
+            return GetAsync<List<ScheduleDto>>("org/schedules" + Query(new { from, to, employeeId }));
+        }
+
+        public Task<SchedulePlanDto> GenerateSchedulesAsync(ScheduleGenerateRequest request)
+        {
+            return PostAsync<ScheduleGenerateRequest, SchedulePlanDto>("org/schedules/generate", request);
+        }
+
+        public Task<SchedulePlanDto> PublishSchedulesAsync(SchedulePublishRequest request)
+        {
+            return PostAsync<SchedulePublishRequest, SchedulePlanDto>("org/schedules/publish", request);
+        }
+
+        public Task DeleteScheduleAsync(int id)
+        {
+            return DeleteAsync<object>("org/schedules/" + id);
+        }
+
+        public Task<int> DeleteSchedulesBatchAsync(ScheduleBatchDeleteRequest request)
+        {
+            return PostAsync<ScheduleBatchDeleteRequest, int>("org/schedules/batch-delete", request);
+        }
+
+        public Task<List<ScheduleConflictLogDto>> GetScheduleConflictsAsync(DateTime from, DateTime to)
+        {
+            return GetAsync<List<ScheduleConflictLogDto>>("org/schedules/conflicts" + Query(new { from, to }));
+        }
+
+        public Task<List<ScheduleTemplateDto>> GetScheduleTemplatesAsync()
+        {
+            return GetAsync<List<ScheduleTemplateDto>>("org/schedule-templates");
+        }
+
+        public Task<ScheduleTemplateDto> GetScheduleTemplateAsync(int id)
+        {
+            return GetAsync<ScheduleTemplateDto>("org/schedule-templates/" + id);
+        }
+
+        public Task<ScheduleTemplateDto> SaveScheduleTemplateAsync(ScheduleTemplateSaveRequest request)
+        {
+            return PostAsync<ScheduleTemplateSaveRequest, ScheduleTemplateDto>("org/schedule-templates", request);
+        }
+
+        public Task DeleteScheduleTemplateAsync(int id)
+        {
+            return DeleteAsync<object>("org/schedule-templates/" + id);
+        }
+
+        public Task<PageResult<AttendanceDto>> QueryAttendanceAsync(AttendanceQueryRequest request)
+        {
+            return GetAsync<PageResult<AttendanceDto>>("org/attendance" + Query(request));
+        }
+
+        public Task<AttendanceDto> RecordAttendanceAsync(AttendanceRequest request)
+        {
+            return PostAsync<AttendanceRequest, AttendanceDto>("org/attendance", request);
+        }
+
+        public Task<AttendanceSummaryDto> GetAttendanceSummaryAsync(int? year = null, int? month = null, int? deptId = null)
+        {
+            return GetAsync<AttendanceSummaryDto>("org/attendance/summary" + Query(new { year, month, deptId }));
+        }
+
+        public async Task<string> ExportAttendanceCsvAsync(int? year = null, int? month = null, int? deptId = null)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, "org/attendance/export" + Query(new { year, month, deptId })))
+            {
+                AddToken(req);
+                HttpResponseMessage resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    throw new ApiClientException(ErrorCode.InternalError, "考勤月报导出失败（HTTP " + (int)resp.StatusCode + "）");
+                }
+                byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+                return Encoding.UTF8.GetString(bytes);
+            }
+        }
+
+        public Task<AttendanceDto> ReviewAttendanceAsync(int id, AttendanceReviewRequest request)
+        {
+            return PostAsync<AttendanceReviewRequest, AttendanceDto>("org/attendance/" + id + "/review", request);
+        }
+
+        public Task<int> BatchReviewAttendanceAsync(AttendanceBatchReviewRequest request)
+        {
+            return PostAsync<AttendanceBatchReviewRequest, int>("org/attendance/batch-review", request);
+        }
+
+        // ==================== M6 便民电话簿（PG-TEL-01/02） ====================
+        public Task<List<PhoneCategoryDto>> GetPhoneCategoriesAsync()
+        {
+            return GetAsync<List<PhoneCategoryDto>>("phonebook/categories");
+        }
+
+        public Task<PhoneCategoryDto> CreatePhoneCategoryAsync(PhoneCategoryRequest request)
+        {
+            return PostAsync<PhoneCategoryRequest, PhoneCategoryDto>("phonebook/categories", request);
+        }
+
+        public Task DeletePhoneCategoryAsync(int id)
+        {
+            return PostAsync<object, object>("phonebook/categories/" + id + "/delete", null);
+        }
+
+        public Task<List<PhoneTypeDto>> GetPhoneTypesAsync()
+        {
+            return GetAsync<List<PhoneTypeDto>>("phonebook/types");
+        }
+
+        public Task<PhoneTypeDto> CreatePhoneTypeAsync(PhoneTypeRequest request)
+        {
+            return PostAsync<PhoneTypeRequest, PhoneTypeDto>("phonebook/types", request);
+        }
+
+        public Task<PhoneTypeDto> UpdatePhoneTypeAsync(int id, PhoneTypeRequest request)
+        {
+            return PutAsync<PhoneTypeRequest, PhoneTypeDto>("phonebook/types/" + id, request);
+        }
+
+        public Task DeletePhoneTypeAsync(int id)
+        {
+            return PostAsync<object, object>("phonebook/types/" + id + "/delete", null);
+        }
+
+        public Task<PageResult<PhoneEntryDto>> QueryPhoneEntriesAsync(PhoneEntryQueryRequest request)
+        {
+            return GetAsync<PageResult<PhoneEntryDto>>("phonebook/entries" + Query(request));
+        }
+
+        public Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request)
+        {
+            return PostAsync<PhoneEntryRequest, PhoneEntryDto>("phonebook/entries", request);
+        }
+
+        public Task<PhoneEntryDto> UpdatePhoneEntryAsync(int id, PhoneEntryRequest request)
+        {
+            return PutAsync<PhoneEntryRequest, PhoneEntryDto>("phonebook/entries/" + id, request);
+        }
+
+        public Task<PhoneEntryDto> SetPhoneEntryStatusAsync(int id, PhoneEntryStatus status)
+        {
+            return PostAsync<PhoneEntryStatusRequest, PhoneEntryDto>(
+                "phonebook/entries/" + id + "/status", new PhoneEntryStatusRequest { Status = status });
+        }
+
+        public Task<PhoneEntryBatchStatusResultDto> BatchDisablePhoneEntriesAsync(PhoneEntryBatchStatusRequest request)
+        {
+            return PostAsync<PhoneEntryBatchStatusRequest, PhoneEntryBatchStatusResultDto>("phonebook/entries/batch-disable", request);
+        }
+
+        public Task<PhoneEntryDto> SetPhoneEntryTopAsync(int id, bool isTop)
+        {
+            return PostAsync<PhoneEntryTopRequest, PhoneEntryDto>(
+                "phonebook/entries/" + id + "/top" + Query(new { isTop }), new PhoneEntryTopRequest { IsTop = isTop });
+        }
+
+        public Task<EmployeeSyncResultDto> SyncEmployeePhoneEntriesAsync(int categoryId)
+        {
+            return PostAsync<EmployeeSyncRequest, EmployeeSyncResultDto>(
+                "phonebook/sync-employees", new EmployeeSyncRequest { CategoryId = categoryId });
+        }
+
+        // ==================== M6 纠纷调解（PG-DIS-01~03） ====================
+        public Task<List<DisputeTypeDto>> GetDisputeTypesAsync()
+        {
+            return GetAsync<List<DisputeTypeDto>>("dispute/types");
+        }
+
+        public Task<DisputeTypeDto> CreateDisputeTypeAsync(DisputeTypeRequest request)
+        {
+            return PostAsync<DisputeTypeRequest, DisputeTypeDto>("dispute/types", request);
+        }
+
+        public Task DeleteDisputeTypeAsync(int id)
+        {
+            return PostAsync<object, object>("dispute/types/" + id + "/delete", null);
+        }
+
+        public Task<PageResult<DisputeCaseDto>> QueryDisputesAsync(DisputeQueryRequest request)
+        {
+            return GetAsync<PageResult<DisputeCaseDto>>("dispute/cases" + Query(request));
+        }
+
+        public Task<DisputeCaseDetailDto> GetDisputeAsync(int id)
+        {
+            return GetAsync<DisputeCaseDetailDto>("dispute/cases/" + id);
+        }
+
+        public Task<DisputeCaseDto> CreateDisputeAsync(DisputeCaseCreateRequest request)
+        {
+            return PostAsync<DisputeCaseCreateRequest, DisputeCaseDto>("dispute/cases", request);
+        }
+
+        public Task<DisputeCaseDto> UpdateDisputeAsync(int id, DisputeCaseUpdateRequest request)
+        {
+            return PutAsync<DisputeCaseUpdateRequest, DisputeCaseDto>("dispute/cases/" + id, request);
+        }
+
+        public Task<DisputeRecordDto> AddDisputeRecordAsync(int caseId, DisputeRecordRequest request)
+        {
+            return PostAsync<DisputeRecordRequest, DisputeRecordDto>("dispute/cases/" + caseId + "/records", request);
+        }
+
+        public Task DeleteDisputeAsync(int id)
+        {
+            return PostAsync<object, object>("dispute/cases/" + id + "/delete", null);
+        }
+
+        public Task<DisputeCaseDto> UpdateDisputeStatusAsync(int id, DisputeCaseStatusRequest request)
+        {
+            return PostAsync<DisputeCaseStatusRequest, DisputeCaseDto>("dispute/cases/" + id + "/status", request);
+        }
+
+        public Task<DisputeCaseDto> CloseDisputeAsync(int id, DisputeCloseRequest request)
+        {
+            return PostAsync<DisputeCloseRequest, DisputeCaseDto>("dispute/cases/" + id + "/close", request);
+        }
+
+        public Task<DisputeRecordDto> SupplementDisputeCaseAsync(int caseId, DisputeSupplementRequest request)
+        {
+            return PostAsync<DisputeSupplementRequest, DisputeRecordDto>("dispute/cases/" + caseId + "/supplement", request);
+        }
+
+        public Task<List<DisputeMediatorDto>> GetMediatorRecommendationsAsync(int? typeId = null, int? propertyId = null)
+        {
+            return GetAsync<List<DisputeMediatorDto>>("dispute/mediators/recommend" + Query(new { typeId, propertyId }));
+        }
+
+        public Task<DisputeStatisticsDto> GetDisputeStatisticsAsync()
+        {
+            return GetAsync<DisputeStatisticsDto>("dispute/statistics");
+        }
+
+        public Task<ReportLogDto> ExportDisputeCloseReportAsync(int caseId, ExportFormat format)
+        {
+            return PostAsync<DisputeCloseReportRequest, ReportLogDto>(
+                "dispute/cases/" + caseId + "/report", new DisputeCloseReportRequest { Format = format });
+        }
+
+        public async Task DownloadReportFileAsync(int logId, string savePath)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, "reports/files/" + logId))
+            {
+                AddToken(req);
+                HttpResponseMessage resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    throw new ApiClientException(ErrorCode.InternalError, "报表文件下载失败（HTTP " + (int)resp.StatusCode + "）");
+                }
+                byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+                System.IO.File.WriteAllBytes(savePath, bytes);
+            }
+        }
+
+        public Task<List<DisputeAttachmentDto>> GetDisputeAttachmentsAsync(int caseId)
+        {
+            return GetAsync<List<DisputeAttachmentDto>>("dispute/cases/" + caseId + "/attachments");
+        }
+
+        public async Task<DisputeAttachmentDto> UploadDisputeAttachmentAsync(int caseId, string filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath) || !System.IO.File.Exists(filePath))
+            {
+                throw new ApiClientException(ErrorCode.ValidationFailed, "请选择要上传的扫描件文件");
+            }
+
+            using (var content = new MultipartFormDataContent())
+            using (var stream = new System.IO.FileStream(filePath, System.IO.FileMode.Open, System.IO.FileAccess.Read))
+            {
+                var fileContent = new StreamContent(stream);
+                fileContent.Headers.ContentType = new MediaTypeHeaderValue(GuessUploadContentType(filePath));
+                content.Add(fileContent, "file", System.IO.Path.GetFileName(filePath));
+
+                using (var req = new HttpRequestMessage(HttpMethod.Post, "dispute/cases/" + caseId + "/attachments"))
+                {
+                    req.Content = content;
+                    AddToken(req);
+                    return await SendAsync<DisputeAttachmentDto>(req);
+                }
+            }
+        }
+
+        public async Task DownloadDisputeAttachmentAsync(int caseId, int attachmentId, string savePath)
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get,
+                "dispute/cases/" + caseId + "/attachments/" + attachmentId + "/download"))
+            {
+                AddToken(req);
+                HttpResponseMessage resp = await _http.SendAsync(req);
+                if (!resp.IsSuccessStatusCode)
+                {
+                    throw new ApiClientException(ErrorCode.InternalError, "扫描件下载失败（HTTP " + (int)resp.StatusCode + "）");
+                }
+                byte[] bytes = await resp.Content.ReadAsByteArrayAsync();
+                System.IO.File.WriteAllBytes(savePath, bytes);
+            }
+        }
+
+        public Task DeleteDisputeAttachmentAsync(int caseId, int attachmentId)
+        {
+            return DeleteAsync<object>("dispute/cases/" + caseId + "/attachments/" + attachmentId);
+        }
+
+        /// <summary>按扩展名推断上传 MIME（服务端另有白名单校验兜底）。</summary>
+        private static string GuessUploadContentType(string filePath)
+        {
+            switch ((System.IO.Path.GetExtension(filePath) ?? string.Empty).ToLowerInvariant())
+            {
+                case ".pdf": return "application/pdf";
+                case ".png": return "image/png";
+                default: return "image/jpeg";
+            }
+        }
+
+        // ==================== M6 应急处置（PG-EMG-01~04） ====================
+        public Task<List<EmergencySceneDto>> GetEmergencyScenesAsync(string keyword = null)
+        {
+            return GetAsync<List<EmergencySceneDto>>("emergency/scenes" + Query(new { keyword }));
+        }
+
+        public Task<EmergencySceneDto> CreateEmergencySceneAsync(EmergencySceneRequest request)
+        {
+            return PostAsync<EmergencySceneRequest, EmergencySceneDto>("emergency/scenes", request);
+        }
+
+        public Task<EmergencySceneDto> UpdateEmergencySceneAsync(int id, EmergencySceneRequest request)
+        {
+            return PutAsync<EmergencySceneRequest, EmergencySceneDto>("emergency/scenes/" + id, request);
+        }
+
+        public Task DeleteEmergencySceneAsync(int id)
+        {
+            return DeleteAsync<object>("emergency/scenes/" + id);
+        }
+
+        public Task<List<EmergencyStepDto>> GetEmergencyStepsAsync(int sceneId)
+        {
+            return GetAsync<List<EmergencyStepDto>>("emergency/scenes/" + sceneId + "/steps");
+        }
+
+        public Task<EmergencyStepDto> CreateEmergencyStepAsync(int sceneId, EmergencyStepRequest request)
+        {
+            return PostAsync<EmergencyStepRequest, EmergencyStepDto>("emergency/scenes/" + sceneId + "/steps", request);
+        }
+
+        public Task<EmergencyStepDto> UpdateEmergencyStepAsync(int id, EmergencyStepRequest request)
+        {
+            return PutAsync<EmergencyStepRequest, EmergencyStepDto>("emergency/steps/" + id, request);
+        }
+
+        public Task DeleteEmergencyStepAsync(int id)
+        {
+            return DeleteAsync<object>("emergency/steps/" + id);
+        }
+
+        public Task<PageResult<EmergencyEventDto>> QueryEmergencyEventsAsync(EmergencyEventQueryRequest request)
+        {
+            return GetAsync<PageResult<EmergencyEventDto>>("emergency/events" + Query(request));
+        }
+
+        public Task<EmergencyEventDetailDto> GetEmergencyEventAsync(int id)
+        {
+            return GetAsync<EmergencyEventDetailDto>("emergency/events/" + id);
+        }
+
+        public Task<EmergencyEventDetailDto> CreateEmergencyEventAsync(EmergencyEventCreateRequest request)
+        {
+            return PostAsync<EmergencyEventCreateRequest, EmergencyEventDetailDto>("emergency/events", request);
+        }
+
+        public Task<EmergencyEventDetailDto> AssignEmergencyAsync(int id, EmergencyAssignRequest request)
+        {
+            return PostAsync<EmergencyAssignRequest, EmergencyEventDetailDto>("emergency/events/" + id + "/assign", request);
+        }
+
+        public Task<EmergencyRecordDto> AddEmergencyRecordAsync(int id, EmergencyRecordRequest request)
+        {
+            return PostAsync<EmergencyRecordRequest, EmergencyRecordDto>("emergency/events/" + id + "/records", request);
+        }
+
+        public Task<EmergencyEventDetailDto> CloseEmergencyAsync(int id, EmergencyCloseRequest request)
+        {
+            return PostAsync<EmergencyCloseRequest, EmergencyEventDetailDto>("emergency/events/" + id + "/close", request);
+        }
+
+        public Task<List<EmergencyMatchDto>> GetEmergencyMatchesAsync(int sceneId)
+        {
+            return GetAsync<List<EmergencyMatchDto>>("emergency/scenes/" + sceneId + "/match");
+        }
+
+        public Task<EmergencySceneDto> SetEmergencySceneStatusAsync(int id, EmergencySceneStatusRequest request)
+        {
+            return PostAsync<EmergencySceneStatusRequest, EmergencySceneDto>("emergency/scenes/" + id + "/status", request);
+        }
+
+        public Task ReorderEmergencyStepsAsync(int sceneId, List<int> orderedIds)
+        {
+            return PostAsync<List<int>, object>("emergency/scenes/" + sceneId + "/steps/reorder", orderedIds);
+        }
+
+        public Task<EmergencyEventStatsDto> GetEmergencyEventStatsAsync()
+        {
+            return GetAsync<EmergencyEventStatsDto>("emergency/events/stats");
+        }
+
+        public Task CancelEmergencyEventAsync(int id)
+        {
+            return PostAsync<object, object>("emergency/events/" + id + "/cancel", null);
+        }
+
+        public Task<PageResult<EmergencyReviewDto>> QueryEmergencyReviewsAsync(PageRequest request)
+        {
+            return GetAsync<PageResult<EmergencyReviewDto>>("emergency/reviews" + Query(request ?? new PageRequest()));
+        }
+
+        public Task<EmergencyReviewDto> GetEmergencyReviewAsync(int eventId)
+        {
+            return GetAsync<EmergencyReviewDto>("emergency/reviews/" + eventId);
+        }
+
+        public Task<EmergencyReviewDto> ReviewEmergencyAsync(int id, EmergencyReviewRequest request)
+        {
+            return PostAsync<EmergencyReviewRequest, EmergencyReviewDto>("emergency/events/" + id + "/review", request);
+        }
+
+        // ==================== M6 设备台账（PG-EQP-01~04） ====================
+        public Task<List<DeviceTypeDto>> GetDeviceTypesAsync()
+        {
+            return GetAsync<List<DeviceTypeDto>>("equipment/types");
+        }
+
+        public Task<DeviceTypeDto> CreateDeviceTypeAsync(DeviceTypeRequest request)
+        {
+            return PostAsync<DeviceTypeRequest, DeviceTypeDto>("equipment/types", request);
+        }
+
+        public Task DeleteDeviceTypeAsync(int id)
+        {
+            return DeleteAsync<object>("equipment/types/" + id);
+        }
+
+        public Task<List<MaintainTypeDto>> GetMaintainTypesAsync(bool includeDisabled = false)
+        {
+            return GetAsync<List<MaintainTypeDto>>("equipment/maintain-types" + Query(new { includeDisabled }));
+        }
+
+        public Task<PageResult<DeviceDto>> QueryDevicesAsync(DeviceQueryRequest request)
+        {
+            return GetAsync<PageResult<DeviceDto>>("equipment/devices" + Query(request));
+        }
+
+        public Task<DeviceDto> GetDeviceAsync(int id)
+        {
+            return GetAsync<DeviceDto>("equipment/devices/" + id);
+        }
+
+        public Task<DeviceDto> CreateDeviceAsync(DeviceRequest request)
+        {
+            return PostAsync<DeviceRequest, DeviceDto>("equipment/devices", request);
+        }
+
+        public Task<DeviceDto> UpdateDeviceAsync(int id, DeviceRequest request)
+        {
+            return PutAsync<DeviceRequest, DeviceDto>("equipment/devices/" + id, request);
+        }
+
+        public Task DeleteDeviceAsync(int id)
+        {
+            return DeleteAsync<object>("equipment/devices/" + id);
+        }
+
+        public Task<DeviceDto> ChangeDeviceStatusAsync(int id, DeviceStatusRequest request)
+        {
+            return PostAsync<DeviceStatusRequest, DeviceDto>("equipment/devices/" + id + "/status", request);
+        }
+
+        public Task<List<DeviceStatusLogDto>> GetDeviceStatusLogsAsync(int deviceId)
+        {
+            return GetAsync<List<DeviceStatusLogDto>>("equipment/devices/" + deviceId + "/status-logs");
+        }
+
+        public Task<List<MaintenanceRecordDto>> GetMaintenanceAsync(int deviceId)
+        {
+            return GetAsync<List<MaintenanceRecordDto>>("equipment/devices/" + deviceId + "/maintenance");
+        }
+
+        public Task<MaintenanceRecordDto> AddMaintenanceAsync(int deviceId, MaintenanceRecordRequest request)
+        {
+            return PostAsync<MaintenanceRecordRequest, MaintenanceRecordDto>("equipment/devices/" + deviceId + "/maintenance", request);
+        }
+
+        public Task<List<InspectionRecordDto>> GetInspectionAsync(int deviceId)
+        {
+            return GetAsync<List<InspectionRecordDto>>("equipment/devices/" + deviceId + "/inspection");
+        }
+
+        public Task<InspectionRecordDto> AddInspectionAsync(int deviceId, InspectionRecordRequest request)
+        {
+            return PostAsync<InspectionRecordRequest, InspectionRecordDto>("equipment/devices/" + deviceId + "/inspection", request);
+        }
+
+        public Task<List<FaultRecordDto>> GetFaultsAsync(int deviceId)
+        {
+            return GetAsync<List<FaultRecordDto>>("equipment/devices/" + deviceId + "/faults");
+        }
+
+        public Task<FaultRecordDto> AddFaultAsync(int deviceId, FaultRecordRequest request)
+        {
+            return PostAsync<FaultRecordRequest, FaultRecordDto>("equipment/devices/" + deviceId + "/faults", request);
+        }
+
+        public Task<List<VendorDto>> GetVendorsAsync()
+        {
+            return GetAsync<List<VendorDto>>("equipment/vendors");
+        }
+
+        public Task<VendorDto> CreateVendorAsync(VendorRequest request)
+        {
+            return PostAsync<VendorRequest, VendorDto>("equipment/vendors", request);
+        }
+
+        public Task DeleteVendorAsync(int id)
+        {
+            return DeleteAsync<object>("equipment/vendors/" + id);
+        }
+
+        public Task<List<EquipmentReminderDto>> GetEquipmentRemindersAsync(int days = 30, string type = null, int status = -1)
+        {
+            return GetAsync<List<EquipmentReminderDto>>("equipment/reminders" + Query(new { days, type, status }));
+        }
+
+        public Task<ReminderSummaryDto> GetEquipmentReminderSummaryAsync()
+        {
+            return GetAsync<ReminderSummaryDto>("equipment/reminders/summary");
+        }
+
+        public Task<EquipmentReminderDto> HandleEquipmentReminderAsync(int reminderId)
+        {
+            return PostAsync<object, EquipmentReminderDto>("equipment/reminders/" + reminderId + "/handle", null);
+        }
+
+        public Task<EquipmentReminderDto> SaveEquipmentReminderTeamAsync(int reminderId, ReminderTeamRequest request)
+        {
+            return PostAsync<ReminderTeamRequest, EquipmentReminderDto>("equipment/reminders/" + reminderId + "/team", request);
+        }
+
+        public Task<ReminderBatchDeleteResultDto> BatchDeleteEquipmentRemindersAsync(ReminderBatchDeleteRequest request)
+        {
+            return PostAsync<ReminderBatchDeleteRequest, ReminderBatchDeleteResultDto>("equipment/reminders/batch-delete", request);
+        }
+
+        public Task<List<DeviceCustomRecordDto>> GetDeviceCustomRecordsAsync(int deviceId)
+        {
+            return GetAsync<List<DeviceCustomRecordDto>>("equipment/devices/" + deviceId + "/custom-records");
+        }
+
+        public Task<DeviceCustomRecordDto> CreateDeviceCustomRecordAsync(int deviceId, DeviceCustomRecordRequest request)
+        {
+            return PostAsync<DeviceCustomRecordRequest, DeviceCustomRecordDto>("equipment/devices/" + deviceId + "/custom-records", request);
+        }
+
+        public Task<DeviceCustomRecordDto> UpdateDeviceCustomRecordAsync(int recordId, DeviceCustomRecordRequest request)
+        {
+            return PutAsync<DeviceCustomRecordRequest, DeviceCustomRecordDto>("equipment/custom-records/" + recordId, request);
+        }
+
+        public Task DeleteDeviceCustomRecordAsync(int recordId)
+        {
+            return DeleteAsync<object>("equipment/custom-records/" + recordId);
+        }
+
+        public Task<List<string>> GetCustomRecordTypesAsync()
+        {
+            return GetAsync<List<string>>("equipment/custom-record-types");
+        }
+
+        public Task<DeviceSummaryDto> GetDeviceSummaryAsync()
+        {
+            return GetAsync<DeviceSummaryDto>("equipment/devices/summary");
+        }
+
+        public Task<EquipmentExportResultDto> ExportDevicesAsync(DeviceQueryRequest request)
+        {
+            return PostAsync<DeviceQueryRequest, EquipmentExportResultDto>("equipment/devices/exports", request ?? new DeviceQueryRequest());
+        }
+
+        public Task<DeviceTypeDto> UpdateDeviceTypeAsync(int id, DeviceTypeRequest request)
+        {
+            return PutAsync<DeviceTypeRequest, DeviceTypeDto>("equipment/types/" + id, request);
+        }
+
+        public Task<VendorDto> UpdateVendorAsync(int id, VendorRequest request)
+        {
+            return PutAsync<VendorRequest, VendorDto>("equipment/vendors/" + id, request);
+        }
+
+        public Task<List<FaultRecordDto>> GetAllFaultsAsync()
+        {
+            return GetAsync<List<FaultRecordDto>>("equipment/faults");
+        }
+
+        public Task<FaultRecordDto> HandleFaultAsync(int faultId, FaultHandleRequest request)
+        {
+            return PutAsync<FaultHandleRequest, FaultRecordDto>("equipment/faults/" + faultId + "/handle", request);
+        }
+
+        public Task<EquipmentExportResultDto> GenerateFaultWorkOrderAsync(int faultId)
+        {
+            return PostAsync<object, EquipmentExportResultDto>("equipment/faults/" + faultId + "/work-order", null);
+        }
+
+        // ==================== M6 系统设置（PG-COM-01~04） ====================
+        public Task<List<DictTypeDto>> GetSystemDictTypesAsync()
+        {
+            return GetAsync<List<DictTypeDto>>("system/dict-types");
+        }
+
+        public Task<DictTypeDto> CreateSystemDictTypeAsync(DictTypeRequest request)
+        {
+            return PostAsync<DictTypeRequest, DictTypeDto>("system/dict-types", request);
+        }
+
+        public Task<List<DictItemDto>> GetSystemDictItemsAsync(string typeCode, bool includeDisabled = false, int? status = null)
+        {
+            return GetAsync<List<DictItemDto>>("system/dict-types/" + Uri.EscapeDataString(typeCode) + "/items" + Query(new { includeDisabled, status }));
+        }
+
+        public Task<DictItemDto> UpdateDictItemAsync(int id, DictItemRequest request)
+        {
+            return PutAsync<DictItemRequest, DictItemDto>("system/dict-items/" + id, request);
+        }
+
+        public Task<DictItemDto> SetDictItemStatusAsync(int id, DictItemStatus status)
+        {
+            return PostAsync<DictItemRequest, DictItemDto>("system/dict-items/" + id + "/status", new DictItemRequest { Status = status });
+        }
+
+        public Task<DictItemBatchDeleteResultDto> BatchDeleteDictItemsAsync(DictItemBatchDeleteRequest request)
+        {
+            return PostAsync<DictItemBatchDeleteRequest, DictItemBatchDeleteResultDto>(
+                "system/dict-items/batch-delete", request ?? new DictItemBatchDeleteRequest());
+        }
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteAuditLogsAsync(RecordBatchDeleteRequest request)
+        {
+            return PostAsync<RecordBatchDeleteRequest, RecordBatchDeleteResultDto>(
+                "system/audit-logs/batch-delete", request ?? new RecordBatchDeleteRequest());
+        }
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteBackupRecordsAsync(RecordBatchDeleteRequest request)
+        {
+            return PostAsync<RecordBatchDeleteRequest, RecordBatchDeleteResultDto>(
+                "system/backups/batch-delete", request ?? new RecordBatchDeleteRequest());
+        }
+
+        public Task<PurgeSoftDeletedResultDto> PurgeSoftDeletedAsync()
+        {
+            return PostAsync<object, PurgeSoftDeletedResultDto>("system/cleanup/soft-deleted", new { });
+        }
+
+        public Task<List<ParamDto>> GetSystemParamsAsync()
+        {
+            return GetAsync<List<ParamDto>>("system/params");
+        }
+
+        public Task SetSystemParamAsync(string key, string value)
+        {
+            return PutAsync<ParamValueRequest, object>("system/params/" + Uri.EscapeDataString(key), new ParamValueRequest { Value = value });
+        }
+
+        public Task<List<BackupDto>> GetSystemBackupsAsync()
+        {
+            return GetAsync<List<BackupDto>>("system/backups");
+        }
+
+        public Task<BackupDto> RunSystemBackupAsync(string note)
+        {
+            return RunSystemBackupAsync(note, null);
+        }
+
+        public Task<BackupDto> RunSystemBackupAsync(string note, string targetPath)
+        {
+            return PostAsync<BackupCreateRequest, BackupDto>("system/backups/run",
+                new BackupCreateRequest { Note = note, TargetPath = targetPath });
+        }
+
+        public Task<BackupDto> RestoreSystemBackupAsync(BackupRestoreRequest request)
+        {
+            int id = request != null ? request.BackupId : 0;
+            return PostAsync<BackupRestoreRequest, BackupDto>("system/backups/" + id + "/restore", request ?? new BackupRestoreRequest { BackupId = id });
+        }
+
+        public Task<BackupStatusDto> GetSystemBackupStatusAsync()
+        {
+            return GetAsync<BackupStatusDto>("system/backups/status");
+        }
+
+        public Task<AuditExportDto> ExportAuditLogsAsync(AuditLogQueryRequest request)
+        {
+            return GetAsync<AuditExportDto>("system/audit-logs/export" + Query(request ?? new AuditLogQueryRequest()));
+        }
+
+        public Task<PageResult<AuditLogDto>> QueryAuditLogsAsync(AuditLogQueryRequest request)
+        {
+            return GetAsync<PageResult<AuditLogDto>>("system/audit-logs" + Query(request));
+        }
+
         // ==================== 基础 HTTP 设施 ====================
 
         private async Task<T> GetAsync<T>(string url)
@@ -536,18 +1352,39 @@ namespace PropertyManagement.Client.Services
             HttpResponseMessage resp = await _http.SendAsync(req);
             string json = await resp.Content.ReadAsStringAsync();
 
-            if (string.IsNullOrWhiteSpace(json) && resp.IsSuccessStatusCode)
+            if (string.IsNullOrWhiteSpace(json))
             {
-                return default(T);
+                if (resp.IsSuccessStatusCode) return default(T);
+                throw new ApiClientException(ErrorCode.InternalError, "服务响应异常（HTTP " + (int)resp.StatusCode + "）");
             }
 
-            var envelope = JsonConvert.DeserializeObject<ApiResponse<T>>(json);
+            ApiResponse<T> envelope;
+            try
+            {
+                envelope = JsonConvert.DeserializeObject<ApiResponse<T>>(json);
+            }
+            catch (JsonException)
+            {
+                // 服务端业务错误信封为 ApiResponse&lt;object&gt;，data=null 在 T 为值类型（如 bool）时无法反序列化，
+                // 导致向前端暴露英文 "Error converting value {null}..."。此处退化为 object 信封提取中文业务错误。
+                if (!resp.IsSuccessStatusCode)
+                {
+                    ApiResponse<object> err = null;
+                    try { err = JsonConvert.DeserializeObject<ApiResponse<object>>(json); } catch (JsonException) { }
+                    if (err != null)
+                    {
+                        throw new ApiClientException(err.Code, string.IsNullOrEmpty(err.Message) ? "请求处理失败（HTTP " + (int)resp.StatusCode + "）" : err.Message);
+                    }
+                }
+                throw new ApiClientException(ErrorCode.InternalError, "服务响应异常（HTTP " + (int)resp.StatusCode + "）");
+            }
+
             if (envelope == null || envelope.Code != ErrorCode.Success)
             {
                 int code = envelope == null ? ErrorCode.InternalError : envelope.Code;
                 string message = envelope == null
                     ? "服务响应异常（HTTP " + (int)resp.StatusCode + "）"
-                    : envelope.Message;
+                    : (string.IsNullOrEmpty(envelope.Message) ? "请求处理失败（HTTP " + (int)resp.StatusCode + "）" : envelope.Message);
                 throw new ApiClientException(code, message);
             }
             return envelope.Data;

@@ -1,3 +1,4 @@
+using System;
 using System.Web.Http;
 using Newtonsoft.Json.Converters;
 using Newtonsoft.Json.Serialization;
@@ -20,6 +21,7 @@ namespace PropertyManagement.Server
         public void Configuration(IAppBuilder app)
         {
             DatabaseInitializer.EnsureInitialized();
+            StartDailyBackupTimer();
 
             var config = new HttpConfiguration();
 
@@ -45,6 +47,42 @@ namespace PropertyManagement.Server
             // Bearer 鉴权（除 login/health 外逐请求校验）
             app.Use<AuthMiddleware>();
             app.UseWebApi(config);
+        }
+
+        // P-09 每日自动备份（M6 T6-6-3）：每日 02:00 后首次轮询触发；进程存活期间按小时对时
+        private System.Threading.Timer _backupTimer;
+
+        private void StartDailyBackupTimer()
+        {
+            var timer = new System.Threading.Timer(
+                _ =>
+                {
+                    try
+                    {
+                        string today = DateTime.Now.ToString("yyyy-MM-dd");
+                        string flagFile = System.IO.Path.Combine(
+                            Infrastructure.Data.DbConfig.BackupDirectory, "autobackup-" + today + ".flag");
+                        if (System.IO.File.Exists(flagFile))
+                        {
+                            return;
+                        }
+                        if (DateTime.Now.Hour < 2)
+                        {
+                            return; // 未到 02:00
+                        }
+                        var svc = new Services.CommonService();
+                        var dto = svc.RunBackup("每日自动备份（P-09 计划）", "系统计划", null, "auto");
+                        System.IO.File.WriteAllText(flagFile, dto != null ? dto.Id.ToString() : "0");
+                    }
+                    catch (Exception)
+                    {
+                        // 备份失败留待下个轮询周期重试（审计与告警由 RunBackup 内部留痕）
+                    }
+                },
+                null,
+                TimeSpan.FromMinutes(1),
+                TimeSpan.FromHours(1));
+            _backupTimer = timer;
         }
     }
 }

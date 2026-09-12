@@ -120,7 +120,8 @@ namespace PropertyManagement.Contract.Enums
     {
         Active = 0,    // 在职
         OffDuty = 1,   // 离岗
-        Resigned = 2   // 离职
+        Resigned = 2,  // 离职
+        Vacation = 3   // 休假（CHG-ORG-01 在岗状态枚举）
     }
 
     /// <summary>考勤结果（AM-05 §六）。</summary>
@@ -129,7 +130,18 @@ namespace PropertyManagement.Contract.Enums
         Recorded = 0,  // 已记录
         Normal = 1,    // 正常
         Abnormal = 2,  // 异常
-        Reviewed = 3   // 已审核
+        Reviewed = 3,  // 已审核
+        Late = 4,      // 迟到
+        Absent = 5,    // 旷工
+        Leave = 6      // 请假
+    }
+
+    /// <summary>应急事件级别（PG-EMG-02/03：Ⅰ/Ⅱ/Ⅲ 级）。</summary>
+    public enum EmergencyEventLevel
+    {
+        Level1 = 1,    // Ⅰ 级（重大）
+        Level2 = 2,    // Ⅱ 级（较大）
+        Level3 = 3     // Ⅲ 级（一般）
     }
 
     /// <summary>排班状态。</summary>
@@ -146,7 +158,8 @@ namespace PropertyManagement.Contract.Enums
         Initiated = 0,  // 已发起
         Handling = 1,   // 处置中
         Closed = 2,     // 已结案
-        Reviewed = 3    // 已复盘
+        Reviewed = 3,   // 已复盘
+        Cancelled = 4   // 已撤销（1 分钟内误发起撤销留痕）
     }
 
     /// <summary>应急指派类型（责任人/值班人，UC-EMG-004）。</summary>
@@ -214,7 +227,8 @@ namespace PropertyManagement.Contract.Enums
     public enum ExportFormat
     {
         Excel = 0,
-        Pdf = 1
+        Pdf = 1,
+        Csv = 2
     }
 
     /// <summary>基础数据导入模块（UC-INF-006）。</summary>

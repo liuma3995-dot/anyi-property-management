@@ -121,6 +121,57 @@
         <DataTemplate DataType="{x:Type vm:DataImportViewModel}">
             <views:DataImportView />
         </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:EmployeeListViewModel}">
+            <views:EmployeeListView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ScheduleViewModel}">
+            <views:ScheduleView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AttendanceViewModel}">
+            <views:AttendanceView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PhoneQueryViewModel}">
+            <views:PhoneQueryView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:PhoneEntryMaintainViewModel}">
+            <views:PhoneEntryMaintainView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DisputeListViewModel}">
+            <views:DisputeListView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DisputeCreateViewModel}">
+            <views:DisputeCreateView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DisputeHandleViewModel}">
+            <views:DisputeHandleView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:EmergencySceneStepViewModel}">
+            <views:EmergencySceneStepView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeviceListViewModel}">
+            <views:DeviceListView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeviceMaintainViewModel}">
+            <views:DeviceMaintainView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeviceFaultViewModel}">
+            <views:DeviceFaultView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DeviceReminderViewModel}">
+            <views:DeviceReminderView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:DictParamViewModel}">
+            <views:DictParamView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:BackupViewModel}">
+            <views:BackupView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:AuditLogViewModel}">
+            <views:AuditLogView />
+        </DataTemplate>
+        <DataTemplate DataType="{x:Type vm:ChangePasswordPageViewModel}">
+            <views:ChangePasswordPageView />
+        </DataTemplate>
     </hc:Window.Resources>
 
     <Grid>
@@ -471,4 +522,3 @@
         </Grid>
     </Grid>
 </hc:Window>
-

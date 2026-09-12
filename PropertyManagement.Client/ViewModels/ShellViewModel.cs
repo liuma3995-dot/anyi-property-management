@@ -24,6 +24,8 @@ namespace PropertyManagement.Client.ViewModels
         private Brush _statusDotBrush = new SolidColorBrush(Color.FromRgb(0xE6, 0xA2, 0x3C));
         private bool _isUserMenuOpen;
         private string _searchText;
+        private int? _pendingDisputeId;
+        private readonly bool _mustChangePassword;
 
         /// <summary>导航树：仪表盘 + 8 个模块（两级，原型评审记录 §七 定稿）。</summary>
         public ObservableCollection<NavNode> NavNodes { get; } = new ObservableCollection<NavNode>();
@@ -142,6 +144,9 @@ namespace PropertyManagement.Client.ViewModels
         public ShellViewModel(IApiClient api)
         {
             _api = api;
+            // UC-COM-002：登录返回 MustChangePassword（首登/管理员标记；R16 已下线 90 天强制更换）→ 进入后强制改密
+            var session = SessionManager.Instance.Current;
+            _mustChangePassword = session != null && session.MustChangePassword;
 
             BuildNav();
 
@@ -153,12 +158,23 @@ namespace PropertyManagement.Client.ViewModels
 
             SelectNode(NavNodes.First());
             _ = InitializeAsync();
+
+            if (_mustChangePassword)
+            {
+                NavigateToPage("system", "修改密码");
+            }
         }
 
         /// <summary>T4F-2-1：财务模块内页级跳转（如账单工作台"催缴"→欠费台账）。</summary>
         public void NavigateToFinancePage(string pageTitle)
         {
-            var node = NavNodes.FirstOrDefault(n => string.Equals(n.Key, "finance", StringComparison.OrdinalIgnoreCase));
+            NavigateToPage("finance", pageTitle);
+        }
+
+        /// <summary>M6：通用模块内页级跳转（DIS 列表"纠纷登记"→登记页等）；EMG 仅保留场景与步骤维护，无内页跳转。</summary>
+        public void NavigateToPage(string moduleKey, string pageTitle)
+        {
+            var node = NavNodes.FirstOrDefault(n => string.Equals(n.Key, moduleKey, StringComparison.OrdinalIgnoreCase));
             if (node == null) { return; }
             var page = node.Pages.FirstOrDefault(pg => string.Equals(pg.Title, pageTitle, StringComparison.Ordinal));
             if (page != null)
@@ -192,7 +208,7 @@ namespace PropertyManagement.Client.ViewModels
             NavNodes.Add(Module("finance", "财务收费", "Icon.WalletCards",
                 "收费项目维护", "账单工作台", "收款登记", "退款/减免/调整", "支出登记", "欠费台账", "财务报表", "收支明细流水"));
             NavNodes.Add(Module("emergency", "应急处置", "Icon.Siren",
-                "场景与步骤维护", "应急发起", "事件工作台", "复盘记录"));
+                "场景与步骤维护"));
             NavNodes.Add(Module("org", "人员组织", "Icon.Users",
                 "员工列表", "排班表", "考勤记录"));
             NavNodes.Add(Module("phonebook", "便民电话簿", "Icon.ContactRound",
@@ -202,7 +218,7 @@ namespace PropertyManagement.Client.ViewModels
             NavNodes.Add(Module("equipment", "设备台账", "Icon.HardHat",
                 "设备列表", "保养年检登记", "故障登记", "到期提醒"));
             NavNodes.Add(Module("system", "系统设置", "Icon.Settings",
-                "参数字典维护", "备份与恢复", "审计日志查询", "修改密码"));
+                "参数/字典维护", "备份与恢复", "审计日志查询", "修改密码"));
         }
 
         private static NavNode Module(string key, string title, string iconKey, params string[] pageTitles)
@@ -265,7 +281,13 @@ namespace PropertyManagement.Client.ViewModels
             {
                 // 财务收费/基础信息已落地真实子页：点击模块不再显示全局框架占位，直入首个业务子页
                 bool hasRealPages = string.Equals(node.Title, "财务收费", StringComparison.Ordinal)
-                                    || string.Equals(node.Title, "基础信息", StringComparison.Ordinal);
+                                    || string.Equals(node.Title, "基础信息", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "人员组织", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "便民电话簿", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "纠纷调解", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "应急处置", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "设备台账", StringComparison.Ordinal)
+                                    || string.Equals(node.Title, "系统设置", StringComparison.Ordinal);
                 if (hasRealPages && node.Pages.Count > 0)
                 {
                     // 展开：进入首个子页；收起：仅收起子菜单，保留当前页（修复“只支持展开不支持收起”）
@@ -341,7 +363,81 @@ namespace PropertyManagement.Client.ViewModels
                     case "收支明细流水": return new LedgerViewModel(_api);
                 }
             }
+            if (string.Equals(moduleTitle, "人员组织", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "员工列表": return new EmployeeListViewModel(_api);
+                    case "排班表": return new ScheduleViewModel(_api);
+                    case "考勤记录": return new AttendanceViewModel(_api);
+                }
+            }
+            if (string.Equals(moduleTitle, "便民电话簿", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "电话查询": return new PhoneQueryViewModel(_api);
+                    case "电话条目维护": return new PhoneEntryMaintainViewModel(_api);
+                }
+            }
+            if (string.Equals(moduleTitle, "纠纷调解", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "纠纷列表":
+                        var listVm = new DisputeListViewModel(_api);
+                        listVm.OpenHandle += NavigateToDispute;
+                        listVm.OpenCreate += () => NavigateToPage("dispute", "纠纷登记");
+                        return listVm;
+                    case "纠纷登记": return new DisputeCreateViewModel(_api);
+                    case "处理与结案":
+                        var handleVm = new DisputeHandleViewModel(_api);
+                        if (_pendingDisputeId.HasValue)
+                        {
+                            int id = _pendingDisputeId.Value;
+                            _ = handleVm.LoadCaseAsync(id);
+                        }
+                        return handleVm;
+                }
+            }
+            if (string.Equals(moduleTitle, "应急处置", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "场景与步骤维护": return new EmergencySceneStepViewModel(_api);
+                }
+            }
+            if (string.Equals(moduleTitle, "设备台账", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "设备列表": return new DeviceListViewModel(_api);
+                    case "保养年检登记": return new DeviceMaintainViewModel(_api);
+                    case "故障登记": return new DeviceFaultViewModel(_api);
+                    case "到期提醒": return new DeviceReminderViewModel(_api);
+                }
+            }
+            if (string.Equals(moduleTitle, "系统设置", StringComparison.Ordinal))
+            {
+                switch (pageKey)
+                {
+                    case "参数/字典维护": return new DictParamViewModel(_api);
+                    case "备份与恢复": return new BackupViewModel(_api);
+                    case "审计日志查询": return new AuditLogViewModel(_api);
+                    case "修改密码": return new ChangePasswordPageViewModel(_api, !_mustChangePassword);
+                }
+            }
             return new PlaceholderViewModel(pageKey);
+        }
+
+        private void NavigateToDispute(int caseId)
+        {
+            _pendingDisputeId = caseId;
+            var node = NavNodes.FirstOrDefault(n => string.Equals(n.Key, "dispute", StringComparison.OrdinalIgnoreCase));
+            if (node == null) { _pendingDisputeId = null; return; }
+            var page = node.Pages.FirstOrDefault(pg => string.Equals(pg.Title, "处理与结案", StringComparison.Ordinal));
+            if (page != null) SelectPage(page);
+            _pendingDisputeId = null;
         }
 
         private async Task InitializeAsync()

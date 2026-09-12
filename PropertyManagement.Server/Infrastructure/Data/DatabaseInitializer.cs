@@ -18,7 +18,7 @@ namespace PropertyManagement.Server.Infrastructure.Data
     /// </summary>
     public static class DatabaseInitializer
     {
-        private const int SchemaVersion = 15;
+        private const int SchemaVersion = 29;
 
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 
@@ -36,9 +36,12 @@ namespace PropertyManagement.Server.Infrastructure.Data
             DbConfig.EnsureDirectories();
 
             using (IDbConnection connection = new SqliteConnectionFactory().OpenConnection())
-            using (IDbTransaction transaction = connection.BeginTransaction())
             {
-                EnsureVersionTable(connection, transaction);
+                // 迁移可能重建表（DROP/RENAME 如 t_property），SQLite 外键约束会阻止；本连接先关闭外键（须在事务外执行）。
+                connection.Execute("PRAGMA foreign_keys = OFF;");
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    EnsureVersionTable(connection, transaction);
                 int current = GetCurrentVersion(connection, transaction);
 
                 if (current == 0)
@@ -77,6 +80,7 @@ namespace PropertyManagement.Server.Infrastructure.Data
                 }
 
                 transaction.Commit();
+                }
             }
 
             Log.Info("数据库就绪：{0}", DbConfig.DatabaseFile);
