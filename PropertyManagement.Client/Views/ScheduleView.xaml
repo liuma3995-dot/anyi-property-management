@@ -1,0 +1,484 @@
+<UserControl x:Class="PropertyManagement.Client.Views.ScheduleView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <conv:ShiftLegendConverter x:Key="ShiftLegend" />
+        <!-- 软主色按钮：浅蓝底 + 主色字（对应原型「自动排班」，与 ButtonPrimary 同尺寸） -->
+        <Style x:Key="SoftPrimaryButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="{StaticResource AppFont}" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 软危险按钮：浅红底 + 危险色字（对应工具栏「批量删除排班」） -->
+        <Style x:Key="SoftDangerButton" TargetType="Button">
+            <Setter Property="Background" Value="{StaticResource DangerSoftBrush}" />
+            <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FontFamily" Value="{StaticResource AppFont}" />
+            <Setter Property="Padding" Value="14,6" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="8" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource DangerSoftBrush}" />
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.85" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.7" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter TargetName="Bg" Property="Opacity" Value="0.5" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 网格单元格：早/中/晚/休 彩色标签 + 冲突⚠红标 + 缺员红框，点击弹班次选择 -->
+        <Style x:Key="ScheduleCellButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Margin="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Opacity" Value="0.8" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <DataTemplate x:Key="ScheduleCellTemplate">
+            <Button Style="{StaticResource ScheduleCellButton}"
+                    Background="{Binding CellBackground}" BorderBrush="{Binding CellBorder}"
+                    Command="{Binding DataContext.CellClickCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                    CommandParameter="{Binding}" ToolTip="{Binding TooltipText}">
+                <TextBlock Text="{Binding CellText}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding CellForeground}" Margin="2,0" />
+            </Button>
+        </DataTemplate>
+        <!-- 班次图例芯片 -->
+        <DataTemplate x:Key="LegendChipTemplate">
+            <Border CornerRadius="4" Padding="7,2" Margin="3,0">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="#EEF2F7" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding Name}" Value="早班">
+                                <Setter Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Name}" Value="中班">
+                                <Setter Property="Background" Value="#F1EDFD" />
+                            </DataTrigger>
+                            <DataTrigger Binding="{Binding Name}" Value="晚班">
+                                <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
+                <TextBlock FontSize="11">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                            <Setter Property="Text" Value="{Binding Converter={StaticResource ShiftLegend}}" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Name}" Value="早班">
+                                    <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Name}" Value="中班">
+                                    <Setter Property="Foreground" Value="#7A5AF8" />
+                                </DataTrigger>
+                                <DataTrigger Binding="{Binding Name}" Value="晚班">
+                                    <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+            </Border>
+        </DataTemplate>
+    </UserControl.Resources>
+
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="6" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="10" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 排班工具栏：排班周期(开始~结束) / 图例 / 自动排班 / 保存排班 -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <!-- 排班周期：自定义开始~结束日期作为排班表页面 -->
+                <TextBlock Text="排班周期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,6,0" />
+                <hc:DatePicker SelectedDate="{Binding PeriodStart, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="140" FontSize="11"
+                               hc:InfoElement.Placeholder="开始日期" />
+                <TextBlock Text="~" FontSize="12" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="8,0" />
+                <hc:DatePicker SelectedDate="{Binding PeriodEnd, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="140" FontSize="11"
+                               hc:InfoElement.Placeholder="结束日期" />
+                <TextBlock Text="{Binding PeriodDays, StringFormat=共 {0} 天}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="10,0,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <ItemsControl ItemsSource="{Binding LegendShifts}" ItemTemplate="{StaticResource LegendChipTemplate}" VerticalAlignment="Center" />
+                <ComboBox SelectedIndex="{Binding GridFilter}" Width="88" Height="32" FontSize="11" Margin="6,0,0,0" VerticalContentAlignment="Center">
+                    <ComboBoxItem Content="全部员工" />
+                    <ComboBoxItem Content="已排班" />
+                    <ComboBoxItem Content="未排班" />
+                </ComboBox>
+                <Button Style="{StaticResource SoftPrimaryButton}" Content="班次时间" Command="{Binding ShiftSettingCommand}" Margin="8,0,0,0" />
+                <Button Style="{StaticResource SoftPrimaryButton}" Content="自动排班" Command="{Binding GenerateCommand}" Margin="8,0,0,0" />
+                <Button Style="{StaticResource ButtonPrimary}" Height="32" FontSize="13" Content="保存排班" Command="{Binding SaveCommand}" Margin="8,0,0,0" />
+                <Button Style="{StaticResource SoftDangerButton}" Content="批量删除排班" Command="{Binding BatchDeleteCommand}" Margin="8,0,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 员工 × 排班周期天数 矩阵网格（周期内每天一列，列宽固定，长周期横向滚动） -->
+        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="10,8">
+            <Grid>
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto" HorizontalContentAlignment="Left" VerticalContentAlignment="Top">
+                    <StackPanel>
+                        <!-- 表头：员工 + 周期每日 -->
+                        <StackPanel Orientation="Horizontal">
+                            <Border Width="126" Height="36" Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Margin="1">
+                                <TextBlock Text="员工" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="8,0" />
+                            </Border>
+                            <ItemsControl ItemsSource="{Binding DayHeaders}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Border Width="126" Height="36" Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Margin="1">
+                                            <TextBlock Text="{Binding}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </StackPanel>
+
+                        <!-- 行：首列 姓名 · 岗位，后接周期每天单元格 -->
+                        <ItemsControl ItemsSource="{Binding GridRows}" Margin="0,6,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Border Width="128" Height="36" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,0,1,1" Padding="8,0">
+                                            <TextBlock Text="{Binding EmployeeText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                        </Border>
+                                        <ItemsControl ItemsSource="{Binding Cells}">
+                                            <ItemsControl.ItemsPanel>
+                                                <ItemsPanelTemplate>
+                                                    <StackPanel Orientation="Horizontal" />
+                                                </ItemsPanelTemplate>
+                                            </ItemsControl.ItemsPanel>
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <ContentControl Width="128" Height="36" Content="{Binding}" ContentTemplate="{StaticResource ScheduleCellTemplate}" />
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </ScrollViewer>
+
+                <TextBlock Text="当前周期暂无排班，点击「自动排班」一键生成草稿，或点击单元格手工排班。"
+                           FontSize="12" Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                           Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+        </Border>
+
+        <!-- 状态 / 错误 -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+        </StackPanel>
+
+        <!-- 交互标注 -->
+        <Border Grid.Row="8" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                    <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="· 【保存排班】→ 冲突检查不通过则阻断并列出冲突清单；通过后推送员工确认" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="· 晚班 00:00-08:00 计入次日考勤（UC-ORG-003/004）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 班次选择弹窗（点击单元格） -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsPickerVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="360" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="选择班次" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="{Binding PickerTitle}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <ItemsControl ItemsSource="{Binding ShiftOptions}" Margin="0,14,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Height="38" Margin="0,0,0,8" HorizontalContentAlignment="Stretch" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Cursor="Hand"
+                                        Command="{Binding DataContext.PickShiftCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}">
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding Label}" FontSize="13" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}" Width="34" />
+                                        <TextBlock Text="{Binding Detail}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="选择后加入未保存修改，点击「保存排班」提交；已发布排班不可修改。" FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,12,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding ClosePickerCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 自动排班（自定义员工/日期/班次） -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsAutoPlanVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="500" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="自动排班" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="选择员工、周期与周期内所有班次；可套用保存排班生成的模板（不勾选员工时按需求自动旋转补齐）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,6">
+                        <TextBlock Text="员工" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                        <CheckBox IsChecked="{Binding IsAutoPlanAllEmployeesSelected, Mode=TwoWay}" Content="全选" FontSize="11" Margin="14,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Border Style="{StaticResource CardBorder}" Padding="8" MaxHeight="150">
+                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding AutoPlanEmployees}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Display}" FontSize="12" Margin="0,3" />
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Border>
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="开始日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding AutoPlanFromDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="~" VerticalAlignment="Bottom" Margin="10,0" Foreground="{StaticResource TextMutedBrush}" />
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="结束日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding AutoPlanToDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="班次（周期内，可多选）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,14,0,6" />
+                    <ItemsControl ItemsSource="{Binding AutoPlanShiftItems}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <StackPanel Orientation="Horizontal" />
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Display}" FontSize="12" Margin="0,3,14,0" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="排班模板（保存排班后生成，可选）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,14,0,6" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox Grid.Column="0" SelectedValue="{Binding SelectedTemplateId}" SelectedValuePath="Id" DisplayMemberPath="Display"
+                                  Height="32" FontSize="11" ItemsSource="{Binding AutoPlanTemplates}" />
+                        <Button Grid.Column="1" Style="{StaticResource SoftDangerButton}" Content="删除模板" Command="{Binding DeleteTemplateCommand}" Margin="8,0,0,0" />
+                    </Grid>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding AutoPlanCancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="生成排班" Command="{Binding AutoPlanConfirmCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 保存排班（自定义保存周期，并同步工具栏日历周期） -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsSaveVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="保存排班" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="自定义保存周期；保存成功后工具栏排班周期将同步更新为一个保存周期（默认=当前排班周期）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="周期开始" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding SaveFromDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="~" VerticalAlignment="Bottom" Margin="10,0" Foreground="{StaticResource TextMutedBrush}" />
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="周期结束" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding SaveToDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding SaveCancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveConfirmCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 班次时间设置（早/中/晚班） -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsShiftSettingVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="班次时间设置" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="自定义调整早班/中班/晚班的上下班时间；保存后图例与网格班次时间同步更新" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <ItemsControl ItemsSource="{Binding EditableShifts}" Margin="0,14,0,0">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="70" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="90" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="开始" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    <TextBox Grid.Column="2" Text="{Binding StartTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="30" FontSize="12" VerticalContentAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="结束" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" Margin="16,0,8,0" />
+                                    <TextBox Grid.Column="4" Text="{Binding EndTime, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Height="30" FontSize="12" VerticalContentAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding ShiftSettingCancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding ShiftSettingSaveCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 批量删除排班 -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsBatchDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="批量删除排班" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="删除指定周期内的排班；勾选班次可限定删除范围（默认全部），删除后不可恢复" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <Grid Margin="0,14,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="开始日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding BatchDeleteFromDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                        <TextBlock Grid.Column="1" Text="~" VerticalAlignment="Bottom" Margin="10,0" Foreground="{StaticResource TextMutedBrush}" />
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="结束日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                            <hc:DatePicker SelectedDate="{Binding BatchDeleteToDate, Mode=TwoWay}" Height="32" Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <TextBlock Text="班次" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" Margin="0,14,0,6" />
+                    <ItemsControl ItemsSource="{Binding BatchDeleteShifts}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" Content="{Binding Display}" FontSize="12" Margin="0,3" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding BatchDeleteCancelCommand}" />
+                        <Button Background="{StaticResource DangerBrush}" Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding BatchDeleteConfirmCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 保存后询问：是否需要生成排班模板保存于自动排班 -->
+        <Border Grid.RowSpan="9" Background="#66000000" Visibility="{Binding IsSaveTemplateVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="生成排班模板" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,4" />
+                    <TextBlock Text="是否需要将当前周期的数据保存为排班模板，用于自动排班一键套用？" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="否" Command="{Binding SaveTemplateCancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="是，生成模板" Command="{Binding SaveTemplateConfirmCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>
