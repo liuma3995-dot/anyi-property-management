@@ -44,7 +44,10 @@ namespace PropertyManagement.Contract.BaseInfo
     public class PropertyDto
     {
         public int Id { get; set; }
-        public int UnitId { get; set; }
+        /// <summary>所属楼栋（t_property.building_id；楼栋与单元解耦，楼栋必填）。</summary>
+        public int? BuildingId { get; set; }
+        /// <summary>所属单元（可为空：部分楼栋无单元）。</summary>
+        public int? UnitId { get; set; }
         public string UnitNo { get; set; }
         public string BuildingNo { get; set; }
         public string CommunityName { get; set; }
@@ -90,6 +93,10 @@ namespace PropertyManagement.Contract.BaseInfo
         public int Id { get; set; }
         public int PropertyId { get; set; }
         public int OwnerId { get; set; }
+        /// <summary>房产所属楼栋号（跨模块显示：楼栋+单元+房号）。</summary>
+        public string BuildingNo { get; set; }
+        /// <summary>房产所属单元号（可为空）。</summary>
+        public string UnitNo { get; set; }
         public string PropertyRoomNo { get; set; }
         public string PropertyUnitPath { get; set; }
         public string OwnerName { get; set; }

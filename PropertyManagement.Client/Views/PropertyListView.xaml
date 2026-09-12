@@ -210,7 +210,7 @@
                         <Button Style="{StaticResource LinkButton}" Content="取消" Command="{Binding CancelNewBuildingCommand}" VerticalAlignment="Center" Margin="6,0,0,0" />
                     </StackPanel>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="所属单元" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" />
+                        <TextBlock Text="所属单元（选填）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" VerticalAlignment="Center" />
                         <Button Style="{StaticResource LinkButton}" Content="＋新增" Command="{Binding OpenNewUnitCommand}" VerticalAlignment="Center" Margin="8,0,0,0" />
                         <Button Style="{StaticResource LinkButton}" Content="删除" Foreground="{StaticResource DangerBrush}" Command="{Binding DeleteUnitCommand}" VerticalAlignment="Center" Margin="6,0,0,0" />
                     </StackPanel>

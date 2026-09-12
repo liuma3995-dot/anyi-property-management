@@ -273,7 +273,7 @@ namespace PropertyManagement.Client.ViewModels
                 PendingReminders = dto.PendingReminders;
                 HandlingEmergency = dto.HandlingEmergency;
                 HandlingDisputes = dto.HandlingDisputes;
-                MaintenanceDue = dto.MaintenanceDue > 0 ? dto.MaintenanceDue : dto.RepairingDevices;
+                MaintenanceDue = dto.MaintenanceDue;
                 DutyToday = dto.DutyToday;
 
                 CollectionRateText = dto.CollectionRate.ToString("0.0") + "%";

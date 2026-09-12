@@ -43,6 +43,7 @@ namespace PropertyManagement.Server.Domain.Repositories
         void UpdateProperty(IDbConnection connection, IDbTransaction transaction, PropertyDto dto);
         void SoftDeleteProperty(IDbConnection connection, IDbTransaction transaction, int id);
         PropertyDto GetPropertyByUnitRoom(IDbConnection connection, IDbTransaction transaction, int unitId, string roomNo, int excludeId);
+        PropertyDto GetPropertyByBuildingRoom(IDbConnection connection, IDbTransaction transaction, int buildingId, string roomNo, int excludeId);
 
         // ---------- 业主（UC-INF-003） ----------
         OwnerDto GetOwner(IDbConnection connection, int id);

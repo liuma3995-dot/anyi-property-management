@@ -201,7 +201,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             }
             if (query.BuildingId.HasValue)
             {
-                where += " AND b.id = @buildingId";
+                where += " AND COALESCE(p.building_id, u.building_id) = @buildingId";
                 p.Add("buildingId", query.BuildingId.Value);
             }
             if (query.UnitId.HasValue)
@@ -247,7 +247,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             string from = "FROM t_property p " +
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
                 "LEFT JOIN t_building b ON b.id = u.building_id " +
-                "LEFT JOIN t_community c ON c.id = b.community_id";
+                "LEFT JOIN t_building pb ON pb.id = p.building_id " +
+                "LEFT JOIN t_community c ON c.id = COALESCE(pb.community_id, b.community_id)";
 
             total = connection.ExecuteScalar<int>("SELECT COUNT(1) " + from + " " + where, p);
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
@@ -267,12 +268,14 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             "FROM t_property p " +
             "LEFT JOIN t_unit u ON u.id = p.unit_id " +
             "LEFT JOIN t_building b ON b.id = u.building_id " +
-            "LEFT JOIN t_community c ON c.id = b.community_id";
+            "LEFT JOIN t_building pb ON pb.id = p.building_id " +
+            "LEFT JOIN t_community c ON c.id = COALESCE(pb.community_id, b.community_id)";
 
         private const string PropertySelectSql =
-            "SELECT p.id, p.unit_id AS UnitId, u.unit_no AS UnitNo, b.building_no AS BuildingNo, " +
+            "SELECT p.id, p.building_id AS BuildingId, p.unit_id AS UnitId, u.unit_no AS UnitNo, " +
+            "COALESCE(pb.building_no, b.building_no) AS BuildingNo, " +
             "c.name AS CommunityName, " +
-            "COALESCE(b.building_no,'') || '-' || COALESCE(u.unit_no,'') || '-' || p.room_no AS UnitPath, " +
+            "COALESCE(pb.building_no, b.building_no, '') || COALESCE(u.unit_no,'') || COALESCE(p.room_no,'') AS UnitPath, " +
             "p.room_no AS RoomNo, p.area AS Area, p.usage AS Usage, p.status AS Status, " +
             "COALESCE((SELECT o.name FROM t_owner o JOIN t_owner_property_rel r ON r.owner_id = o.id " +
             "  WHERE r.property_id = p.id AND r.del_flag = 0 AND r.rel_status IN (0,1) " +
@@ -285,7 +288,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         private class PropertyRead
         {
             public int Id { get; set; }
-            public int UnitId { get; set; }
+            public int? BuildingId { get; set; }
+            public int? UnitId { get; set; }
             public string UnitNo { get; set; }
             public string BuildingNo { get; set; }
             public string CommunityName { get; set; }
@@ -306,6 +310,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return new PropertyDto
             {
                 Id = r.Id,
+                BuildingId = r.BuildingId,
                 UnitId = r.UnitId,
                 UnitNo = r.UnitNo,
                 BuildingNo = r.BuildingNo,
@@ -338,17 +343,17 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         public int InsertProperty(IDbConnection connection, IDbTransaction transaction, PropertyDto dto)
         {
             return connection.ExecuteScalar<int>(
-                "INSERT INTO t_property (unit_id, room_no, area, usage, status, del_flag) " +
-                "VALUES (@UnitId, @RoomNo, @Area, @Usage, @Status, 0); SELECT last_insert_rowid();",
-                new { dto.UnitId, dto.RoomNo, dto.Area, dto.Usage, dto.Status }, transaction);
+                "INSERT INTO t_property (building_id, unit_id, room_no, area, usage, status, del_flag) " +
+                "VALUES (@BuildingId, @UnitId, @RoomNo, @Area, @Usage, @Status, 0); SELECT last_insert_rowid();",
+                new { dto.BuildingId, dto.UnitId, dto.RoomNo, dto.Area, dto.Usage, dto.Status }, transaction);
         }
 
         public void UpdateProperty(IDbConnection connection, IDbTransaction transaction, PropertyDto dto)
         {
             connection.Execute(
-                "UPDATE t_property SET unit_id = @UnitId, room_no = @RoomNo, area = @Area, usage = @Usage, " +
+                "UPDATE t_property SET building_id = @BuildingId, unit_id = @UnitId, room_no = @RoomNo, area = @Area, usage = @Usage, " +
                 "status = @Status, updated_at = datetime('now','localtime') WHERE id = @Id AND del_flag = 0",
-                new { dto.Id, dto.UnitId, dto.RoomNo, dto.Area, dto.Usage, dto.Status }, transaction);
+                new { dto.Id, dto.BuildingId, dto.UnitId, dto.RoomNo, dto.Area, dto.Usage, dto.Status }, transaction);
         }
 
         public void SoftDeleteProperty(IDbConnection connection, IDbTransaction transaction, int id)
@@ -363,6 +368,14 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.QueryFirstOrDefault<PropertyDto>(
                 "SELECT id FROM t_property WHERE unit_id = @unitId AND room_no = @roomNo AND del_flag = 0 AND id <> @excludeId",
                 new { unitId, roomNo, excludeId }, transaction);
+        }
+
+        /// <summary>无单元房产按「楼栋 + 房号」判重（BR-INF-01，无单元口径）。</summary>
+        public PropertyDto GetPropertyByBuildingRoom(IDbConnection connection, IDbTransaction transaction, int buildingId, string roomNo, int excludeId)
+        {
+            return connection.QueryFirstOrDefault<PropertyDto>(
+                "SELECT id FROM t_property WHERE building_id = @buildingId AND room_no = @roomNo AND del_flag = 0 AND id <> @excludeId",
+                new { buildingId, roomNo, excludeId }, transaction);
         }
 
         // ===================== 业主 =====================
@@ -580,7 +593,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         private const string RelationSelectSql =
             "SELECT r.id, r.property_id AS PropertyId, r.owner_id AS OwnerId, " +
             "COALESCE(p.room_no, '') AS PropertyRoomNo, " +
-            "COALESCE(b.building_no,'') || '-' || COALESCE(u.unit_no,'') || '-' || COALESCE(p.room_no,'') AS PropertyUnitPath, " +
+            "COALESCE((SELECT building_no FROM t_building WHERE id = p.building_id), b.building_no, '') AS BuildingNo, COALESCE(u.unit_no, '') AS UnitNo, " +
+            "COALESCE((SELECT building_no FROM t_building WHERE id = p.building_id), b.building_no, '') || COALESCE(u.unit_no,'') || COALESCE(p.room_no,'') AS PropertyUnitPath, " +
             "COALESCE(o.name, '') AS OwnerName, COALESCE(o.phone, '') AS OwnerPhone, " +
             "r.rel_type AS RelType, r.share AS Share, r.effective_at AS EffectiveAt, r.expire_at AS ExpireAt, " +
             "r.rel_status AS Status, " +

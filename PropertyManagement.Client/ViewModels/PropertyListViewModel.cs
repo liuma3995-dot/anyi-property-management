@@ -33,12 +33,15 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
         public string RoomNo { get { return Dto.RoomNo; } }
+        /// <summary>完整房号：楼栋(原值) + 单元(原值) + 房号；与表单/楼栋主数据同一口径（不做任何改写）。</summary>
         public string Path
         {
             get
             {
-                string bld = string.IsNullOrEmpty(Dto.BuildingNo) ? string.Empty : Dto.BuildingNo.Replace("号楼", "栋");
-                return string.IsNullOrEmpty(bld) ? Dto.RoomNo : (bld + Dto.UnitNo + Dto.RoomNo);
+                string bld = Dto.BuildingNo ?? string.Empty;
+                string unit = Dto.UnitNo ?? string.Empty;
+                string room = Dto.RoomNo ?? string.Empty;
+                return bld + unit + room;
             }
         }
         public string AreaText { get { return Dto.Area.ToString("0.0") + "㎡"; } }
@@ -145,7 +148,7 @@ namespace PropertyManagement.Client.ViewModels
             });
             DeleteUnitCommand = new RelayCommand(() =>
             {
-                if (!FormUnitId.HasValue) { ErrorText = "请先选择要删除的单元"; return; }
+                if (!FormUnitId.HasValue || FormUnitId.Value <= 0) { ErrorText = "请先选择要删除的单元"; return; }
                 if (!FormBuildingId.HasValue) { ErrorText = "请先选择/新增楼栋"; return; }
                 var unit = Units.FirstOrDefault(x => x.Id == FormUnitId.Value);
                 if (unit == null) return;
@@ -295,12 +298,19 @@ namespace PropertyManagement.Client.ViewModels
         private async Task LoadUnitsAsync()
         {
             Units.Clear();
-            if (_formBuildingId.HasValue)
+            // 「（无单元）」选项：部分楼栋无单元，单元为选填
+            Units.Add(new UnitDto { Id = 0, UnitNo = "（无单元）" });
+            int firstRealUnitId = 0;
+            if (_formBuildingId.HasValue && _formBuildingId.Value > 0)
             {
                 var units = await Api.GetUnitsAsync(_formBuildingId.Value);
-                foreach (var u in units) Units.Add(u);
+                foreach (var u in units)
+                {
+                    Units.Add(u);
+                    if (firstRealUnitId == 0) firstRealUnitId = u.Id;
+                }
             }
-            FormUnitId = null;
+            FormUnitId = firstRealUnitId;
         }
 
         private async Task ReloadBuildingsAsync(int? selectId)
@@ -348,8 +358,9 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(FormTitle));
             OnPropertyChanged(nameof(IsEditing));
             FormRoomNo = string.Empty;
-            FormBuildingId = Buildings.FirstOrDefault()?.Id;
-            FormUnitId = null;
+            // 楼栋直接赋值（跳过 setter 触发），仅由下方 LoadUnitsAsync 加载一次，避免并发重复
+            _formBuildingId = Buildings.FirstOrDefault()?.Id;
+            OnPropertyChanged(nameof(FormBuildingId));
             FormArea = 0;
             FormUsage = PropertyUsage.Residential;
             FormStatus = PropertyStatus.Vacant;
@@ -364,10 +375,11 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(FormTitle));
             OnPropertyChanged(nameof(IsEditing));
             FormRoomNo = row.Dto.RoomNo;
-            _formBuildingId = Buildings.FirstOrDefault(x => string.Equals(x.BuildingNo, row.Dto.BuildingNo, StringComparison.Ordinal))?.Id;
+            _formBuildingId = row.Dto.BuildingId
+                ?? Buildings.FirstOrDefault(x => string.Equals(x.BuildingNo, row.Dto.BuildingNo, StringComparison.Ordinal))?.Id;
             OnPropertyChanged(nameof(FormBuildingId));
             await LoadUnitsAsync();
-            FormUnitId = row.Dto.UnitId;
+            FormUnitId = row.Dto.UnitId ?? 0;   // 无单元回显为「（无单元）」
             FormArea = row.Dto.Area;
             FormUsage = row.Dto.Usage;
             FormStatus = row.Dto.Status;
@@ -377,11 +389,14 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SaveAsync()
         {
             if (string.IsNullOrWhiteSpace(FormRoomNo)) { ErrorText = "房号不能为空"; return; }
-            if (!FormUnitId.HasValue) { ErrorText = "请选择单元"; return; }
+            if (!FormBuildingId.HasValue || FormBuildingId.Value <= 0) { ErrorText = "请选择所属楼栋"; return; }
             if (FormArea <= 0) { ErrorText = "建筑面积必须大于 0"; return; }
+            // 单元选填：Id<=0 视为「无单元」
+            int? unitId = FormUnitId.HasValue && FormUnitId.Value > 0 ? FormUnitId : (int?)null;
             var request = new PropertyRequest
             {
-                UnitId = FormUnitId.Value,
+                BuildingId = FormBuildingId.Value,
+                UnitId = unitId,
                 RoomNo = FormRoomNo.Trim(),
                 Area = FormArea,
                 Usage = FormUsage,
@@ -470,7 +485,7 @@ namespace PropertyManagement.Client.ViewModels
         {
             await Api.DeleteUnitAsync(unitId);
             await LoadUnitsAsync();
-            FormUnitId = Units.FirstOrDefault()?.Id;
+            FormUnitId = Units.FirstOrDefault(x => x.Id > 0)?.Id ?? 0;
         }
 
         private async Task ExportAsync()

@@ -64,7 +64,14 @@ namespace PropertyManagement.Server.Services
                     "SELECT COUNT(1) FROM t_schedule WHERE del_flag = 0 AND status = 1 " +
                     "AND work_date = date('now','localtime')");
 
-                dto.MaintenanceDue = 0; // 保养/年检到期按 P-04 周期计算，M6 填充
+                // P-04 保养/年检到期（30 天内）：保养=最近保养（或投运）+类型周期；年检=最近年检（或投运）+1 年
+                dto.MaintenanceDue = connection.ExecuteScalar<int>(
+                    "SELECT COUNT(1) FROM t_device d LEFT JOIN t_device_type t ON t.id = d.type_id " +
+                    "WHERE d.del_flag = 0 AND d.status IN (0,1) AND (" +
+                    "date(COALESCE((SELECT MAX(m.m_date) FROM t_maintenance_record m WHERE m.device_id = d.id), d.enable_date, d.created_at), " +
+                    "'+' || COALESCE(t.maintenance_cycle, 30) || ' day') <= date('now','localtime','+30 day') OR " +
+                    "date(COALESCE((SELECT MAX(i.i_date) FROM t_inspection_record i WHERE i.device_id = d.id), d.enable_date, d.created_at), '+1 year') " +
+                    "<= date('now','localtime','+30 day'))");
 
                 // 本月应收/已收/收缴率（M4 财务切片细化口径）
                 dto.MonthReceivable = Sum(connection,

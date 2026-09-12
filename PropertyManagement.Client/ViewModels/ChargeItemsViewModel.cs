@@ -624,8 +624,9 @@ namespace PropertyManagement.Client.ViewModels
             string name = CustomInputName.Trim();
             await RunAsync(async () =>
             {
-                DictItemDto created = await Api.CreateDictItemAsync(_customTypeCode, new DictItemCreateRequest
+                DictItemDto created = await Api.CreateDictItemAsync(_customTypeCode, new DictItemRequest
                 {
+                    TypeCode = _customTypeCode,
                     ItemName = name,
                     Remark = CustomShowRemark ? (CustomInputRemark ?? string.Empty).Trim() : string.Empty
                 });

@@ -292,7 +292,7 @@
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.Siren}" Style="{StaticResource IconStroke}"
                               Stroke="{StaticResource PrimaryBrush}" Width="17" Height="17" />
-                        <TextBlock Text="应急发起" FontSize="11" FontWeight="SemiBold"
+                        <TextBlock Text="场景与步骤维护" FontSize="11" FontWeight="SemiBold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="9,0,0,0" />
                     </StackPanel>
                 </Button>

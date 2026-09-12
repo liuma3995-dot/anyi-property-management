@@ -284,7 +284,7 @@ namespace PropertyManagement.Server.Services
         // ---------- PDF 导出（PDFsharp，中文用 SimHei 字体解析） ----------
         private static void ExportPdf(string filePath, string period, FinancialReportDto report, bool annualWindow)
         {
-            EnsureFontResolver();
+            PdfFontSupport.Ensure();
 
             using (var document = new PdfDocument())
             {
@@ -345,54 +345,5 @@ namespace PropertyManagement.Server.Services
             return text.Length <= maxLength ? text : text.Substring(0, maxLength) + "…";
         }
 
-        private static readonly object FontResolverLock = new object();
-        private static bool _fontResolverReady;
-
-        /// <summary>线程安全：FontResolver 只允许设置一次，且必须在任何字体操作之前。</summary>
-        private static void EnsureFontResolver()
-        {
-            if (_fontResolverReady)
-            {
-                return;
-            }
-            lock (FontResolverLock)
-            {
-                if (!_fontResolverReady)
-                {
-                    GlobalFontSettings.FontResolver = new WindowsFontResolver();
-                    _fontResolverReady = true;
-                }
-            }
-        }
-
-        /// <summary>Windows 系统字体解析器（中文导出，优先 SimHei）。</summary>
-        private class WindowsFontResolver : IFontResolver
-        {
-            public string DefaultFontName
-            {
-                get { return "SimHei"; }
-            }
-
-            public byte[] GetFont(string faceName)
-            {
-                string fontsDir = Environment.GetFolderPath(Environment.SpecialFolder.Fonts);
-                string simHei = Path.Combine(fontsDir, "simhei.ttf");
-                if (File.Exists(simHei))
-                {
-                    return File.ReadAllBytes(simHei);
-                }
-                string simSun = Path.Combine(fontsDir, "simsun.ttc");
-                if (File.Exists(simSun))
-                {
-                    return File.ReadAllBytes(simSun);
-                }
-                throw new InvalidOperationException("未找到中文字体（simhei.ttf / simsun.ttc），无法导出中文 PDF");
-            }
-
-            public FontResolverInfo ResolveTypeface(string familyName, bool isBold, bool isItalic)
-            {
-                return new FontResolverInfo("SimHei");
-            }
-        }
     }
 }

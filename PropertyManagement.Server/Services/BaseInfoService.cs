@@ -137,22 +137,35 @@ namespace PropertyManagement.Server.Services
         public PropertyDto SaveProperty(int id, PropertyRequest request) =>
             WithTransaction((connection, transaction) =>
             {
-                if (request.UnitId <= 0) throw ApiException.ValidationFailed("请选择所属单元");
+                if (request.BuildingId <= 0) throw ApiException.ValidationFailed("请选择所属楼栋");
                 if (string.IsNullOrWhiteSpace(request.RoomNo)) throw ApiException.ValidationFailed("房号不能为空");
                 if (request.Area <= 0) throw ApiException.ValidationFailed("建筑面积必须大于 0");
 
                 string room = request.RoomNo.Trim();
-                var duplicate = _repo.GetPropertyByUnitRoom(connection, transaction, request.UnitId, room, id);
-                if (duplicate != null) throw ApiException.Conflict("该单元下房号已存在（BR-INF-01）");
+                // 单元改为可选：给出单元时需属于所选楼栋（部分楼栋无单元）
+                int? unitId = request.UnitId.HasValue && request.UnitId.Value > 0 ? request.UnitId : (int?)null;
+                if (unitId.HasValue)
+                {
+                    var unit = _repo.GetUnit(connection, unitId.Value);
+                    if (unit == null || unit.BuildingId != request.BuildingId)
+                        throw ApiException.ValidationFailed("所选单元不属于该楼栋");
+                }
+
+                // BR-INF-01 房号唯一：有单元按「单元+房号」，无单元按「楼栋+房号」
+                var duplicate = unitId.HasValue
+                    ? _repo.GetPropertyByUnitRoom(connection, transaction, unitId.Value, room, id)
+                    : _repo.GetPropertyByBuildingRoom(connection, transaction, request.BuildingId, room, id);
+                if (duplicate != null)
+                    throw ApiException.Conflict(unitId.HasValue ? "该单元下房号已存在（BR-INF-01）" : "该楼栋下房号已存在（BR-INF-01）");
 
                 if (id > 0)
                 {
-                    var dto = new PropertyDto { Id = id, UnitId = request.UnitId, RoomNo = room, Area = request.Area, Usage = request.Usage, Status = request.Status };
+                    var dto = new PropertyDto { Id = id, BuildingId = request.BuildingId, UnitId = unitId, RoomNo = room, Area = request.Area, Usage = request.Usage, Status = request.Status };
                     _repo.UpdateProperty(connection, transaction, dto);
                     WriteChangeLog(connection, transaction, BaseChangeObjectType.Property, id, "基础信息", "房产更新", "房产 " + room + " 更新", "后台维护");
                     return dto;
                 }
-                var created = new PropertyDto { UnitId = request.UnitId, RoomNo = room, Area = request.Area, Usage = request.Usage, Status = request.Status };
+                var created = new PropertyDto { BuildingId = request.BuildingId, UnitId = unitId, RoomNo = room, Area = request.Area, Usage = request.Usage, Status = request.Status };
                 created.Id = _repo.InsertProperty(connection, transaction, created);
                 WriteChangeLog(connection, transaction, BaseChangeObjectType.Property, created.Id, "基础信息", null, "房产 " + room + " 已录入", "后台维护");
                 return created;
@@ -607,6 +620,7 @@ namespace PropertyManagement.Server.Services
                     {
                         _repo.InsertProperty(c, tx, new PropertyDto
                         {
+                            BuildingId = c.ExecuteScalar<int?>("SELECT building_id FROM t_unit WHERE id = @uid", new { uid = unitId.Value }, tx),
                             UnitId = unitId.Value,
                             RoomNo = roomNo,
                             Area = area,

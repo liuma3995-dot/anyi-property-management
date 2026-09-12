@@ -26,7 +26,10 @@ namespace PropertyManagement.Contract.BaseInfo
 
     public class PropertyRequest
     {
-        public int UnitId { get; set; }
+        /// <summary>所属楼栋（必填；楼栋与单元解耦）。</summary>
+        public int BuildingId { get; set; }
+        /// <summary>所属单元（选填；部分楼栋无单元）。</summary>
+        public int? UnitId { get; set; }
         public string RoomNo { get; set; }
         public decimal Area { get; set; }
         public PropertyUsage Usage { get; set; }
