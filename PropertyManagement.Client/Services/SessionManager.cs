@@ -12,6 +12,9 @@ namespace PropertyManagement.Client.Services
         public string DisplayName { get; set; }
 
         public DateTime ExpiresAt { get; set; }
+
+        /// <summary>M6 PG-COM-04：首登强制改密标记（登录后锁定至修改密码页；R16 已下线 90 天强制更换）。</summary>
+        public bool MustChangePassword { get; set; }
     }
 
     /// <summary>

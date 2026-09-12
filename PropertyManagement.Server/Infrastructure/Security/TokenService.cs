@@ -86,6 +86,39 @@ namespace PropertyManagement.Server.Infrastructure.Security
             }
         }
 
+        /// <summary>
+        /// 解析 token 签发时间（改密后旧 token 失效校验用，M6 PG-COM-04）。
+        /// 解析失败返回 null（此时不阻断校验）。
+        /// </summary>
+        public static DateTime? TryGetIssuedAt(string token)
+        {
+            if (string.IsNullOrWhiteSpace(token))
+            {
+                return null;
+            }
+
+            string[] parts = token.Split('.');
+            if (parts.Length != 3)
+            {
+                return null;
+            }
+
+            try
+            {
+                var payload = JObject.Parse(Base64UrlDecode(parts[1]));
+                long iat = payload.Value<long?>("iat") ?? 0L;
+                if (iat == 0)
+                {
+                    return null;
+                }
+                return DateTimeOffset.FromUnixTimeSeconds(iat).LocalDateTime;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static string Sign(string input)
         {
             using (var hmac = new HMACSHA256(Key))

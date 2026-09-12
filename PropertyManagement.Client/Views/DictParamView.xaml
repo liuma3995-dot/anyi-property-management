@@ -1,0 +1,230 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DictParamView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:vm="clr-namespace:PropertyManagement.Client.ViewModels"
+             xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <vm:IconKeyConverter x:Key="IconConv" />
+        <!-- R14：把视图 DataContext 传给不在可视化树内的 DataGridColumn（控制勾选框列显隐） -->
+        <conv:BindingProxy x:Key="VmProxy" Data="{Binding}" />
+        <!-- 停用项灰显（单元格文本随行状态着色） -->
+        <Style x:Key="DictCellText" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsDisabled}" Value="True">
+                    <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </UserControl.Resources>
+    <Grid Margin="16,12,16,12">
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="0.96*" />
+            <ColumnDefinition Width="20" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- 左栏：字典分类卡片列表（原型 PG-COM-01：共八类，选中项主色高亮） -->
+        <!-- 卡片按内容高度收边（原型 PG-COM-01 左栏）；分类过多时在卡片内滚动 -->
+        <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="18,16" VerticalAlignment="Top"
+                MaxHeight="{Binding ActualHeight, RelativeSource={RelativeSource AncestorType={x:Type Grid}}}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Text="字典分类" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                <ListBox Grid.Row="1" ItemsSource="{Binding Types}" SelectedItem="{Binding SelectedType, Mode=TwoWay}"
+                         Margin="0,14,0,0" BorderThickness="0" Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Cursor" Value="Hand" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <!-- 无障碍/自动化：列表项暴露分类名（UIA Name），便于读屏与端到端校验 -->
+                            <Setter Property="AutomationProperties.Name" Value="{Binding TypeName}" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Bg" Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                                                BorderThickness="1" CornerRadius="8" Height="46" Padding="14,0" Margin="0,0,0,10">
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Path x:Name="Ico" Grid.Column="0" Data="{Binding IconKey, Converter={StaticResource IconConv}}"
+                                                      Style="{StaticResource IconStroke}" Stroke="{StaticResource TextSecondaryBrush}"
+                                                      Width="16" Height="16" VerticalAlignment="Center" />
+                                                <TextBlock x:Name="Txt" Grid.Column="1" Text="{Binding TypeName}" FontSize="13"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" Margin="12,0,8,0" VerticalAlignment="Center" />
+                                                <Path Grid.Column="2" Data="{StaticResource Icon.ChevronRight}" Style="{StaticResource IconStroke}"
+                                                      Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                <Setter TargetName="Ico" Property="Stroke" Value="{StaticResource PrimaryBrush}" />
+                                                <Setter TargetName="Txt" Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                                                <Setter TargetName="Txt" Property="FontWeight" Value="SemiBold" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- 右栏：选中分类的字典项表格 + 交互标注 -->
+        <Grid Grid.Column="2">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="12" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="24" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <DockPanel Grid.Row="0" LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left" Text="{Binding SelectedType.TypeName, StringFormat={}{0} · 字典项, TargetNullValue=字典项}"
+                           FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                <TextBlock DockPanel.Dock="Left" Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" VerticalAlignment="Center" Margin="14,0,0,0" />
+                <TextBlock DockPanel.Dock="Left" Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" VerticalAlignment="Center" Margin="14,0,0,0" />
+                <!-- R12：批量删除（仅已停用项可删；按住 Ctrl / Shift 多选） -->
+                <!-- R14：点击后进入选择模式（勾选框列才显示），文案切换为「删除所选」 -->
+                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Command="{Binding BatchDeleteCommand}"
+                        Padding="14,4" Margin="0,0,10,0" Height="32" ToolTip="点击后显示勾选框列；仅已停用的字典项可删除">
+                    <TextBlock Text="{Binding BatchDeleteButtonText}" FontSize="13" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}" />
+                </Button>
+                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelSelectionCommand}"
+                        Padding="14,4" Margin="0,0,10,0" Height="32" FontSize="13"
+                        Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolToVis}}" />
+                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonPrimary}" Command="{Binding NewCommand}" Padding="14,4" Height="32">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Plus}" Style="{StaticResource IconStroke}" Stroke="White" Width="13" Height="13" VerticalAlignment="Center" />
+                        <TextBlock Text="新增字典项" Margin="6,0,0,0" VerticalAlignment="Center" FontSize="13" />
+                    </StackPanel>
+                </Button>
+            </DockPanel>
+
+            <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0" VerticalAlignment="Top">
+                <DataGrid x:Name="DictItemsGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True" MaxHeight="560">
+                    <DataGrid.Columns>
+                        <!-- R13：勾选框列（表头可全选，支持单选） -->
+                        <DataGridTemplateColumn Width="56" MinWidth="56" CellStyle="{StaticResource GridCheckCell}"
+                                                Visibility="{Binding Data.IsSelectionMode, Source={StaticResource VmProxy}, Converter={StaticResource BoolToVis}}">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox IsChecked="{Binding DataContext.IsAllItemsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}"
+                                          Style="{StaticResource GridCheckBox}" ToolTip="全选 / 取消全选" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <!-- 只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，由 Click 显式同步到行对象 -->
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}" Style="{StaticResource GridCheckBox}"
+                                              Click="DictItemCheck_Click" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="编码" Width="112" Binding="{Binding ItemCode}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTextColumn Header="名称" Width="106" Binding="{Binding ItemName}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTextColumn Header="显示值" Width="132" Binding="{Binding DisplayValue}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTextColumn Header="备注" Width="*" Binding="{Binding Remark}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTextColumn Header="修改人" Width="84" Binding="{Binding ModifiedBy}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTextColumn Header="修改时间" Width="100" Binding="{Binding ModifiedAtText}" ElementStyle="{StaticResource DictCellText}" />
+                        <DataGridTemplateColumn Header="操作" Width="132">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Style="{StaticResource LinkButton}" Content="编辑" Padding="4,2"
+                                                Command="{Binding DataContext.EditCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                        <Button Style="{StaticResource LinkButton}" Content="停用" Foreground="{StaticResource DangerBrush}" Padding="4,2" Margin="4,0,0,0"
+                                                Visibility="{Binding IsEnabledVisible, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.DisableCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                        <Button Style="{StaticResource LinkButton}" Content="恢复" Foreground="{StaticResource SuccessBrush}" Padding="4,2" Margin="4,0,0,0"
+                                                Visibility="{Binding IsDisabledVisible, Converter={StaticResource BoolToVis}}"
+                                                Command="{Binding DataContext.RestoreCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Border>
+
+            <!-- 交互标注（原型 PG-COM-01） -->
+            <Border Grid.Row="4" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                        <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                    </StackPanel>
+                    <TextBlock Text="· 编辑字典项 → 确认弹窗“修改将影响相关业务展示，确认保存？”→ 写审计日志" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="· 停用需二次确认（可随时恢复）；批量删除仅支持已停用字典项，未停用时弹窗提示无法删除（软删，UC-COM-004）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 新增/编辑弹层 -->
+        <Border Grid.ColumnSpan="3" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding FormTitle}" FontSize="16" FontWeight="Bold" Margin="0,0,0,16" />
+                    <TextBlock Text="编码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding FormItemCode, Mode=OneWay}" IsEnabled="False" Height="32" Margin="0,6,0,0"
+                             hc:InfoElement.Placeholder="保存后由系统自动生成（如 JFFS-01）" />
+                    <TextBlock Text="名称" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" hc:InfoElement.Placeholder="字典项名称（必填）" />
+                    <TextBlock Text="显示值" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding FormDisplayValue, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" hc:InfoElement.Placeholder="业务展示用，默认与名称一致" />
+                    <TextBlock Text="备注" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding FormRemark, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" hc:InfoElement.Placeholder="附加信息（选填）" />
+                    <TextBlock Text="排序" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding FormSort, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" hc:InfoElement.Placeholder="数字，越小越靠前" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 编辑保存 / 停用 二次确认弹层 -->
+        <Border Grid.ColumnSpan="3" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding ConfirmTitle}" FontSize="16" FontWeight="Bold" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding ConfirmMessage}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelConfirmCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认" Command="{Binding ConfirmCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 提示弹层（单按钮）：批量删除被拒绝等 -->
+        <Border Grid.ColumnSpan="3" Background="#66000000" Visibility="{Binding IsNoticeVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding NoticeTitle}" FontSize="16" FontWeight="Bold" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding NoticeMessage}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Style="{StaticResource ButtonPrimary}" Content="知道了" Command="{Binding CloseNoticeCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

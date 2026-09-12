@@ -1,5 +1,4 @@
 using System.Web.Http;
-using Microsoft.Owin;
 using PropertyManagement.Contract.Auth;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Server.Api.Middleware;
@@ -7,7 +6,9 @@ using PropertyManagement.Server.Services;
 
 namespace PropertyManagement.Server.Api
 {
-    /// <summary>认证端点（UC-COM-001/002）：login/logout/change-password。</summary>
+    /// <summary>认证端点（UC-COM-001/002）：login/logout/change-password。
+    /// PG-COM-04：登录返回 MustChangePassword；改密走强度/历史/90 天策略；
+    /// 登录失败逐次留痕（action=LOGIN_FAIL/LOGIN_LOCKED/LOGIN，带 IP 与结果）。</summary>
     [RoutePrefix("api/v1/auth")]
     public class AuthController : ApiController
     {
@@ -23,7 +24,7 @@ namespace PropertyManagement.Server.Api
         [AllowAnonymous]
         public ApiResponse<LoginResult> Login(LoginRequest request)
         {
-            LoginResult result = _authService.Login(request);
+            LoginResult result = _authService.Login(request, GetClientIp());
             return ApiResponse<LoginResult>.Ok(result);
         }
 
@@ -40,7 +41,7 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<object> ChangePassword(ChangePasswordRequest request)
         {
             string username = GetCurrentUsername();
-            _authService.ChangePassword(request, username);
+            _authService.ChangePassword(request, username, GetClientIp());
             return ApiResponse<object>.Ok(null);
         }
 
@@ -50,7 +51,7 @@ namespace PropertyManagement.Server.Api
             object owinContextValue;
             if (Request.Properties.TryGetValue("MS_OwinContext", out owinContextValue))
             {
-                var owinContext = owinContextValue as IOwinContext;
+                var owinContext = owinContextValue as Microsoft.Owin.IOwinContext;
                 if (owinContext != null)
                 {
                     return owinContext.Get<string>(AuthMiddleware.UsernameEnvKey) ?? string.Empty;
@@ -58,6 +59,22 @@ namespace PropertyManagement.Server.Api
             }
 
             return string.Empty;
+        }
+
+        /// <summary>客户端 IP（审计留痕：LOGIN/LOGIN_FAIL/CHANGE_PASSWORD 等）。</summary>
+        private string GetClientIp()
+        {
+            object owinContextValue;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out owinContextValue))
+            {
+                var owinContext = owinContextValue as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Request.RemoteIpAddress;
+                }
+            }
+
+            return null;
         }
     }
 }

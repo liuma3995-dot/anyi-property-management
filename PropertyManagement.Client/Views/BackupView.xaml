@@ -1,0 +1,228 @@
+<UserControl x:Class="PropertyManagement.Client.Views.BackupView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <!-- R14：把视图 DataContext 传给不在可视化树内的 DataGridColumn（控制勾选框列显隐） -->
+        <conv:BindingProxy x:Key="VmProxy" Data="{Binding}" />
+    </UserControl.Resources>
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel Margin="16,12,16,12">
+                <!-- 状态卡（R13：下线「备份保留」「待恢复演练」；新增「一键清理残余数据」） -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" /><ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" /><ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16">
+                        <StackPanel>
+                            <TextBlock Text="上次备份" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Text="{Binding LastAutoBackupText}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,8" />
+                            <Border Background="{Binding LastAutoBackupResultBg}" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding LastAutoBackupResult}" FontSize="11" Foreground="{Binding LastAutoBackupResultBrush}" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20,16">
+                        <StackPanel>
+                            <TextBlock Text="数据库大小" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBlock Text="{Binding DatabaseSizeText}" FontSize="24" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,8" />
+                            <TextBlock Text="{Binding DatabaseSizeSubText}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="4" Style="{StaticResource CardBorder}" Padding="20,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource Icon.ShieldCheck}" Style="{StaticResource IconStroke}" Stroke="{StaticResource PrimaryBrush}" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="一键清理残余数据" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="清理系统中已删除的「软删留痕」数据记录，不破坏当前在用数据；建议先执行一次备份。"
+                                       FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,12" />
+                            <Button Style="{StaticResource ButtonPrimary}" Height="34" HorizontalContentAlignment="Center" Command="{Binding PurgeCommand}">
+                                <TextBlock Text="一键清理残余数据" FontSize="13" />
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 手动备份 / 数据恢复（高危） -->
+                <Grid Margin="0,18,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" /><ColumnDefinition Width="14" /><ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource Icon.Files}" Style="{StaticResource IconStroke}" Stroke="{StaticResource PrimaryBrush}" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="手动备份" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="立即执行一次全量备份（SQLite 在线备份，不中断业务）；点击后可选择备份数据文件的保存位置。" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,14" />
+                            <Button Style="{StaticResource ButtonPrimary}" HorizontalContentAlignment="Center" Height="38" Command="{Binding RunCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource Icon.Files}" Style="{StaticResource IconStroke}" Stroke="White" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="立即备份" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+
+                    <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="20,16" BorderBrush="#F3C6C6">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource Icon.ShieldCheck}" Style="{StaticResource IconStroke}" Stroke="{StaticResource DangerBrush}" Width="16" Height="16" VerticalAlignment="Center" />
+                                <TextBlock Text="数据恢复（高危）" FontSize="14" FontWeight="Bold" Foreground="{StaticResource DangerBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="恢复将覆盖当前全部数据。需选择备份数据文件并输入操作密码通过验证。" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,10,0,14" />
+                            <Button Background="{StaticResource DangerBrush}" Style="{StaticResource ButtonPrimary}" Height="38" HorizontalContentAlignment="Center" Command="{Binding OpenRestoreCommand}">
+                                <StackPanel Orientation="Horizontal">
+                                    <Path Data="{StaticResource Icon.ShieldCheck}" Style="{StaticResource IconStroke}" Stroke="White" Width="15" Height="15" VerticalAlignment="Center" />
+                                    <TextBlock Text="发起恢复" Margin="6,0,0,0" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+
+                <!-- 备份/恢复记录（R12：原「最近恢复/演练记录」，复核人列下线、路径列展示完整路径） -->
+                <DockPanel Margin="0,18,0,8" LastChildFill="False">
+                    <TextBlock DockPanel.Dock="Left" Text="备份/恢复记录" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                    <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Command="{Binding BatchDeleteRecordsCommand}"
+                            Padding="14,4" Height="32" ToolTip="点击后显示勾选框列（可勾选单条，也可勾选表头全选）">
+                        <TextBlock Text="{Binding BatchDeleteButtonText}" FontSize="13" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}" />
+                    </Button>
+                    <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelSelectionCommand}"
+                            Padding="14,4" Height="32" FontSize="13" Margin="0,0,10,0"
+                            Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" VerticalAlignment="Center" />
+                    <TextBlock DockPanel.Dock="Right" Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" VerticalAlignment="Center" Margin="0,0,14,14" />
+                </DockPanel>
+                <Border Style="{StaticResource CardBorder}" Padding="0">
+                    <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Records}" IsReadOnly="True">
+                        <DataGrid.Columns>
+                            <!-- R13：勾选框列（表头全选，支持单选） -->
+                            <DataGridTemplateColumn Width="56" MinWidth="56" CellStyle="{StaticResource GridCheckCell}"
+                                                    Visibility="{Binding Data.IsSelectionMode, Source={StaticResource VmProxy}, Converter={StaticResource BoolToVis}}">
+                                <DataGridTemplateColumn.Header>
+                                    <CheckBox IsChecked="{Binding DataContext.IsAllRecordsSelected, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}"
+                                              Style="{StaticResource GridCheckBox}" ToolTip="全选 / 取消全选" />
+                                </DataGridTemplateColumn.Header>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <!-- 只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，由 Click 显式同步到行对象 -->
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}" Style="{StaticResource GridCheckBox}"
+                                                  Click="RecordCheck_Click" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="时间" Width="150" Binding="{Binding TimeText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="类型" Width="110" Binding="{Binding KindText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="备份与恢复路径" Width="*" Binding="{Binding PathText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="操作人" Width="110" Binding="{Binding Operator}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTemplateColumn Header="结果" Width="110">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Border Background="{Binding ResultBg}" CornerRadius="4" Padding="8,3" HorizontalAlignment="Left">
+                                            <TextBlock Text="{Binding Result}" Foreground="{Binding ResultBrush}" FontSize="11" />
+                                        </Border>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Border>
+
+                <!-- 交互标注（原型 PG-COM-02；R12：去双管理员、备份计划表下线） -->
+                <Border Background="#F7F5FE" CornerRadius="6" Padding="12,8" Margin="0,16,0,4">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal">
+                            <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                            <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                        </StackPanel>
+                        <TextBlock Text="· 【立即备份】→ 选择备份数据文件保存位置 → 执行全量备份（SQLite 在线备份，不中断业务）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        <TextBlock Text="· 【发起恢复】→ 选择备份数据文件（校验为本系统 SQLite 备份）→ 操作密码 → 二次弹窗“覆盖当前数据不可撤销”→ 执行" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                        <TextBlock Text="· 恢复前自动生成快照，失败不覆盖主库；备份与恢复均写审计日志" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- 恢复步骤一：选择备份数据文件 + 操作密码 -->
+        <Border Background="#66000000" Visibility="{Binding IsRestoreFormVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="520" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.ShieldCheck}" Style="{StaticResource IconStroke}" Stroke="{StaticResource DangerBrush}" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="发起数据恢复" FontSize="16" FontWeight="Bold" Foreground="{StaticResource DangerBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <TextBlock Text="备份数据文件" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,14,0,4" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox Grid.Column="0" Text="{Binding RestoreSourcePath, Mode=OneWay}" Height="34" IsReadOnly="True"
+                                 VerticalContentAlignment="Center" hc:InfoElement.Placeholder="请选择要恢复的备份数据文件（*.db）" />
+                        <Button Grid.Column="1" Style="{StaticResource ButtonSecondary}" Content="选择文件…" Height="34" Padding="14,4"
+                                Margin="10,0,0,0" Command="{Binding BrowseRestoreFileCommand}" />
+                    </Grid>
+
+                    <TextBlock Text="操作密码（当前登录账号）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,12,0,4" />
+                    <hc:PasswordBox x:Name="OperationPasswordInput" hc:InfoElement.Placeholder="操作密码" Height="34" />
+
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelRestoreCommand}" />
+                        <Button Background="{StaticResource DangerBrush}" Style="{StaticResource ButtonPrimary}" Content="下一步" Command="{Binding SubmitRestoreCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- R13：确认弹窗（记录批量删除 / 一键清理残余数据） -->
+        <Border Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding ConfirmTitle}" FontSize="16" FontWeight="Bold" Margin="0,0,0,12" />
+                    <TextBlock Text="{Binding ConfirmMessage}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelConfirmCommand}" />
+                        <Button Background="{StaticResource DangerBrush}" Style="{StaticResource ButtonPrimary}" Content="确认" Command="{Binding ConfirmActionCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
+        <!-- 恢复步骤二：二次确认弹窗「覆盖当前数据不可撤销」 -->
+        <Border x:Name="RestoreConfirmOverlay" Background="#66000000" Visibility="{Binding IsRestoreConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.ShieldCheck}" Style="{StaticResource IconStroke}" Stroke="{StaticResource DangerBrush}" Width="18" Height="18" VerticalAlignment="Center" />
+                        <TextBlock Text="确认执行数据恢复" FontSize="16" FontWeight="Bold" Foreground="{StaticResource DangerBrush}" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <TextBlock Text="恢复将覆盖当前全部数据，且不可撤销。执行前系统会自动生成恢复前快照。请输入以下确认文本以继续：" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,12,0,0" />
+                    <Border Background="{StaticResource DangerSoftBrush}" CornerRadius="6" Padding="10,6" Margin="0,10,0,0" HorizontalAlignment="Left">
+                        <TextBlock Text="覆盖当前数据不可撤销" FontSize="12" FontWeight="Bold" Foreground="{StaticResource DangerBrush}" />
+                    </Border>
+                    <TextBox Text="{Binding RestoreConfirmInput, UpdateSourceTrigger=PropertyChanged}" Height="34" Margin="0,10,0,0"
+                             hc:InfoElement.Placeholder="输入：覆盖当前数据不可撤销" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,10,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelRestoreCommand}" />
+                        <Button Background="{StaticResource DangerBrush}" Style="{StaticResource ButtonPrimary}" Content="确认恢复" Command="{Binding ConfirmRestoreCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+    </Grid>
+</UserControl>

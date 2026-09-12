@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Data;
 using Dapper;
 using PropertyManagement.Server.Domain.Entities;
@@ -6,7 +7,8 @@ using PropertyManagement.Server.Domain.Repositories;
 
 namespace PropertyManagement.Server.Infrastructure.Repositories
 {
-    /// <summary>t_user 仓储实现（SQLite/Dapper）。</summary>
+    /// <summary>t_user 仓储实现（SQLite/Dapper）。
+    /// PG-COM-04：password_changed_at/must_change_password/t_password_history。</summary>
     public class SqlUserRepository : IUserRepository
     {
         public AuthUser FindByUsername(IDbConnection connection, string username)
@@ -43,11 +45,44 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 transaction);
         }
 
-        public void UpdatePassword(IDbConnection connection, IDbTransaction transaction, int userId, string newPasswordHash)
+        public void UpdatePassword(IDbConnection connection, IDbTransaction transaction, int userId, string newPasswordHash, DateTime passwordChangedAt)
         {
             connection.Execute(
-                "UPDATE t_user SET password_hash = @hash, updated_at = @now WHERE id = @id",
-                new { hash = newPasswordHash, now = DateTime.Now, id = userId },
+                "UPDATE t_user SET password_hash = @hash, password_changed_at = @changedAt, " +
+                "must_change_password = 0, updated_at = @now WHERE id = @id",
+                new { hash = newPasswordHash, changedAt = passwordChangedAt, now = DateTime.Now, id = userId },
+                transaction);
+        }
+
+        public UserPasswordState GetPasswordState(IDbConnection connection, int userId)
+        {
+            return connection.QueryFirstOrDefault<UserPasswordState>(
+                "SELECT password_changed_at AS PasswordChangedAt, must_change_password AS MustChangePassword " +
+                "FROM t_user WHERE id = @id", new { id = userId }) ?? new UserPasswordState();
+        }
+
+        public IList<string> GetRecentPasswordHashes(IDbConnection connection, int userId, int count)
+        {
+            return connection.Query<string>(
+                "SELECT password_hash FROM t_password_history WHERE user_id = @userId " +
+                "ORDER BY id DESC LIMIT @count",
+                new { userId, count }).AsList();
+        }
+
+        public void InsertPasswordHistory(IDbConnection connection, IDbTransaction transaction, int userId, string passwordHash)
+        {
+            connection.Execute(
+                "INSERT INTO t_password_history (user_id, password_hash) VALUES (@userId, @passwordHash)",
+                new { userId, passwordHash },
+                transaction);
+        }
+
+        public void TrimPasswordHistory(IDbConnection connection, IDbTransaction transaction, int userId, int keep)
+        {
+            connection.Execute(
+                "DELETE FROM t_password_history WHERE user_id = @userId AND id NOT IN (" +
+                "SELECT id FROM t_password_history WHERE user_id = @userId ORDER BY id DESC LIMIT @keep)",
+                new { userId, keep },
                 transaction);
         }
     }

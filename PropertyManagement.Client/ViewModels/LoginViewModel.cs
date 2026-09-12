@@ -98,7 +98,8 @@ namespace PropertyManagement.Client.ViewModels
                 {
                     Token = result.Token,
                     DisplayName = result.DisplayName,
-                    ExpiresAt = result.ExpiresAt
+                    ExpiresAt = result.ExpiresAt,
+                    MustChangePassword = result.MustChangePassword
                 });
 
                 ClientPrefs.Current.RememberAccount = RememberAccount;
