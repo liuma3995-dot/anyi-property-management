@@ -1,0 +1,387 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DisputeHandleView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <!-- 长文本单元格：换行显示，配合表格自动行高，避免内容被裁剪 -->
+        <Style x:Key="GridCellWrap" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <!-- 窄列（次/日期/结果）单元格：水平居中，与居中表头对称 -->
+        <Style x:Key="GridCellCenter" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="Margin" Value="0,4" />
+        </Style>
+        <!-- 调解方案与进度表头（长文本列）：内边距与单元格一致（12,0），表头文字与单元格文字左端对齐 -->
+        <Style x:Key="DisputeRecordsHeader" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#F4F7FB" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <!-- 窄列表头（次/日期/结果）：水平居中，与居中单元格对称 -->
+        <Style x:Key="DisputeRecordsHeaderCenter" TargetType="DataGridColumnHeader" BasedOn="{StaticResource DisputeRecordsHeader}">
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Resources>
+    <ScrollViewer VerticalScrollBarVisibility="Auto">
+        <StackPanel Margin="16" MaxWidth="1148" HorizontalAlignment="Left">
+
+            <!-- 空态：侧栏直进无案件 -->
+            <Border Style="{StaticResource CardBorder}" Padding="40,36" Visibility="{Binding NoCase, Converter={StaticResource BoolToVis}}">
+                <StackPanel HorizontalAlignment="Center">
+                    <Path Data="{StaticResource Icon.MessagesSquare}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}"
+                          Width="28" Height="28" HorizontalAlignment="Center" />
+                    <TextBlock Text="请从纠纷列表选择案件进入处理" FontSize="14" Foreground="{StaticResource TextPrimaryBrush}"
+                               HorizontalAlignment="Center" Margin="0,10,0,0" />
+                    <TextBlock Text="在「纠纷调解 → 纠纷列表」点击行或【处理 / 查看】进入本页" FontSize="11"
+                               Foreground="{StaticResource TextMutedBrush}" HorizontalAlignment="Center" Margin="0,6,0,0" />
+                </StackPanel>
+            </Border>
+
+            <!-- 案件头：编号/类型/状态/调解员/已受理 N 天 -->
+            <Border Style="{StaticResource CardBorder}" Padding="20,16" Visibility="{Binding HasCase, Converter={StaticResource BoolToVis}}">
+                <StackPanel>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding CaseTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap" />
+                        <!-- 页面工具栏（右）：已受理天数 + 结案报告导出（仅已结案可用） -->
+                        <StackPanel Grid.Column="1" Margin="16,0,0,0" HorizontalAlignment="Right">
+                            <TextBlock Text="{Binding DaysOpenText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" HorizontalAlignment="Right" />
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+                                <ComboBox Width="152" Height="30" VerticalContentAlignment="Center" FontSize="12"
+                                          ItemsSource="{Binding ExportFormatOptions}" DisplayMemberPath="Label"
+                                          SelectedItem="{Binding SelectedExportFormat, Mode=TwoWay}"
+                                          ToolTip="选择结案报告导出格式" />
+                                <Button Style="{StaticResource ButtonPrimary}" Content="导出结案报告" Margin="8,0,0,0"
+                                        Command="{Binding ExportReportCommand}" IsEnabled="{Binding CanExportReport}"
+                                        ToolTipService.ShowOnDisabled="True"
+                                        ToolTip="仅已结案案件可导出结案报告（PDF 打印签字 / Excel 归档）" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                        <Border CornerRadius="4" Padding="8,2">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding CaseStatusEnum}" Value="Handling">
+                                            <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                        </DataTrigger>
+                                        <DataTrigger Binding="{Binding CaseStatusEnum}" Value="Closed">
+                                            <Setter Property="Background" Value="{StaticResource SuccessSoftBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding CaseStatusText}" FontSize="11">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding CaseStatusEnum}" Value="Handling">
+                                                <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding CaseStatusEnum}" Value="Closed">
+                                                <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+                        <Border CornerRadius="4" Padding="8,2" Margin="8,0,0,0">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding TypeName}" Value="漏水">
+                                            <Setter Property="Background" Value="{StaticResource InfoSoftBrush}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding TypeName}" FontSize="11">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding TypeName}" Value="漏水">
+                                                <Setter Property="Foreground" Value="{StaticResource InfoBrush}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+                        <Border CornerRadius="4" Padding="8,2" Margin="8,0,0,0" Background="{StaticResource SurfaceAltBrush}">
+                            <TextBlock Text="{Binding MediatorName, StringFormat=调解员：{0}}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Border>
+                        <Border CornerRadius="4" Padding="8,2" Margin="8,0,0,0" Background="{StaticResource SurfaceAltBrush}"
+                                Visibility="{Binding HasLevel, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding LevelText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Text="{Binding PartyLineText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <!-- 主体区：左进度 / 中方案与记录 / 右结案（原型 PG-DIS-03 三栏） -->
+            <Grid Visibility="{Binding HasCase, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="200" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="280" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左栏：处理进度时间线 -->
+                <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="处理进度" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12" />
+                        <ItemsControl ItemsSource="{Binding TimelineItems}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <Border Width="12" Height="12" CornerRadius="6" Background="{StaticResource PrimaryBrush}" Margin="4,4,0,0" />
+                                            <Border Width="2" Height="22" Background="{StaticResource TrackBrush}" Margin="9,2,0,0"
+                                                    Visibility="{Binding ShowLine, Converter={StaticResource BoolToVis}}" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="1" Margin="12,0,0,10">
+                                            <TextBlock Text="{Binding Title}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                            <TextBlock Text="{Binding TimeText}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </Border>
+
+                <!-- 中栏：调解方案与进度 + 本次调解记录 -->
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="调解方案与进度" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8" />
+                    <Border Style="{StaticResource CardBorder}" Padding="0">
+                        <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Records}" IsReadOnly="True"
+                                  RowHeight="NaN" MinRowHeight="36" ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                                  ColumnHeaderStyle="{StaticResource DisputeRecordsHeader}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="次" Width="40" Binding="{Binding Index}" ElementStyle="{StaticResource GridCellCenter}" HeaderStyle="{StaticResource DisputeRecordsHeaderCenter}" />
+                                <DataGridTextColumn Header="日期" Width="64" Binding="{Binding DateText}" ElementStyle="{StaticResource GridCellCenter}" HeaderStyle="{StaticResource DisputeRecordsHeaderCenter}" />
+                                <DataGridTemplateColumn Header="方式" Width="88">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding Method}" Style="{StaticResource GridCellText}" TextWrapping="Wrap" />
+                                                <TextBlock Text="{Binding SupplementText}" FontSize="10" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap"
+                                                           Visibility="{Binding HasSupplementText, Converter={StaticResource BoolToVis}}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="方案摘要" Width="*" MinWidth="108" Binding="{Binding PlanSummary}" ElementStyle="{StaticResource GridCellWrap}" />
+                                <DataGridTextColumn Header="当事人意见" Width="*" MinWidth="108" Binding="{Binding PartyOpinion}" ElementStyle="{StaticResource GridCellWrap}" />
+                                <DataGridTextColumn Header="结果" Width="70" Binding="{Binding ResultText}" ElementStyle="{StaticResource GridCellCenter}" HeaderStyle="{StaticResource DisputeRecordsHeaderCenter}" />
+                                <DataGridTextColumn Header="备注" Width="*" MinWidth="108" Binding="{Binding ContentText}" ElementStyle="{StaticResource GridCellWrap}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <!-- 本次调解记录（未结案可编辑；已结案锁定） -->
+                    <StackPanel Margin="0,14,0,0">
+                        <TextBlock Text="本次调解记录（新增）" FontSize="13" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,6" />
+                        <Grid IsEnabled="{Binding CanEdit}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" /><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="日期" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <hc:DatePicker SelectedDate="{Binding RecordDate, Mode=TwoWay}" Height="30" Margin="0,4,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="方式" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding RecordMethod, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0"
+                                         hc:InfoElement.Placeholder="现场调解 / 电话调解 / 上门调解" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                                <TextBlock Text="方案摘要（与记录内容至少填一项）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding RecordPlan, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0"
+                                         hc:InfoElement.Placeholder="如：502 出资修复防水并赔偿 402 损失 ¥800" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4" Grid.Column="0">
+                                <TextBlock Text="当事人意见" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding RecordOpinion, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0"
+                                         hc:InfoElement.Placeholder="如：甲方同意；乙方考虑" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4" Grid.Column="2">
+                                <TextBlock Text="结果" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding RecordResult, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0"
+                                         hc:InfoElement.Placeholder="未达成 / 已达成 / 待确认" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3">
+                                <TextBlock Text="备注（记录内容）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding RecordContent, UpdateSourceTrigger=PropertyChanged}" Height="52" AcceptsReturn="True" TextWrapping="Wrap"
+                                         Margin="0,4,0,0" hc:InfoElement.Placeholder="记录调解过程、双方陈述与阶段结论…" FontSize="12" />
+                            </StackPanel>
+                        </Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,10,0,0" IsEnabled="{Binding CanEdit}">
+                            <Button Style="{StaticResource ButtonPrimary}" Content="保存调解记录" Command="{Binding AddRecordCommand}" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <!-- 调解协议扫描件（F1）：未结案 / 已结案均可上传（结案不强制），删除仅管理员 -->
+                    <StackPanel Margin="0,14,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding AttachmentSummaryText}" FontSize="13" FontWeight="SemiBold"
+                                       Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                            <!-- 不再写死 Height：ButtonSecondary 的 Padding(16,8)+FontSize(14) 需要约 36px，限高会把文字上下裁掉 -->
+                            <Button Style="{StaticResource ButtonSecondary}" Content="上传调解协议扫描件" Margin="10,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Command="{Binding UploadAttachmentCommand}"
+                                    ToolTip="支持 PDF / JPG / JPEG / PNG，单个 ≤20MB，单案最多 10 份（未结案也可先上传）" />
+                        </StackPanel>
+                        <Border Style="{StaticResource CardBorder}" Padding="12,8" Margin="0,8,0,0">
+                            <StackPanel>
+                                <TextBlock Text="{Binding AttachmentEmptyText}" FontSize="12" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Visibility="{Binding HasNoAttachments, Converter={StaticResource BoolToVis}}" />
+                                <ItemsControl ItemsSource="{Binding Attachments}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,3">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <StackPanel Grid.Column="0">
+                                                    <TextBlock Text="{Binding FileName}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0">
+                                                        <Run Text="{Binding SizeText, Mode=OneWay}" />
+                                                        <Run Text=" · " />
+                                                        <Run Text="{Binding UploadedBy, Mode=OneWay}" />
+                                                        <Run Text=" · " />
+                                                        <Run Text="{Binding UploadedAtText, Mode=OneWay}" />
+                                                    </TextBlock>
+                                                </StackPanel>
+                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Style="{StaticResource LinkButton}" Content="下载" FontSize="12"
+                                                            Command="{Binding DataContext.DownloadAttachmentCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Style="{StaticResource LinkButton}" Content="删除" FontSize="12" Margin="10,0,0,0"
+                                                            Foreground="{StaticResource DangerBrush}"
+                                                            Command="{Binding DataContext.DeleteAttachmentCommand, RelativeSource={RelativeSource AncestorType={x:Type ItemsControl}}}"
+                                                            CommandParameter="{Binding}"
+                                                            ToolTip="仅管理员可删除（记录与物理文件一并移除）" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </StackPanel>
+
+                <!-- 右栏：结案（未结案） -->
+                <Border Grid.Column="4" Style="{StaticResource CardBorder}" Padding="20,16" VerticalAlignment="Top"
+                        Visibility="{Binding CanEdit, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="结案（UC-DIS-004/005）" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
+                        <StackPanel>
+                            <RadioButton GroupName="closeType" Content="调解成功（签订协议）" FontSize="12" IsChecked="{Binding IsCloseMediated, Mode=TwoWay}" Margin="0,0,0,8" />
+                            <RadioButton GroupName="closeType" Content="调解终止（无法达成）" FontSize="12" IsChecked="{Binding IsCloseSettled, Mode=TwoWay}" Margin="0,0,0,8" />
+                            <RadioButton GroupName="closeType" Content="移交司法 / 派出所" FontSize="12" IsChecked="{Binding IsCloseTransferred, Mode=TwoWay}" />
+                        </StackPanel>
+                        <TextBlock Text="结案报告（必填）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                        <TextBox Text="{Binding SummaryText, UpdateSourceTrigger=PropertyChanged}" Height="56" AcceptsReturn="True" TextWrapping="Wrap"
+                                 Margin="0,6,0,0" hc:InfoElement.Placeholder="概述纠纷成因、调解过程、最终方案与责任划分…" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认结案" Command="{Binding CloseCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+
+                <!-- 右栏：结案结果（只读回显）+ 补录记录（已结案） -->
+                <Border Grid.Column="4" Style="{StaticResource CardBorder}" Padding="20,16" VerticalAlignment="Top"
+                        Visibility="{Binding IsClosed, Converter={StaticResource BoolToVis}}">
+                    <StackPanel>
+                        <TextBlock Text="结案结果" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding CloseTypeDisplay, StringFormat=结案类型：{0}}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                            <TextBlock Text="已结案，处理记录已锁定（仅管理员可补录）" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="8,0,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBlock Text="结案报告" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0"
+                                   Visibility="{Binding HasCloseSummary, Converter={StaticResource BoolToVis}}" />
+                        <TextBox Text="{Binding Case.CloseSummary, Mode=OneWay}" IsReadOnly="True" Height="56" AcceptsReturn="True" TextWrapping="Wrap"
+                                 Margin="0,6,0,0" Visibility="{Binding HasCloseSummary, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="补录记录（仅管理员，补录原因必填）" FontSize="13" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,6" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="10" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" />
+                                <RowDefinition Height="8" /><RowDefinition Height="Auto" /><RowDefinition Height="8" /><RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <StackPanel Grid.Row="0" Grid.Column="0">
+                                <TextBlock Text="方式" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding SupMethod, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="0" Grid.Column="2">
+                                <TextBlock Text="结果" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding SupResult, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3">
+                                <TextBlock Text="方案摘要（与记录内容至少填一项）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding SupPlan, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="4" Grid.Column="0" Grid.ColumnSpan="3">
+                                <TextBlock Text="当事人意见" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding SupOpinion, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Grid.Row="6" Grid.Column="0" Grid.ColumnSpan="3">
+                                <TextBlock Text="记录内容" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <TextBox Text="{Binding SupContent, UpdateSourceTrigger=PropertyChanged}" Height="48" AcceptsReturn="True" TextWrapping="Wrap" Margin="0,4,0,0" FontSize="12" />
+                            </StackPanel>
+                        </Grid>
+                        <TextBlock Text="补录原因（必填）" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,8,0,0" />
+                        <TextBox Text="{Binding SupReason, UpdateSourceTrigger=PropertyChanged}" Height="30" Margin="0,4,0,0"
+                                 hc:InfoElement.Placeholder="如：纸质记录事后电子化归档" FontSize="12" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="提交补录" Command="{Binding SupplementCommand}" HorizontalAlignment="Left" Margin="0,10,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- 状态 / 错误 -->
+            <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap"
+                       Visibility="{Binding HasCase, Converter={StaticResource BoolToVis}}" />
+            <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="12" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Visibility="{Binding HasCase, Converter={StaticResource BoolToVis}}" />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

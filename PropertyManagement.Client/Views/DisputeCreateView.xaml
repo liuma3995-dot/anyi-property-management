@@ -1,0 +1,213 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DisputeCreateView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid>
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <Grid Margin="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- 左：登记表单 -->
+                <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="26,22" VerticalAlignment="Top">
+                    <StackPanel>
+                        <TextBlock Text="纠纷登记（UC-DIS-001）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
+
+                        <!-- 行一：纠纷类型（自定义新增/删除，全宽避免按钮截断） -->
+                        <StackPanel>
+                            <TextBlock Text="纠纷类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,3">
+                                <ComboBox IsEditable="True" SelectedValue="{Binding TypeId}" SelectedValuePath="Id" DisplayMemberPath="Name"
+                                          ItemsSource="{Binding Types}" Text="{Binding FormTypeText, UpdateSourceTrigger=PropertyChanged}"
+                                          Height="32" Width="220" FontSize="12" />
+                                <Button Style="{StaticResource LinkButton}" Content="＋新增" Command="{Binding OpenNewTypeCommand}" VerticalAlignment="Center" Margin="8,0,0,0" FontSize="12" />
+                                <Button Style="{StaticResource LinkButton}" Content="删除" Command="{Binding RequestDeleteTypeCommand}" Foreground="#D64545" VerticalAlignment="Center" Margin="6,0,0,0" FontSize="12" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,3,0,12" Visibility="{Binding IsTypeAdd, Converter={StaticResource BoolToVis}}">
+                                <TextBox Text="{Binding NewTypeName, UpdateSourceTrigger=PropertyChanged}" Height="30" Width="180"
+                                         hc:InfoElement.Placeholder="输入类型名称" FontSize="12" VerticalContentAlignment="Center" />
+                                <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding ConfirmNewTypeCommand}" Height="30" Margin="8,0,0,0" FontSize="12" />
+                                <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelNewTypeCommand}" Height="30" Margin="6,0,0,0" FontSize="12" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- 行一：关联房产（下拉内部检索，全宽） -->
+                        <StackPanel>
+                            <TextBlock Text="关联房产" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                      ItemsSource="{Binding PropertyView}" DisplayMemberPath="Display"
+                                      SelectedItem="{Binding SelectedPropertyOption, Mode=TwoWay}"
+                                      Text="{Binding PropertySearch, UpdateSourceTrigger=PropertyChanged}"
+                                      Height="32" Margin="0,6,0,12" FontSize="12"
+                                      hc:InfoElement.Placeholder="输入楼栋 / 房号 / 业主检索" />
+                        </StackPanel>
+
+                        <!-- 行二：当事人甲（报修方）/ 乙（责任方）：选业主带出房号姓名电话，或外部登记手填；下拉内部检索 -->
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="当事人（甲方 · 报修方）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                          ItemsSource="{Binding OwnerAView}" DisplayMemberPath="Display"
+                                          SelectedItem="{Binding SelectedOwnerAOption, Mode=TwoWay}"
+                                          Text="{Binding PartyASearch, UpdateSourceTrigger=PropertyChanged}"
+                                          Height="32" Margin="0,6,0,6" FontSize="12"
+                                          hc:InfoElement.Placeholder="输入房号 / 姓名 / 电话检索" />
+                                <TextBox Text="{Binding PartyAName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding PartyAExternal}"
+                                         Height="30" Margin="0,0,0,6" hc:InfoElement.Placeholder="姓名（外部登记时手填）" FontSize="12" />
+                                <TextBox Text="{Binding PartyAPhone, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding PartyAExternal}"
+                                         Height="30" Margin="0,0,0,12" hc:InfoElement.Placeholder="联系电话" FontSize="12" />
+                                <TextBlock Text="（外部登记请输入当事人所在房号，便于上门核实）" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6" Visibility="{Binding PartyAExternal, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="当事人（乙方 · 责任方）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                          ItemsSource="{Binding OwnerBView}" DisplayMemberPath="Display"
+                                          SelectedItem="{Binding SelectedOwnerBOption, Mode=TwoWay}"
+                                          Text="{Binding PartyBSearch, UpdateSourceTrigger=PropertyChanged}"
+                                          Height="32" Margin="0,6,0,6" FontSize="12"
+                                          hc:InfoElement.Placeholder="输入房号 / 姓名 / 电话检索" />
+                                <TextBox Text="{Binding PartyBName, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding PartyBExternal}"
+                                         Height="30" Margin="0,0,0,6" hc:InfoElement.Placeholder="姓名（外部登记时手填）" FontSize="12" />
+                                <TextBox Text="{Binding PartyBPhone, UpdateSourceTrigger=PropertyChanged}" IsEnabled="{Binding PartyBExternal}"
+                                         Height="30" Margin="0,0,0,12" hc:InfoElement.Placeholder="联系电话" FontSize="12" />
+                                <TextBlock Text="（外部登记请输入当事人所在房号，便于上门核实）" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                           TextWrapping="Wrap" Margin="0,0,0,6" Visibility="{Binding PartyBExternal, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 行三：等级 / 期望解决时间 -->
+                        <Grid>
+                            <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
+                            <StackPanel Grid.Column="0">
+                                <TextBlock Text="纠纷等级" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <ComboBox SelectedIndex="{Binding Level, Mode=TwoWay}" Height="32" Margin="0,6,0,12">
+                                    <ComboBoxItem Content="一般（轻微邻里纠纷）" />
+                                    <ComboBoxItem Content="较大（矛盾升级或多次投诉）" />
+                                    <ComboBoxItem Content="重大（人身伤害或重大损失）" />
+                                </ComboBox>
+                            </StackPanel>
+                            <StackPanel Grid.Column="2">
+                                <TextBlock Text="期望解决时间" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                <hc:DatePicker SelectedDate="{Binding ExpectedAt, Mode=TwoWay}" Height="32" Margin="0,6,0,12" />
+                            </StackPanel>
+                        </Grid>
+
+                        <TextBlock Text="纠纷描述" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBox Text="{Binding Detail, UpdateSourceTrigger=PropertyChanged}" Height="64" AcceptsReturn="True" TextWrapping="Wrap"
+                                 Margin="0,6,0,12" hc:InfoElement.Placeholder="描述矛盾经过、双方诉求与现场核实情况…" />
+
+                        <!-- 附件行：无上传端点，降级为说明文本 -->
+                        <Border Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1"
+                                CornerRadius="6" Padding="10,8" Margin="0,0,0,12">
+                            <StackPanel Orientation="Horizontal">
+                                <Path Data="{StaticResource Icon.Files}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" VerticalAlignment="Center" />
+                                <TextBlock Text="现场照片 / 涉水记录：在线上传通道未开放（无附件端点），请线下归档；单文件 ≤20MB"
+                                           FontSize="11" Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,0,0,4" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="12" Margin="0,0,0,8" TextWrapping="Wrap" />
+                        <StackPanel Orientation="Horizontal">
+                            <Button Style="{StaticResource ButtonPrimary}" Content="提交并分配调解员" Command="{Binding SubmitCommand}" />
+                            <Button Style="{StaticResource ButtonSecondary}" Content="重置" Command="{Binding ResetCommand}" Margin="10,0,0,0" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- 右：调解员智能推荐（拉伸填充，卡片可点选） -->
+                <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="18,16" VerticalAlignment="Stretch">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <TextBlock Grid.Row="0" Text="调解员智能推荐" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,12" />
+                        <ListBox Grid.Row="1" ItemsSource="{Binding Mediators}" SelectedItem="{Binding SelectedMediatorOption, Mode=TwoWay}"
+                                 Background="Transparent" BorderThickness="0" Padding="0" HorizontalContentAlignment="Stretch"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="Margin" Value="0,0,0,8" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                    <Setter Property="Cursor" Value="Hand" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="ListBoxItem">
+                                                <Border x:Name="Bg" CornerRadius="6" Padding="10,8" BorderThickness="1" BorderBrush="Transparent"
+                                                        Background="{StaticResource SurfaceAltBrush}">
+                                                    <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsMouseOver" Value="True">
+                                                        <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                                    </Trigger>
+                                                    <Trigger Property="IsSelected" Value="True">
+                                                        <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                                        <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal">
+                                            <Border Width="30" Height="30" CornerRadius="15" Background="{StaticResource PrimarySoftBrush}">
+                                                <TextBlock Text="{Binding AvatarText}" FontSize="13" Foreground="{StaticResource PrimaryBrush}" FontWeight="Bold"
+                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                            </Border>
+                                            <TextBlock Text="{Binding Display}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}"
+                                                       VerticalAlignment="Center" Margin="8,0,0,0" TextWrapping="Wrap" />
+                                            <Border CornerRadius="4" Padding="5,1" Margin="6,0,0,0" VerticalAlignment="Center" Background="{StaticResource PrimaryBrush}"
+                                                    Visibility="{Binding IsRecommended, Converter={StaticResource BoolToVis}}">
+                                                <TextBlock Text="推荐" FontSize="10" Foreground="White" />
+                                            </Border>
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding ReasonText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="38,4,0,0" TextWrapping="Wrap" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <StackPanel Grid.Row="2">
+                            <TextBlock Text="{Binding MediatorEmptyText}" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0"
+                                       Visibility="{Binding NoMediator, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Text="登记成功后：① 生成纠纷编号 ② 推送调解员 ③ 当事人双方短信告知受理。"
+                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,16,0,0" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
+        </ScrollViewer>
+
+        <!-- 删除纠纷类型 二次确认浮层 -->
+        <Grid Visibility="{Binding IsTypeDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="360" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="删除纠纷类型" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Foreground="{StaticResource TextPrimaryBrush}" FontSize="13">
+                        <Run Text="确认删除纠纷类型「" /><Run Text="{Binding DeleteTypeName, Mode=OneWay}" /><Run Text="」？" />
+                    </TextBlock>
+                    <TextBlock Text="（若该类型已被案件引用，将无法删除并提示先停用）" FontSize="11" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,8,0,0" />
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" TextWrapping="Wrap" Margin="0,10,0,0" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteTypeCommand}" />
+                        <Button Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmDeleteTypeCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>

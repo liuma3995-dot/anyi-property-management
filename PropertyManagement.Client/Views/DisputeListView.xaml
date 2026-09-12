@@ -1,0 +1,289 @@
+<UserControl x:Class="PropertyManagement.Client.Views.DisputeListView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:hc="https://handyorg.github.io/handycontrol"
+             FontFamily="微软雅黑">
+    <Grid Margin="16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="12" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- 统计行（后端口径：本月新增+环比 / 调解中+含超期 / 本月结案 / 近12个月成功率） -->
+        <Grid Grid.Row="0">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" /><ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="18,12">
+                <StackPanel>
+                    <TextBlock Text="本月新增" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="{Binding MonthNew}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2" />
+                    <TextBlock Text="{Binding MonthNewDeltaText}" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Style="{StaticResource CardBorder}" Padding="18,12" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="调解中" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="{Binding HandlingCount}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2" />
+                    <TextBlock Text="{Binding OverdueCount, StringFormat=含超期 {0}}" FontSize="11">
+                        <TextBlock.Style>
+                            <Style TargetType="TextBlock">
+                                <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding OverdueCount}" Value="0">
+                                        <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </TextBlock.Style>
+                    </TextBlock>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="2" Style="{StaticResource CardBorder}" Padding="18,12" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="已结案" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="{Binding MonthClosed}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2" />
+                    <Border HorizontalAlignment="Left" Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Padding="6,1">
+                        <TextBlock Text="本月" Foreground="{StaticResource TextSecondaryBrush}" FontSize="10" />
+                    </Border>
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="3" Style="{StaticResource CardBorder}" Padding="18,12" Margin="10,0,0,0">
+                <StackPanel>
+                    <TextBlock Text="调解成功率" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="{Binding SuccessRateText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,6,0,2" />
+                    <Border HorizontalAlignment="Left" Background="{StaticResource SurfaceAltBrush}" CornerRadius="4" Padding="6,1">
+                        <TextBlock Text="{Binding SuccessRateNote}" Foreground="{StaticResource TextSecondaryBrush}" FontSize="10" />
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 工具栏 -->
+        <Grid Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" Orientation="Horizontal">
+                <Border Height="32" Width="132" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                    <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+                        <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0"/>
+                        <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}" Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}" hc:InfoElement.Placeholder="搜索编号 / 当事人" FontSize="11" Margin="8,0,12,0">
+                            <TextBox.InputBindings>
+                                <KeyBinding Key="Enter" Command="{Binding QueryCommand}" />
+                            </TextBox.InputBindings>
+                        </TextBox>
+                    </Grid>
+                </Border>
+                <ComboBox Height="32" Width="140" Margin="8,0,0,0" FontSize="11"
+                          ItemsSource="{Binding TypeOptions}" DisplayMemberPath="Name"
+                          SelectedItem="{Binding SelectedType, Mode=TwoWay}" />
+                <ComboBox Height="32" Width="140" Margin="8,0,0,0" FontSize="11"
+                          ItemsSource="{Binding StatusOptions}" DisplayMemberPath="Name"
+                          SelectedItem="{Binding SelectedStatus, Mode=TwoWay}" />
+            </StackPanel>
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="0,0,8,0">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}">
+                    <CheckBox Content="全选" IsChecked="{Binding IsAllChecked, Mode=TwoWay}" FontSize="12" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding CheckedCountText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" VerticalAlignment="Center" />
+                </StackPanel>
+                <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="批量删除" Command="{Binding EnterBatchModeCommand}" Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="取消" Command="{Binding CancelBatchDeleteCommand}" Margin="10,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmSelectionCommand}" IsEnabled="{Binding HasChecked}" Margin="8,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
+                <Button Height="32" FontSize="13" Style="{StaticResource ButtonPrimary}" Content="纠纷登记" Command="{Binding NewCommand}" Margin="10,0,0,0" MinWidth="84" />
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出" Command="{Binding ExportCommand}" Margin="10,0,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 数据表（状态列含超期红标；操作列已结案=查看 / 未结案=处理） -->
+        <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
+            <DataGrid x:Name="CasesGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True"
+                      MouseDoubleClick="CasesGrid_MouseDoubleClick">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Width="40">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Click="BatchCheckBox_Click"
+                                          Visibility="{Binding DataContext.IsBatchMode, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Converter={StaticResource BoolToVis}}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="编号" Width="100" Binding="{Binding CaseNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="类型" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border CornerRadius="4" Padding="6,2" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding TypeName}" Value="漏水">
+                                                    <Setter Property="Background" Value="{StaticResource InfoSoftBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding TypeName}" Value="噪音">
+                                                    <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding TypeName}" Value="宠物扰邻">
+                                                    <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding TypeName}" Value="装修">
+                                                    <Setter Property="Background" Value="#EEF2F7" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding TypeName}" Value="邻里">
+                                                    <Setter Property="Background" Value="#EEF2F7" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding TypeName}" FontSize="11">
+                                        <TextBlock.Style>
+                                            <Style TargetType="TextBlock">
+                                                <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding TypeName}" Value="漏水">
+                                                        <Setter Property="Foreground" Value="{StaticResource InfoBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TypeName}" Value="噪音">
+                                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TypeName}" Value="宠物扰邻">
+                                                        <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TypeName}" Value="装修">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding TypeName}" Value="邻里">
+                                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="当事人（甲方 / 乙方）" Width="*" Binding="{Binding PartySummary}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="登记日期" Width="80" Binding="{Binding OccurTime}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="调解员" Width="80" Binding="{Binding Mediator}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="调解次数" Width="80" Binding="{Binding RecordCount}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="状态" Width="110">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Border CornerRadius="4" Padding="6,2">
+                                        <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Background" Value="{StaticResource SurfaceAltBrush}" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding StatusText}" Value="待调解">
+                                                    <Setter Property="Background" Value="{StaticResource PrimarySoftBrush}" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding StatusText}" Value="调解中">
+                                                    <Setter Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                                </DataTrigger>
+                                                    <DataTrigger Binding="{Binding StatusText}" Value="已结案">
+                                                        <Setter Property="Background" Value="{StaticResource SuccessSoftBrush}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                        <TextBlock Text="{Binding StatusText}" FontSize="11">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding StatusText}" Value="待调解">
+                                                            <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusText}" Value="调解中">
+                                                            <Setter Property="Foreground" Value="{StaticResource WarningBrush}" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding StatusText}" Value="已结案">
+                                                            <Setter Property="Foreground" Value="{StaticResource SuccessBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </Border>
+                                    <Border CornerRadius="4" Padding="6,2" Margin="6,0,0,0" Background="{StaticResource DangerSoftBrush}"
+                                            Visibility="{Binding IsOverdue, Converter={StaticResource BoolToVis}}">
+                                        <TextBlock Text="超期" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+                                    </Border>
+                                </StackPanel>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="操作" Width="80">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Button Style="{StaticResource LinkButton}" Content="{Binding ActionText}" HorizontalAlignment="Left"
+                                        Command="{Binding DataContext.HandleCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Border>
+
+        <!-- 分页条 -->
+        <Grid Grid.Row="6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="{Binding TotalText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0">
+                <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button Height="24" FontSize="12" Style="{StaticResource LinkButton}" Content="上一页" Command="{Binding PrevPageCommand}" />
+                <Button Height="24" FontSize="12" Style="{StaticResource LinkButton}" Content="下一页" Command="{Binding NextPageCommand}" Margin="6,0,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 交互标注 -->
+        <Border Grid.Row="8" Background="#F7F5FE" CornerRadius="6" Padding="12,8">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal">
+                    <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
+                    <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
+                </StackPanel>
+                <TextBlock Text="· 点击行或【处理 / 查看】→ 跳转【处理与结案】；【纠纷登记】→ 打开登记页" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="· 调解中超 30 天自动标记「超期」；搜索框输入即自动检索，支持按类型 / 状态筛选；「批量删除」可勾选后删除" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+            </StackPanel>
+        </Border>
+
+        <!-- 批量删除 二次确认浮层 -->
+        <Grid Grid.RowSpan="9" Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="批量删除纠纷" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding BatchConfirmText}" FontSize="13" TextWrapping="Wrap" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,22" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelBatchDeleteCommand}" />
+                        <Button Grid.Column="2" Height="34" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmBatchDeleteCommand}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</UserControl>
