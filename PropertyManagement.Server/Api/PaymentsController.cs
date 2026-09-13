@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Web.Http;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Finance;
+using PropertyManagement.Server.Api.Middleware;
 using PropertyManagement.Server.Services;
 
 namespace PropertyManagement.Server.Api
@@ -21,7 +22,7 @@ namespace PropertyManagement.Server.Api
         [Route("")]
         public ApiResponse<PaymentDto> CreatePayment(PaymentCreateRequest request)
         {
-            return ApiResponse<PaymentDto>.Ok(_payments.CreatePayment(request));
+            return ApiResponse<PaymentDto>.Ok(_payments.CreatePayment(request, GetUsername(), GetIp()));
         }
 
         [HttpGet]
@@ -42,14 +43,14 @@ namespace PropertyManagement.Server.Api
         [Route("pre-deposits/refund")]
         public ApiResponse<PreDepositDto> RefundPreDeposit(PreDepositRefundRequest request)
         {
-            return ApiResponse<PreDepositDto>.Ok(_payments.RefundPreDeposit(request));
+            return ApiResponse<PreDepositDto>.Ok(_payments.RefundPreDeposit(request, GetUsername(), GetIp()));
         }
 
         [HttpPost]
         [Route("refunds")]
         public ApiResponse<RefundAdjustmentDto> CreateRefund(RefundAdjustmentRequest request)
         {
-            return ApiResponse<RefundAdjustmentDto>.Ok(_payments.CreateRefund(request));
+            return ApiResponse<RefundAdjustmentDto>.Ok(_payments.CreateRefund(request, GetUsername(), GetIp()));
         }
 
         [HttpGet]
@@ -77,7 +78,38 @@ namespace PropertyManagement.Server.Api
         [Route("receipts/{id:int}/print")]
         public ApiResponse<ReceiptDto> PrintReceipt(int id, ReceiptPrintRequest request)
         {
-            return ApiResponse<ReceiptDto>.Ok(_payments.PrintReceipt(new ReceiptPrintRequest { ReceiptId = id }));
+            return ApiResponse<ReceiptDto>.Ok(
+                _payments.PrintReceipt(new ReceiptPrintRequest { ReceiptId = id }, GetUsername(), GetIp()));
+        }
+
+        /// <summary>操作人（BR-ORG-01 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
+        private string GetUsername()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Get<string>(AuthMiddleware.UsernameEnvKey) ?? string.Empty;
+                }
+            }
+            return string.Empty;
+        }
+
+        /// <summary>客户端 IP（BR-ORG-01 审计八列）。</summary>
+        private string GetIp()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Request.RemoteIpAddress;
+                }
+            }
+            return null;
         }
     }
 }

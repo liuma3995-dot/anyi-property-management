@@ -41,7 +41,8 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        public ExpenseCategoryDto CreateCategory(ExpenseCategoryRequest request)
+        public ExpenseCategoryDto CreateCategory(ExpenseCategoryRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
             {
@@ -63,11 +64,13 @@ namespace PropertyManagement.Server.Services
             }
 
             _audit.Write("EXPENSE_CATEGORY_CREATE", "expense_category", category.Id.ToString(),
-                "新增支出分类：" + category.Name);
+                "新增支出分类：" + category.Name,
+                userName: operatorName, ip: ip, result: "成功");
             return category;
         }
 
-        public ExpenseCategoryDto UpdateCategory(int id, ExpenseCategoryRequest request)
+        public ExpenseCategoryDto UpdateCategory(int id, ExpenseCategoryRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
             {
@@ -89,12 +92,13 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_CATEGORY_UPDATE", "expense_category", id.ToString(),
-                    "修改支出分类：" + existing.Name);
+                    "修改支出分类：" + existing.Name,
+                    userName: operatorName, ip: ip, result: "成功");
                 return existing;
             }
         }
 
-        public void DeleteCategory(int id)
+        public void DeleteCategory(int id, string operatorName = null, string ip = null)
         {
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
@@ -115,12 +119,14 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_CATEGORY_DELETE", "expense_category", id.ToString(),
-                    "删除支出分类：" + existing.Name);
+                    "删除支出分类：" + existing.Name,
+                    userName: operatorName, ip: ip, result: "成功");
             }
         }
 
         // ---------- 支出登记（UC-FIN-005） ----------
-        public ExpenseDto CreateExpense(ExpenseCreateRequest request)
+        public ExpenseDto CreateExpense(ExpenseCreateRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.CategoryId <= 0)
             {
@@ -160,12 +166,14 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_CREATE", "expense", expense.Id.ToString(),
-                    "登记支出：" + category.Name + "，" + expense.Amount.ToString("0.00") + " 元");
+                    "登记支出：" + category.Name + "，" + expense.Amount.ToString("0.00") + " 元",
+                    userName: operatorName, ip: ip, result: "成功");
                 return expense;
             }
         }
 
-        public ExpenseDto UpdateExpense(int id, ExpenseCreateRequest request)
+        public ExpenseDto UpdateExpense(int id, ExpenseCreateRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.CategoryId <= 0)
             {
@@ -198,12 +206,13 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_UPDATE", "expense", id.ToString(),
-                    "修改支出：" + existing.Amount.ToString("0.00") + " 元");
+                    "修改支出：" + existing.Amount.ToString("0.00") + " 元",
+                    userName: operatorName, ip: ip, result: "成功");
                 return existing;
             }
         }
 
-        public void DeleteExpense(int id)
+        public void DeleteExpense(int id, string operatorName = null, string ip = null)
         {
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
@@ -219,7 +228,8 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_DELETE", "expense", id.ToString(),
-                    "删除支出：" + existing.Amount.ToString("0.00") + " 元（软删除 BR-FIN-10）");
+                    "删除支出：" + existing.Amount.ToString("0.00") + " 元（软删除 BR-FIN-10）",
+                    userName: operatorName, ip: ip, result: "成功");
             }
         }
 

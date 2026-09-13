@@ -37,7 +37,8 @@ namespace PropertyManagement.Server.Services
         }
 
         // ---------- 收款登记（UC-FIN-003，P-06 简单版） ----------
-        public PaymentDto CreatePayment(PaymentCreateRequest request)
+        public PaymentDto CreatePayment(PaymentCreateRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.BillId <= 0)
             {
@@ -145,7 +146,8 @@ namespace PropertyManagement.Server.Services
                 _audit.Write("PAYMENT_CREATE", "bill", bill.Id.ToString(),
                     string.Format("收款登记：账单 {0}，实收 {1:0.00}，其中抵扣预存 {2:0.00}，转预存 {3:0.00}，收据 {4}{5}",
                         bill.Id, cash, usedFromPreDeposit, excess, receipt.ReceiptNo,
-                        string.IsNullOrEmpty(payment.Remark) ? string.Empty : "，备注：" + payment.Remark));
+                        string.IsNullOrEmpty(payment.Remark) ? string.Empty : "，备注：" + payment.Remark),
+                    userName: operatorName, ip: ip, result: "成功");
 
                 return payment;
             }
@@ -192,7 +194,8 @@ namespace PropertyManagement.Server.Services
                 return receipt;
             }
         }
-        public ReceiptDto PrintReceipt(ReceiptPrintRequest request)
+        public ReceiptDto PrintReceipt(ReceiptPrintRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.ReceiptId <= 0)
             {
@@ -215,7 +218,8 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("RECEIPT_PRINT", "receipt", receipt.Id.ToString(),
-                    "收据打印/补打：编号 " + receipt.ReceiptNo + "，第 " + receipt.PrintCount + " 次");
+                    "收据打印/补打：编号 " + receipt.ReceiptNo + "，第 " + receipt.PrintCount + " 次",
+                    userName: operatorName, ip: ip, result: "成功");
                 return receipt;
             }
         }
@@ -239,7 +243,8 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        public PreDepositDto RefundPreDeposit(PreDepositRefundRequest request)
+        public PreDepositDto RefundPreDeposit(PreDepositRefundRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.OwnerId <= 0)
             {
@@ -264,13 +269,15 @@ namespace PropertyManagement.Server.Services
 
                 _audit.Write("PRE_DEPOSIT_REFUND", "owner", request.OwnerId.ToString(),
                     "预存款退还：" + request.Amount.ToString("0.00") + " 元，退还后余额 " +
-                    (balance - request.Amount).ToString("0.00") + " 元");
+                    (balance - request.Amount).ToString("0.00") + " 元",
+                    userName: operatorName, ip: ip, result: "成功");
                 return GetPreDeposit(request.OwnerId);
             }
         }
 
         // ---------- 退款/减免/调整（UC-FIN-004，BR-FIN-06/10） ----------
-        public RefundAdjustmentDto CreateRefund(RefundAdjustmentRequest request)
+        public RefundAdjustmentDto CreateRefund(RefundAdjustmentRequest request,
+            string operatorName = null, string ip = null)
         {
             if (request == null || request.BillId <= 0)
             {
@@ -344,7 +351,8 @@ namespace PropertyManagement.Server.Services
 
                 _audit.Write("REFUND_CREATE", "bill", bill.Id.ToString(),
                     string.Format("{0} {1:0.00} 元，编号 {2}，原因：{3}",
-                        request.RefundType, request.Amount, refund.RefNo, refund.Reason));
+                        request.RefundType, request.Amount, refund.RefNo, refund.Reason),
+                    userName: operatorName, ip: ip, result: "成功");
 
                 return refund;
             }
