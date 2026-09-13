@@ -4,6 +4,7 @@ using System.Windows.Interop;
 using System.Windows.Input;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Client.ViewModels;
+using PropertyManagement.Contract.Common;
 
 namespace PropertyManagement.Client.Views
 {
@@ -15,6 +16,8 @@ namespace PropertyManagement.Client.Views
         private double _restoreLeft, _restoreTop, _restoreWidth, _restoreHeight;
         private bool _dragFromMaximized;
         private System.Windows.Point _dragStart;
+        private bool _returningToLogin;
+        private bool _mustChangeHandled;
 
         public MainWindow()
         {
@@ -23,9 +26,26 @@ namespace PropertyManagement.Client.Views
             _vm = new ShellViewModel(ApiClientFactory.Create());
             _vm.LogoutRequested += OnLogoutRequested;
             _vm.ChangePasswordRequested += OnChangePasswordRequested;
+            _vm.ProfileRequested += OnProfileRequested;
+            SessionManager.Instance.SessionExpired += OnSessionExpired;
             DataContext = _vm;
 
             UserMenuPopup.Closed += (sender, args) => _vm.IsUserMenuOpen = false;
+            ContentRendered += OnContentRendered;
+        }
+
+        /// <summary>
+        /// R18：登录后落地页固定为仪表盘；若命中「首登/管理员标记强制改密」，
+        /// 在仪表盘之上弹出改密对话框（不再把首页替换成「修改密码」页）。
+        /// </summary>
+        private void OnContentRendered(object sender, EventArgs e)
+        {
+            if (_mustChangeHandled || !_vm.MustChangePassword)
+            {
+                return;
+            }
+            _mustChangeHandled = true;
+            OnChangePasswordRequested();
         }
 
         protected override void OnSourceInitialized(EventArgs e)
@@ -47,7 +67,30 @@ namespace PropertyManagement.Client.Views
 
         private void OnLogoutRequested()
         {
-            var login = new LoginWindow();
+            ReturnToLogin(null);
+        }
+
+        /// <summary>
+        /// 会话失效回落（M7 修复）：token 无效/过期/改密失效时清空会话并回到登录页，
+        /// 避免主窗口停留在「token 无效或过期」的报错态无法自愈。
+        /// </summary>
+        private void OnSessionExpired(string message)
+        {
+            ReturnToLogin(string.IsNullOrWhiteSpace(message)
+                ? "登录状态已失效，请重新登录。"
+                : (message + "，请重新登录。"));
+        }
+
+        private void ReturnToLogin(string notice)
+        {
+            if (_returningToLogin)
+            {
+                return;
+            }
+            _returningToLogin = true;
+
+            SessionManager.Instance.SessionExpired -= OnSessionExpired;
+            var login = new LoginWindow(notice);
             Application.Current.MainWindow = login;
             login.Show();
             Close();
@@ -60,6 +103,39 @@ namespace PropertyManagement.Client.Views
                 Owner = this
             };
             dialog.ShowDialog();
+        }
+
+        /// <summary>R17：顶栏下拉 → 个人信息设置（小表单就地填写，不新增页面）。</summary>
+        private void OnProfileRequested()
+        {
+            var dialog = new ProfileWindow(_vm.Api)
+            {
+                Owner = this
+            };
+            dialog.ProfileSaved += profile => _vm.ApplyProfile(profile);
+            dialog.ShowDialog();
+        }
+
+        /// <summary>R17：全局搜索结果点击 → 跳转目标模块页并带关键词过滤。</summary>
+        private void SearchItem_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as System.Windows.Controls.Button;
+            var item = button == null ? null : button.Tag as GlobalSearchItemDto;
+            if (item != null && _vm.OpenSearchItemCommand.CanExecute(item))
+            {
+                _vm.OpenSearchItemCommand.Execute(item);
+            }
+        }
+
+        /// <summary>R17：铃铛待办项点击 → 跳转对应模块页处理。</summary>
+        private void TodoItem_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as System.Windows.Controls.Button;
+            var item = button == null ? null : button.Tag as TodoItemDto;
+            if (item != null && _vm.OpenTodoCommand.CanExecute(item))
+            {
+                _vm.OpenTodoCommand.Execute(item);
+            }
         }
 
         // 无边框窗口：顶栏空白区左键拖拽（按钮/输入框已自行处理鼠标按下，不会触发）；双击切换最大化/还原

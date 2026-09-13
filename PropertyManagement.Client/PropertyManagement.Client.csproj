@@ -13,6 +13,7 @@
     <TargetFrameworkRootPath>$(MSBuildProjectDirectory)\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\</TargetFrameworkRootPath>
     <TargetFrameworkDirectory>$(MSBuildProjectDirectory)\..\packages\Microsoft.NETFramework.ReferenceAssemblies.net48.1.0.3\build\.NETFramework\v4.8\</TargetFrameworkDirectory>
     <NoStdLib>true</NoStdLib>
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -74,6 +75,10 @@
     <None Include="App.config" />
     <None Include="app.manifest" />
     <None Include="packages.config" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- 品牌图标：exe 图标（ApplicationIcon） + 窗口标题栏（Window.Icon 走 pack URI） -->
+    <Resource Include="Assets\app.ico" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">
@@ -232,6 +237,10 @@
       <Generator>MSBuild:Compile</Generator>
       <SubType>Designer</SubType>
     </Page>
+    <Page Include="Views\ProfileWindow.xaml">
+      <Generator>MSBuild:Compile</Generator>
+      <SubType>Designer</SubType>
+    </Page>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="App.xaml.cs">
@@ -245,6 +254,9 @@
     </Compile>
     <Compile Include="Views\DashboardView.xaml.cs">
       <DependentUpon>DashboardView.xaml</DependentUpon>
+    </Compile>
+    <Compile Include="Views\ProfileWindow.xaml.cs">
+      <DependentUpon>ProfileWindow.xaml</DependentUpon>
     </Compile>
     <Compile Include="Views\PlaceholderView.xaml.cs">
       <DependentUpon>PlaceholderView.xaml</DependentUpon>
@@ -273,6 +285,7 @@
     <Compile Include="ViewModels\LoginViewModel.cs" />
     <Compile Include="ViewModels\PlaceholderViewModel.cs" />
     <Compile Include="ViewModels\ShellViewModel.cs" />
+    <Compile Include="ViewModels\ProfileViewModel.cs" />
     <Compile Include="Views\ChargeItemsView.xaml.cs">
       <DependentUpon>ChargeItemsView.xaml</DependentUpon>
     </Compile>

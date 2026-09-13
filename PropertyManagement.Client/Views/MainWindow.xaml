@@ -385,8 +385,9 @@
                                    Foreground="{StaticResource TextMutedBrush}" Margin="0,3,0,0" />
                     </StackPanel>
 
-                    <!-- 全局搜索框 240x36 -->
-                    <Border Grid.Column="2" Width="240" Height="36" VerticalAlignment="Center" Margin="0,0,16,0"
+                    <!-- 全局搜索框 240x36 + R17 结果下拉 -->
+                    <Grid Grid.Column="2" Margin="0,0,16,0">
+                    <Border x:Name="SearchArea" Width="240" Height="36" VerticalAlignment="Center"
                             Background="{StaticResource SurfaceAltBrush}"
                             BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1"
                             CornerRadius="8">
@@ -399,27 +400,173 @@
                                   Style="{StaticResource IconStroke}"
                                   Stroke="{StaticResource TextMutedBrush}"
                                   Width="16" Height="16" Margin="12,0,0,0" />
-                            <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
-                                     Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
-                                     hc:InfoElement.Placeholder="搜索房产、业主、设备…"
-                                     FontSize="11" Margin="10,0,12,0" />
+                             <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                                      AutomationProperties.Name="全局搜索"
+                                      Text="{Binding SearchText, UpdateSourceTrigger=PropertyChanged}"
+                                      hc:InfoElement.Placeholder="搜索房产、业主、设备…"
+                                      FontSize="11" Margin="10,0,12,0">
+                                 <TextBox.InputBindings>
+                                     <KeyBinding Key="Enter" Command="{Binding OpenFirstSearchResultCommand}" />
+                                     <KeyBinding Key="Escape" Command="{Binding CloseSearchCommand}" />
+                                 </TextBox.InputBindings>
+                             </TextBox>
                         </Grid>
                     </Border>
+                        <!-- R17：全局搜索结果下拉（跨模块分组，点击跳转并带关键词过滤） -->
+                         <Popup x:Name="SearchResultPopup" IsOpen="{Binding IsSearchOpen, Mode=TwoWay}"
+                                PlacementTarget="{Binding ElementName=SearchArea}" Placement="Bottom"
+                                StaysOpen="False" AllowsTransparency="True">
+                             <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                                     BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,6,0,0"
+                                     Width="360" MaxHeight="420">
+                                 <StackPanel>
+                                     <TextBlock Text="{Binding SearchSummary}" FontSize="10"
+                                                Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,6" />
+                                     <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                                         <ItemsControl ItemsSource="{Binding SearchGroups}">
+                                             <ItemsControl.ItemTemplate>
+                                                 <DataTemplate>
+                                                     <StackPanel Margin="0,0,0,6">
+                                                         <TextBlock Text="{Binding ModuleName}" FontSize="10" FontWeight="SemiBold"
+                                                                    Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,4" />
+                                                         <ItemsControl ItemsSource="{Binding Items}">
+                                                             <ItemsControl.ItemTemplate>
+                                                                 <DataTemplate>
+                                                                     <Button Click="SearchItem_Click" Tag="{Binding}"
+                                                                             AutomationProperties.Name="{Binding Title}"
+                                                                             HorizontalContentAlignment="Stretch" Cursor="Hand"
+                                                                             Padding="6,5">
+                                                                         <Button.Template>
+                                                                             <ControlTemplate TargetType="Button">
+                                                                                 <Border Background="Transparent" Padding="{TemplateBinding Padding}"
+                                                                                         CornerRadius="6">
+                                                                                     <ContentPresenter HorizontalAlignment="Stretch" />
+                                                                                 </Border>
+                                                                             </ControlTemplate>
+                                                                         </Button.Template>
+                                                                         <StackPanel>
+                                                                             <TextBlock Text="{Binding Title}" FontSize="11"
+                                                                                        Foreground="{StaticResource TextPrimaryBrush}" />
+                                                                             <TextBlock Text="{Binding Subtitle}" FontSize="9"
+                                                                                        Foreground="{StaticResource TextMutedBrush}"
+                                                                                        Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                                                         </StackPanel>
+                                                                     </Button>
+                                                                 </DataTemplate>
+                                                             </ItemsControl.ItemTemplate>
+                                                         </ItemsControl>
+                                                     </StackPanel>
+                                                 </DataTemplate>
+                                             </ItemsControl.ItemTemplate>
+                                         </ItemsControl>
+                                     </ScrollViewer>
+                                 </StackPanel>
+                             </Border>
+                       </Popup>
+                   </Grid>
 
-                    <!-- 通知按钮 36x36 -->
-                    <Button Grid.Column="3" Width="36" Height="36" VerticalAlignment="Center" Margin="0,0,16,0"
-                            Style="{StaticResource IconButton}">
-                        <Path Data="{StaticResource Icon.Bell}" Style="{StaticResource IconStroke}"
-                              Stroke="{StaticResource TextSecondaryBrush}" Width="17" Height="17" />
-                    </Button>
+                    <!-- 通知按钮 36x36（R17：待办中心，红点=待处理总数） -->
+                    <Grid Grid.Column="3" Margin="0,0,16,0" VerticalAlignment="Center">
+                         <Button x:Name="TodoCenterButton" Width="36" Height="36"
+                                AutomationProperties.Name="待办提醒"
+                                Style="{StaticResource IconButton}"
+                                Command="{Binding ToggleTodoCenterCommand}"
+                                ToolTip="待办提醒">
+                            <Grid Width="20" Height="20">
+                                <Path Data="{StaticResource Icon.Bell}" Style="{StaticResource IconStroke}"
+                                      Stroke="{StaticResource TextSecondaryBrush}" Width="17" Height="17"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Border Background="{StaticResource DangerBrush}" CornerRadius="8" MinWidth="16" Height="16"
+                                        HorizontalAlignment="Right" VerticalAlignment="Top" Padding="4,0">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding HasTodoBadge}" Value="False">
+                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </Border.Style>
+                                    <TextBlock Text="{Binding TodoBadgeText}" Foreground="White" FontSize="9"
+                                               FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                            </Grid>
+                        </Button>
+
+                        <Popup x:Name="TodoCenterPopup" IsOpen="{Binding IsTodoCenterOpen, Mode=TwoWay}"
+                               PlacementTarget="{Binding ElementName=TodoCenterButton}"
+                               Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                            <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                                    BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,8,0,0" Width="380">
+                                <StackPanel>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock Grid.Column="0" Text="待办提醒" FontSize="13" FontWeight="Bold"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding TodoSummary}" FontSize="10"
+                                                   Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <TextBlock Text="{Binding TodoDetail}" FontSize="10"
+                                               Foreground="{StaticResource TextHintBrush}" Margin="0,4,0,6" />
+                                    <ScrollViewer MaxHeight="300" VerticalScrollBarVisibility="Auto">
+                                        <ItemsControl x:Name="TodoList" ItemsSource="{Binding Todos}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Click="TodoItem_Click" Tag="{Binding}"
+                                                            AutomationProperties.Name="{Binding Title}"
+                                                            HorizontalContentAlignment="Stretch" Cursor="Hand" Padding="4,6">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="Transparent"
+                                                                        BorderBrush="{StaticResource BorderBrushColor}"
+                                                                        BorderThickness="0,0,0,1" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Stretch" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <Grid>
+                                                            <Grid.ColumnDefinitions>
+                                                                <ColumnDefinition Width="*" />
+                                                                <ColumnDefinition Width="Auto" />
+                                                            </Grid.ColumnDefinitions>
+                                                            <StackPanel Grid.Column="0">
+                                                                <TextBlock Text="{Binding Title}" FontSize="11" FontWeight="SemiBold"
+                                                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                                <TextBlock Text="{Binding Meta}" FontSize="9"
+                                                                           Foreground="{StaticResource TextMutedBrush}"
+                                                                           Margin="0,3,0,0" TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                            <Border Grid.Column="1" Height="20" CornerRadius="10"
+                                                                    Padding="8,0" VerticalAlignment="Center"
+                                                                    Background="{StaticResource PrimarySoftBrush}">
+                                                                <TextBlock Text="{Binding Tag}" FontSize="9" FontWeight="SemiBold"
+                                                                           Foreground="{StaticResource PrimaryBrush}"
+                                                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                            </Border>
+                                                        </Grid>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                    </Grid>
 
                     <!-- 用户区域（头像+姓名+角色+下拉菜单） -->
                     <Grid Grid.Column="4" VerticalAlignment="Center">
                         <Button x:Name="UserMenuButton" Command="{Binding ToggleUserMenuCommand}"
+                                AutomationProperties.Name="用户菜单"
                                 Style="{StaticResource UserAreaButton}">
                             <StackPanel Orientation="Horizontal">
-                                <Border Width="34" Height="34" Background="{StaticResource PrimarySoftBrush}" CornerRadius="17">
-                                    <TextBlock Text="{Binding UserAvatar}" Foreground="{StaticResource PrimaryBrush}"
+                                <Border Width="34" Height="34" Background="{Binding UserAvatarBrush}" CornerRadius="17">
+                                    <TextBlock Text="{Binding UserAvatar}" Foreground="White"
                                                FontSize="13" FontWeight="Bold"
                                                HorizontalAlignment="Center" VerticalAlignment="Center" />
                                 </Border>
@@ -440,7 +587,22 @@
                                Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                             <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
                                     BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,8,0,0">
-                                <StackPanel MinWidth="132">
+                                <StackPanel MinWidth="180">
+                                    <!-- R17：个人信息摘要（设置页保存后即时刷新） -->
+                                    <Border Background="{StaticResource SurfaceAltBrush}" CornerRadius="6" Padding="10,8" Margin="2,2,2,6">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding UserName}" FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                            <TextBlock Text="{Binding UserPhoneText}" FontSize="10"
+                                                       Foreground="{StaticResource TextMutedBrush}" Margin="0,3,0,0" />
+                                            <TextBlock Text="{Binding UserBioText}" FontSize="10" TextWrapping="Wrap"
+                                                       Foreground="{StaticResource TextHintBrush}" Margin="0,3,0,0"
+                                                       MaxWidth="200" />
+                                        </StackPanel>
+                                    </Border>
+                                    <Button Command="{Binding OpenProfileCommand}" Style="{StaticResource MenuButton}">
+                                        <TextBlock Text="个人信息设置" />
+                                    </Button>
                                     <Button Command="{Binding ChangePasswordCommand}" Style="{StaticResource MenuButton}">
                                         <TextBlock Text="修改密码" />
                                     </Button>

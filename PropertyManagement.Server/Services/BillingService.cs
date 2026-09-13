@@ -296,6 +296,19 @@ namespace PropertyManagement.Server.Services
                     int? propertyId = candidate.Kind == BillObjectKind.Property ? (int?)candidate.Id : null;
                     int? parkingId = candidate.Kind == BillObjectKind.Parking ? (int?)candidate.Id : null;
 
+                    // BR-INF-02（M7 BUG-002 裁定补校验）：缴费对象必须存在有效「房产-业主」关系，否则记失败行不入库
+                    if (!_finance.HasValidOwnerRelation(connection, propertyId, parkingId))
+                    {
+                        failures.Add(new BillFailureDto
+                        {
+                            PropertyId = propertyId,
+                            ParkingId = parkingId,
+                            No = candidate.No,
+                            Reason = "缴费对象不存在有效「房产-业主」关系，请先绑定业主后再出账（BR-INF-02）"
+                        });
+                        continue;
+                    }
+
                     BillDto duplicate = _finance.FindDuplicateBill(
                         connection, transaction, request.ChargeItemId, propertyId, parkingId, request.CycleId);
 

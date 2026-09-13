@@ -76,6 +76,15 @@ namespace PropertyManagement.Client.ViewModels
             LoginCommand = new AsyncRelayCommand(LoginAsync);
         }
 
+        /// <summary>登录页提示（如「登录状态已失效，请重新登录」）。</summary>
+        public void ShowNotice(string message)
+        {
+            if (!string.IsNullOrWhiteSpace(message))
+            {
+                ErrorMessage = message;
+            }
+        }
+
         private async Task LoginAsync()
         {
             if (string.IsNullOrWhiteSpace(UserName) || string.IsNullOrEmpty(Password))

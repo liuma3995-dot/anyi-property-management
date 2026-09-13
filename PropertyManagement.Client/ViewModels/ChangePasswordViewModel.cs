@@ -67,6 +67,17 @@ namespace PropertyManagement.Client.ViewModels
                 ErrorMessage = "新密码长度不能少于 6 位";
                 return;
             }
+            if (NewPassword.Length > 20)
+            {
+                ErrorMessage = "新密码长度不能超过 20 位";
+                return;
+            }
+            if (!System.Text.RegularExpressions.Regex.IsMatch(NewPassword, "[A-Za-z]") ||
+                !System.Text.RegularExpressions.Regex.IsMatch(NewPassword, "[0-9]"))
+            {
+                ErrorMessage = "新密码必须同时包含字母和数字";
+                return;
+            }
             if (NewPassword != ConfirmPassword)
             {
                 ErrorMessage = "两次输入的新密码不一致";

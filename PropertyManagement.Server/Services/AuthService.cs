@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Configuration;
 using System.Data;
+using System.Linq;
 using System.Text.RegularExpressions;
 using PropertyManagement.Contract.Auth;
 using PropertyManagement.Contract.Common;
@@ -16,14 +18,14 @@ namespace PropertyManagement.Server.Services
     /// <summary>
     /// 认证用例服务（UC-COM-001/002）：
     /// 登录（BCrypt 校验 + P-02 失败锁定 + BR-COM-02/03 + token 签发 + 登录逐次留痕）、
-    /// 修改密码（PG-COM-04：8-20 位 + 大写/数字/特殊字符 + 最近 3 次不重复；
+    /// 修改密码（PG-COM-04 简化规则：6-20 位 + 必须含字母与数字 + 最近 3 次不重复；
     /// R16 已下线「90 天强制更换」规则，强制改密仅保留首登/管理员标记；
     /// t_password_history 保留 5 条；审计留痕 BR-COM-01）。
     /// 事务边界在本服务层控制（M2-D7）。
     /// </summary>
     public class AuthService
     {
-        private const int PasswordMinLength = 8;
+        private const int PasswordMinLength = 6;
         private const int PasswordMaxLength = 20;
         private const int PasswordHistoryDenyCount = 3; // 不得与最近 3 次重复
         private const int PasswordHistoryKeep = 5;      // 历史保留条数
@@ -226,7 +228,98 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        /// <summary>密码强度规则（PG-COM-04/T6-6-5）：8-20 位，必须含大写字母+数字+特殊字符。</summary>
+        // ===================== 个人信息（R17：顶栏管理员下拉 → 个人信息设置） =====================
+
+        /// <summary>内置可选头像（8 个；不含文件上传，仅存 key）。</summary>
+        private static readonly string[][] AvatarCatalog =
+        {
+            new[] { "avatar-01", "管理员" }, new[] { "avatar-02", "客服" },
+            new[] { "avatar-03", "工程" }, new[] { "avatar-04", "安保" },
+            new[] { "avatar-05", "财务" }, new[] { "avatar-06", "保洁" },
+            new[] { "avatar-07", "秩序" }, new[] { "avatar-08", "访客" }
+        };
+
+        /// <summary>读取当前登录账号个人信息（三项均可空；返回内置头像候选供前端渲染）。</summary>
+        public UserProfileDto GetProfile(string currentUsername)
+        {
+            if (string.IsNullOrWhiteSpace(currentUsername))
+            {
+                throw ApiException.Unauthorized("登录状态无效，请重新登录");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                UserProfileDto profile = _users.GetProfile(connection, currentUsername.Trim())
+                    ?? throw ApiException.NotFound("账号不存在");
+                profile.Role = "系统管理员";
+                profile.AvatarOptions = AvatarCatalog
+                    .Select(x => new AvatarOptionDto { Key = x[0], Label = x[1] })
+                    .ToList();
+                return profile;
+            }
+        }
+
+        /// <summary>
+        /// 保存个人信息（R17）：名字/手机号/简介/内置头像**均可填可不填**，填了才校验
+        /// （名字 ≤20 字、简介 ≤200 字、手机号按 BR-TEL-04 口径、头像必须在内置范围内）；
+        /// 保存动作写审计 USER_PROFILE_UPDATE（BR-ORG-01 敏感操作留痕）。
+        /// </summary>
+        public UserProfileDto UpdateProfile(UserProfileRequest request, string currentUsername, string ip = null)
+        {
+            if (request == null)
+            {
+                throw ApiException.ValidationFailed("请求体不能为空");
+            }
+            if (string.IsNullOrWhiteSpace(currentUsername))
+            {
+                throw ApiException.Unauthorized("登录状态无效，请重新登录");
+            }
+
+            string displayName = (request.DisplayName ?? string.Empty).Trim();
+            string phone = (request.Phone ?? string.Empty).Trim();
+            string bio = (request.Bio ?? string.Empty).Trim();
+            string avatarKey = (request.AvatarKey ?? string.Empty).Trim();
+
+            if (displayName.Length > 20) throw ApiException.ValidationFailed("名字不能超过 20 个字");
+            if (bio.Length > 200) throw ApiException.ValidationFailed("个人简介不能超过 200 字");
+            if (phone.Length > 0 && !IsValidContactPhone(phone))
+                throw ApiException.ValidationFailed("手机号码格式不正确（支持 11 位手机号或带区号座机）");
+            if (avatarKey.Length > 0 && !AvatarCatalog.Any(x => x[0] == avatarKey))
+                throw ApiException.ValidationFailed("头像不在内置可选范围内，请重新选择");
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                AuthUser user = _users.FindByUsername(connection, currentUsername.Trim())
+                    ?? throw ApiException.Unauthorized("登录状态无效，请重新登录");
+
+                _users.UpdateProfile(connection, transaction, user.Id, displayName, phone, bio, avatarKey);
+                WriteAuthAudit(connection, transaction, "USER_PROFILE_UPDATE", user.Id, user.Username, ip, "成功",
+                    "更新个人信息：名字「" + (displayName.Length == 0 ? "未填" : displayName) + "」、" +
+                    "手机号「" + (phone.Length == 0 ? "未填" : phone) + "」、" +
+                    "简介" + (bio.Length == 0 ? "未填" : "已填写 " + bio.Length + " 字") + "、" +
+                    "头像「" + (avatarKey.Length == 0 ? "默认" : avatarKey) + "」");
+                transaction.Commit();
+            }
+
+            return GetProfile(currentUsername);
+        }
+
+        /// <summary>手机号/座机格式校验（与 BR-TEL-04 同口径：11 位手机、可含区号座机）。</summary>
+        private static bool IsValidContactPhone(string phone)
+        {
+            var digits = new string(phone.Where(char.IsDigit).ToArray());
+            if (digits.Length == 0)
+            {
+                return false;
+            }
+            return Regex.IsMatch(digits, "^1\\d{10}$") || Regex.IsMatch(digits, "^(0\\d{2,3})?\\d{7,8}$");
+        }
+
+        /// <summary>
+        /// 密码规则（PG-COM-04 简化版，2026-09-13 负责人确认）：6-20 位，必须同时含字母与数字；
+        /// 大小写不限，**不再要求**大写字母，**不再要求**特殊字符。
+        /// </summary>
         private static void ValidatePasswordStrength(string password)
         {
             if (password.Length < PasswordMinLength || password.Length > PasswordMaxLength)
@@ -234,17 +327,13 @@ namespace PropertyManagement.Server.Services
                 throw ApiException.ValidationFailed(
                     "新密码长度须为 " + PasswordMinLength + "-" + PasswordMaxLength + " 位");
             }
-            if (!Regex.IsMatch(password, "[A-Z]"))
+            if (!Regex.IsMatch(password, "[A-Za-z]"))
             {
-                throw ApiException.ValidationFailed("新密码必须包含至少一个大写字母");
+                throw ApiException.ValidationFailed("新密码必须包含至少一个字母");
             }
             if (!Regex.IsMatch(password, "[0-9]"))
             {
                 throw ApiException.ValidationFailed("新密码必须包含至少一个数字");
-            }
-            if (!Regex.IsMatch(password, "[^A-Za-z0-9]"))
-            {
-                throw ApiException.ValidationFailed("新密码必须包含至少一个特殊字符");
             }
         }
 

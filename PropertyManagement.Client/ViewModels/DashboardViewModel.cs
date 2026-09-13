@@ -32,6 +32,17 @@ namespace PropertyManagement.Client.ViewModels
 
         /// <summary>是否最后一条（原型仅前两条有分隔线）。</summary>
         public bool IsLast { get; set; }
+
+        /// <summary>R17：来源待办（携带跳转目标 模块/页面/id）。</summary>
+        public TodoItemDto Source { get; set; }
+    }
+
+    /// <summary>仪表盘月份下拉候选项（R17）。</summary>
+    public class MonthOption
+    {
+        public string Period { get; set; }
+
+        public string Text { get; set; }
     }
 
     /// <summary>仪表盘首页（PG-DASH，UC-COM-006，按原型 §2.3 一比一修版）。</summary>
@@ -56,6 +67,8 @@ namespace PropertyManagement.Client.ViewModels
         private string _welcomeTitle = "下午好，系统管理员";
         private string _welcomeDate = string.Empty;
         private string _monthText = string.Empty;
+        private string _monthShortText = string.Empty;
+        private string _periodLabelText = "本月";
 
         // 财务指标行
         private string _monthReceivableText = "¥ 0";
@@ -83,6 +96,13 @@ namespace PropertyManagement.Client.ViewModels
         private string _collectionGapText = "目标收缴率 85%，还差 0%";
         private string _collectionHintText = "建议优先跟进 0 户逾期业主";
 
+        // R17：月份选择器 + 待办跳转
+        private bool _isMonthPickerOpen;
+        private string _selectedPeriod;
+        private readonly Action<string, string, string> _openPage;
+        private readonly Action _openTodoCenter;
+        private readonly Func<string> _userNameProvider;
+
         public string WelcomeTitle
         {
             get { return _welcomeTitle; }
@@ -99,6 +119,43 @@ namespace PropertyManagement.Client.ViewModels
         {
             get { return _monthText; }
             private set { SetProperty(ref _monthText, value); }
+        }
+
+        /// <summary>收缴概览角标（当前月 "08 月"；同年历史月 "8 月"；跨年份 "2026-08"）。</summary>
+        public string MonthShortText
+        {
+            get { return _monthShortText; }
+            private set { SetProperty(ref _monthShortText, value); }
+        }
+
+        /// <summary>口径前缀（当前月="本月"，历史月="8 月"/"2026-08"）。</summary>
+        public string PeriodLabelText
+        {
+            get { return _periodLabelText; }
+            private set
+            {
+                if (SetProperty(ref _periodLabelText, value))
+                {
+                    OnPropertyChanged(nameof(ReceivableLabelText));
+                    OnPropertyChanged(nameof(ReceivedLabelText));
+                    OnPropertyChanged(nameof(CollectionOverviewTitle));
+                }
+            }
+        }
+
+        public string ReceivableLabelText
+        {
+            get { return PeriodLabelText + "应收"; }
+        }
+
+        public string ReceivedLabelText
+        {
+            get { return PeriodLabelText + "已收"; }
+        }
+
+        public string CollectionOverviewTitle
+        {
+            get { return PeriodLabelText + "收缴概览"; }
         }
 
         public string MonthReceivableText
@@ -229,23 +286,172 @@ namespace PropertyManagement.Client.ViewModels
 
         public ObservableCollection<ReminderItem> Reminders { get; } = new ObservableCollection<ReminderItem>();
 
+        /// <summary>月份下拉候选（近 24 个月，倒序）。</summary>
+        public ObservableCollection<MonthOption> Months { get; } = new ObservableCollection<MonthOption>();
+
+        public bool IsMonthPickerOpen
+        {
+            get { return _isMonthPickerOpen; }
+            set { SetProperty(ref _isMonthPickerOpen, value); }
+        }
+
+        /// <summary>当前统计口径月份（yyyy-MM）。</summary>
+        public string SelectedPeriod
+        {
+            get { return _selectedPeriod; }
+            private set { SetProperty(ref _selectedPeriod, value); }
+        }
+
         public IAsyncRelayCommand RefreshCommand { get; }
 
         public IRelayCommand<string> QuickEntryCommand { get; }
 
-        public DashboardViewModel(IApiClient api, Action<string> navigate)
+        public IRelayCommand ToggleMonthPickerCommand { get; }
+
+        public IAsyncRelayCommand<MonthOption> SelectMonthCommand { get; }
+
+        /// <summary>点击待办项 → 跳转对应模块页（R17）。</summary>
+        public IRelayCommand<ReminderItem> OpenTodoCommand { get; }
+
+        /// <summary>「查看全部」→ 打开顶部铃铛待办中心（R17）。</summary>
+        public IRelayCommand ViewAllTodosCommand { get; }
+
+        public DashboardViewModel(IApiClient api, Action<string> navigate,
+            Action<string, string, string> openPage = null, Action openTodoCenter = null,
+            Func<string> userNameProvider = null)
         {
             _api = api;
+            _openPage = openPage;
+            _openTodoCenter = openTodoCenter;
+            _userNameProvider = userNameProvider;
             RefreshCommand = new AsyncRelayCommand(LoadAsync);
             QuickEntryCommand = new RelayCommand<string>(navigate);
+            ToggleMonthPickerCommand = new RelayCommand(() => IsMonthPickerOpen = !IsMonthPickerOpen);
+            SelectMonthCommand = new AsyncRelayCommand<MonthOption>(SelectMonthAsync);
+            OpenTodoCommand = new RelayCommand<ReminderItem>(OpenTodo);
+            ViewAllTodosCommand = new RelayCommand(OpenTodoCenter);
 
             var now = DateTime.Now;
             MonthText = now.ToString("yyyy 年 M 月");
-            var session = SessionManager.Instance.Current;
-            var displayName = session == null ? "系统管理员" : session.DisplayName;
-            WelcomeTitle = "下午好，" + displayName;
+            SelectedPeriod = now.ToString("yyyy-MM");
+            ApplyPeriodLabels(now);
+            BuildMonths(now);
+            ApplyGreeting();
 
             _ = LoadAsync();
+        }
+
+        /// <summary>按当前时段生成问候语前缀：上午好 / 中午好 / 下午好 / 晚上好。</summary>
+        private static string GreetingPrefix(DateTime now)
+        {
+            int hour = now.Hour;
+            if (hour >= 5 && hour < 11)
+            {
+                return "上午好";
+            }
+            if (hour >= 11 && hour < 13)
+            {
+                return "中午好";
+            }
+            if (hour >= 13 && hour < 18)
+            {
+                return "下午好";
+            }
+            return "晚上好";
+        }
+
+        /// <summary>
+        /// 问候语 = 时段问候 + 个人信息中的名字（未填写时回退登录账号）。
+        /// 格式：上午好，张伟（R18）。
+        /// </summary>
+        private void ApplyGreeting()
+        {
+            string name = _userNameProvider == null ? null : _userNameProvider();
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                var session = SessionManager.Instance.Current;
+                name = session == null ? "系统管理员" : session.DisplayName;
+            }
+
+            WelcomeTitle = GreetingPrefix(DateTime.Now) + "，" + name;
+        }
+
+        /// <summary>个人信息保存后刷新问候语（由 ShellViewModel 调用）。</summary>
+        public void RefreshGreeting()
+        {
+            ApplyGreeting();
+        }
+
+        private void BuildMonths(DateTime now)
+        {
+            Months.Clear();
+            var cursor = new DateTime(now.Year, now.Month, 1);
+            for (int i = 0; i < 24; i++)
+            {
+                Months.Add(new MonthOption
+                {
+                    Period = cursor.ToString("yyyy-MM"),
+                    Text = cursor.ToString("yyyy 年 M 月")
+                });
+                cursor = cursor.AddMonths(-1);
+            }
+        }
+
+        private async Task SelectMonthAsync(MonthOption option)
+        {
+            if (option == null)
+            {
+                return;
+            }
+
+            SelectedPeriod = option.Period;
+            MonthText = option.Text;
+            ApplyPeriodLabels(ParsePeriod(option.Period));
+            IsMonthPickerOpen = false;
+            await LoadAsync();
+        }
+
+        /// <summary>按所选月份刷新口径标签（当前月显示"本月"，历史月份显示月份前缀）。</summary>
+        private void ApplyPeriodLabels(DateTime period)
+        {
+            var today = DateTime.Today;
+            bool isCurrentMonth = period.Year == today.Year && period.Month == today.Month;
+            PeriodLabelText = isCurrentMonth
+                ? "本月"
+                : (period.Year == today.Year ? period.Month + " 月" : period.ToString("yyyy-MM"));
+            MonthShortText = isCurrentMonth
+                ? period.ToString("MM") + " 月"
+                : (period.Year == today.Year ? period.Month + " 月" : period.ToString("yyyy-MM"));
+        }
+
+        private static DateTime ParsePeriod(string period)
+        {
+            DateTime parsed;
+            return !string.IsNullOrWhiteSpace(period) &&
+                   DateTime.TryParseExact(period.Trim() + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                       DateTimeStyles.None, out parsed)
+                ? parsed
+                : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
+        }
+
+        private void OpenTodo(ReminderItem item)
+        {
+            if (item == null || item.Source == null)
+            {
+                return;
+            }
+            if (_openPage != null)
+            {
+                _openPage(item.Source.TargetModule, item.Source.TargetPage, null);
+            }
+        }
+
+        private void OpenTodoCenter()
+        {
+            if (_openTodoCenter != null)
+            {
+                _openTodoCenter();
+            }
         }
 
         private async Task LoadAsync()
@@ -254,7 +460,7 @@ namespace PropertyManagement.Client.ViewModels
             LoadError = string.Empty;
             try
             {
-                var dto = await _api.GetDashboardAsync();
+                var dto = await _api.GetDashboardAsync(SelectedPeriod);
 
                 var now = DateTime.Now;
                 WelcomeDate = now.ToString("yyyy 年 M 月 d 日  ·  ", CultureInfo.GetCultureInfo("zh-CN"))
@@ -285,12 +491,12 @@ namespace PropertyManagement.Client.ViewModels
                 CollectionHintText = "建议优先跟进 " + dto.ArrearCount + " 户逾期业主";
 
                 Reminders.Clear();
-                if (dto.RecentReminders != null)
+                if (dto.Todos != null)
                 {
                     var list = new System.Collections.Generic.List<ReminderItem>();
-                    foreach (var r in dto.RecentReminders)
+                    foreach (var todo in dto.Todos)
                     {
-                        list.Add(BuildReminder(r, now));
+                        list.Add(BuildTodoItem(todo));
                     }
                     // 原型面板展示 3 条；总数徽标仍取 dto.PendingReminders
                     int shown = Math.Min(3, list.Count);
@@ -311,37 +517,45 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        private static ReminderItem BuildReminder(ReminderDto r, DateTime now)
+        /// <summary>待办项 → 面板展示模型（R17：统一由服务端待办中心投影，替换原先按字符串猜类型的分支）。</summary>
+        private static ReminderItem BuildTodoItem(TodoItemDto todo)
         {
-            int days = Math.Max(0, (int)Math.Floor((r.DueAt - now).TotalDays));
-
-            switch (r.Type)
+            Brush tagForeground;
+            Brush tagBackground;
+            switch (todo.Level)
             {
-                case "EQUIPMENT_INSPECTION":
-                    return Reminder("B 栋电梯年检 " + DaysText(days),
-                        "设备台账  ·  截止 " + r.DueAt.ToString("MM-dd"),
-                        "临近到期", Warning, WarningSoft, "Icon.HardHat", Warning, WarningSoft);
-                case "EMERGENCY_REVIEW":
-                    return Reminder("2026-08 停电事件复盘待完成",
-                        "应急处置  ·  负责人 李四",
-                        "今日", Danger, DangerSoft, "Icon.ClipboardCheck", Danger, DangerSoft);
-                case "ARREARS":
-                    return Reminder("3 号楼 2 单元 201 户欠费逾期",
-                        "财务收费  ·  逾期 12 天",
-                        "待催缴", Primary, PrimarySoft, "Icon.CircleDollarSign", Primary, PrimarySoft);
-                case "EQUIPMENT_MAINTENANCE":
-                    return Reminder("B 栋水泵保养即将到期",
-                        "设备台账  ·  截止 " + r.DueAt.ToString("MM-dd"),
-                        "临近到期", Warning, WarningSoft, "Icon.HardHat", Warning, WarningSoft);
-                case "DISPUTE_OVERDUE":
-                    return Reminder("纠纷案件超期未结",
-                        "纠纷调解  ·  待处理",
-                        "处理中", Info, InfoSoft, "Icon.MessagesSquare", Info, InfoSoft);
+                case "danger":
+                    tagForeground = Danger; tagBackground = DangerSoft; break;
+                case "warning":
+                    tagForeground = Warning; tagBackground = WarningSoft; break;
+                case "info":
+                    tagForeground = Info; tagBackground = InfoSoft; break;
                 default:
-                    return Reminder("待办提醒",
-                        "系统  ·  截止 " + r.DueAt.ToString("MM-dd"),
-                        "待办", Primary, PrimarySoft, "Icon.ClipboardCheck", Primary, PrimarySoft);
+                    tagForeground = Primary; tagBackground = PrimarySoft; break;
             }
+
+            string iconKey;
+            switch (todo.Kind)
+            {
+                case "maintenance": iconKey = "Icon.HardHat"; break;
+                case "arrears": iconKey = "Icon.CircleDollarSign"; break;
+                case "dispute": iconKey = "Icon.MessagesSquare"; break;
+                default: iconKey = "Icon.ClipboardCheck"; break;
+            }
+
+            return new ReminderItem
+            {
+                Title = todo.Title,
+                Meta = todo.Meta,
+                Tag = todo.Tag,
+                IsLast = false,
+                IconKey = iconKey,
+                IconForeground = tagForeground,
+                IconBackground = tagBackground,
+                TagForeground = tagForeground,
+                TagBackground = tagBackground,
+                Source = todo
+            };
         }
 
         private static string ExtractPercent(string trend)
@@ -391,6 +605,3 @@ namespace PropertyManagement.Client.ViewModels
         }
     }
 }
-
-
-

@@ -41,6 +41,22 @@ namespace PropertyManagement.Client.Services
 
         Task<DashboardDto> GetDashboardAsync();
 
+        /// <summary>仪表盘统计（period = yyyy-MM；R17 仪表盘月份选择器）。</summary>
+        Task<DashboardDto> GetDashboardAsync(string period);
+
+        // ==================== R17 顶部栏与仪表盘交互 ====================
+
+        /// <summary>待办中心（顶部铃铛通知中心，与仪表盘待办同一数据源）。</summary>
+        Task<TodoCenterDto> GetTodosAsync(int limit = 20);
+
+        /// <summary>顶栏全局搜索（房产/业主/设备/电话/员工/纠纷，按模块分组）。</summary>
+        Task<GlobalSearchResultDto> SearchAsync(string keyword);
+
+        /// <summary>管理员个人信息（顶栏下拉 → 个人信息设置）。</summary>
+        Task<UserProfileDto> GetProfileAsync();
+
+        Task<UserProfileDto> UpdateProfileAsync(UserProfileRequest request);
+
         // ==================== M4 财务收费（PG-FIN-01~08） ====================
         Task<List<ChargeItemDto>> GetChargeItemsAsync(string keyword = null, string category = null);
         Task<List<DictItemDto>> GetDictItemsAsync(string typeCode);

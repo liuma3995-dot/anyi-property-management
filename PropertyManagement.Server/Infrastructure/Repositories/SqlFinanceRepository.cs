@@ -129,6 +129,18 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.Query<BillObjectCandidate>(
                 "SELECT id, space_no AS No, NULL AS Area FROM t_parking_space WHERE del_flag = 0 ORDER BY space_no");
         }
+
+        /// <summary>BR-INF-02（M7 BUG-002）：缴费对象有效业主关系判定（口径同 GetOwnerIdByBill）。</summary>
+        public bool HasValidOwnerRelation(IDbConnection connection, int? propertyId, int? parkingId)
+        {
+            return connection.ExecuteScalar<int>(
+                "SELECT COALESCE(" +
+                "  (SELECT rel.owner_id FROM t_owner_property_rel rel " +
+                "    WHERE rel.property_id = @propertyId AND rel.del_flag = 0 AND rel.rel_status <> 2 " +
+                "    ORDER BY rel.id DESC LIMIT 1), " +
+                "  (SELECT ps.owner_id FROM t_parking_space ps WHERE ps.id = @parkingId AND ps.del_flag = 0), 0)",
+                new { propertyId, parkingId }) > 0;
+        }
         public BillDto FindDuplicateBill(IDbConnection connection, IDbTransaction transaction,
             int chargeItemId, int? propertyId, int? parkingId, int cycleId)
         {

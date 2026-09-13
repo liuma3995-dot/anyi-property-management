@@ -45,6 +45,23 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<object>.Ok(null);
         }
 
+        /// <summary>R17：读取当前账号个人信息（顶栏管理员下拉 → 个人信息设置）。</summary>
+        [HttpGet]
+        [Route("profile")]
+        public ApiResponse<UserProfileDto> GetProfile()
+        {
+            return ApiResponse<UserProfileDto>.Ok(_authService.GetProfile(GetCurrentUsername()));
+        }
+
+        /// <summary>R17：保存个人信息（三项均可填可不填；写审计 USER_PROFILE_UPDATE）。</summary>
+        [HttpPut]
+        [Route("profile")]
+        public ApiResponse<UserProfileDto> UpdateProfile(UserProfileRequest request)
+        {
+            return ApiResponse<UserProfileDto>.Ok(
+                _authService.UpdateProfile(request, GetCurrentUsername(), GetClientIp()));
+        }
+
         /// <summary>从 WebApi 注入的 OWIN 环境读取鉴权中间件写入的用户名。</summary>
         private string GetCurrentUsername()
         {

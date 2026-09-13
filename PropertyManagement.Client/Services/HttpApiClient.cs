@@ -68,6 +68,34 @@ namespace PropertyManagement.Client.Services
             return GetAsync<DashboardDto>("common/dashboard");
         }
 
+        // ==================== R17 顶部栏与仪表盘交互 ====================
+
+        /// <summary>仪表盘统计（period = yyyy-MM，空则当前月）。</summary>
+        public Task<DashboardDto> GetDashboardAsync(string period)
+        {
+            return GetAsync<DashboardDto>("common/dashboard" + Query(new { period }));
+        }
+
+        public Task<TodoCenterDto> GetTodosAsync(int limit = 20)
+        {
+            return GetAsync<TodoCenterDto>("common/todos" + Query(new { limit }));
+        }
+
+        public Task<GlobalSearchResultDto> SearchAsync(string keyword)
+        {
+            return GetAsync<GlobalSearchResultDto>("common/search" + Query(new { keyword }));
+        }
+
+        public Task<UserProfileDto> GetProfileAsync()
+        {
+            return GetAsync<UserProfileDto>("auth/profile");
+        }
+
+        public Task<UserProfileDto> UpdateProfileAsync(UserProfileRequest request)
+        {
+            return PutAsync<UserProfileRequest, UserProfileDto>("auth/profile", request);
+        }
+
         // ==================== M4 财务收费 ====================
 
         public Task<List<ChargeItemDto>> GetChargeItemsAsync(string keyword = null, string category = null)
@@ -1355,6 +1383,9 @@ namespace PropertyManagement.Client.Services
             if (string.IsNullOrWhiteSpace(json))
             {
                 if (resp.IsSuccessStatusCode) return default(T);
+                HandleUnauthorized(req, resp,
+                    resp.StatusCode == System.Net.HttpStatusCode.Unauthorized ? ErrorCode.Unauthorized : ErrorCode.InternalError,
+                    "服务响应异常（HTTP " + (int)resp.StatusCode + "）");
                 throw new ApiClientException(ErrorCode.InternalError, "服务响应异常（HTTP " + (int)resp.StatusCode + "）");
             }
 
@@ -1373,6 +1404,7 @@ namespace PropertyManagement.Client.Services
                     try { err = JsonConvert.DeserializeObject<ApiResponse<object>>(json); } catch (JsonException) { }
                     if (err != null)
                     {
+                        HandleUnauthorized(req, resp, err.Code, err.Message);
                         throw new ApiClientException(err.Code, string.IsNullOrEmpty(err.Message) ? "请求处理失败（HTTP " + (int)resp.StatusCode + "）" : err.Message);
                     }
                 }
@@ -1385,9 +1417,33 @@ namespace PropertyManagement.Client.Services
                 string message = envelope == null
                     ? "服务响应异常（HTTP " + (int)resp.StatusCode + "）"
                     : (string.IsNullOrEmpty(envelope.Message) ? "请求处理失败（HTTP " + (int)resp.StatusCode + "）" : envelope.Message);
+                HandleUnauthorized(req, resp, code, message);
                 throw new ApiClientException(code, message);
             }
             return envelope.Data;
+        }
+
+        /// <summary>
+        /// 401 自愈（M7 修复）：token 失效时清空本地会话并回落登录页。
+        /// 排除 auth/login —— 登录失败同样返回 40100，属业务错误而非会话失效。
+        /// </summary>
+        private static void HandleUnauthorized(HttpRequestMessage req, HttpResponseMessage resp, int code, string message)
+        {
+            bool unauthorized = code == ErrorCode.Unauthorized ||
+                                resp.StatusCode == System.Net.HttpStatusCode.Unauthorized;
+            if (!unauthorized)
+            {
+                return;
+            }
+
+            string path = req.RequestUri == null ? string.Empty : req.RequestUri.AbsolutePath;
+            if (path.EndsWith("auth/login", StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            SessionManager.Instance.NotifyExpired(
+                string.IsNullOrWhiteSpace(message) ? "登录状态已失效，请重新登录" : ("登录状态已失效：" + message));
         }
     }
 }

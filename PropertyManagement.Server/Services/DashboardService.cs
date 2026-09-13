@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Linq;
 using Dapper;
 using PropertyManagement.Contract.Common;
@@ -15,31 +16,53 @@ namespace PropertyManagement.Server.Services
     public class DashboardService
     {
         private readonly IDbConnectionFactory _connectionFactory;
+        private readonly TodoService _todos;
 
         public DashboardService()
-            : this(new SqliteConnectionFactory())
+            : this(new SqliteConnectionFactory(), new TodoService())
         {
         }
 
-        public DashboardService(IDbConnectionFactory connectionFactory)
+        public DashboardService(IDbConnectionFactory connectionFactory, TodoService todos)
         {
             _connectionFactory = connectionFactory;
+            _todos = todos;
         }
 
+        /// <summary>仪表盘统计（默认当前月口径）。</summary>
         public DashboardDto GetDashboard()
         {
+            return GetDashboard(null);
+        }
+
+        /// <summary>
+        /// 仪表盘统计（R17：支持按月份查看财务口径）。
+        /// period 为 yyyy-MM（空/非法回退当前月）：作用「本月应收/已收/收缴率/趋势/收缴概览」；
+        /// 待办与运营指标（应急/纠纷/设备/值班）保持实时口径，避免历史月份出现假的"当前状态"。
+        /// </summary>
+        public DashboardDto GetDashboard(string period)
+        {
+            DateTime monthStart = ResolveMonthStart(period, out string periodText);
+            string previousPeriod = monthStart.AddMonths(-1).ToString("yyyy-MM");
+
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             {
                 var dto = new DashboardDto
                 {
                     RecentReminders = new List<ReminderDto>(),
+                    Todos = new List<TodoItemDto>(),
+                    TodoCountByKind = new Dictionary<string, int>(),
+                    Period = periodText,
                     ReceivableTrend = string.Empty,
                     ReceivedTrend = string.Empty,
                     OverdueTrend = string.Empty
                 };
 
-                dto.PendingReminders = Count(connection,
-                    "SELECT COUNT(1) FROM t_reminder WHERE status = 0");
+                // 待办（顶部铃铛同源）：总数进入「今日共有 N 项待办」，前 5 条用于仪表盘待办面板
+                TodoCenterDto todoCenter = _todos.Query(5);
+                dto.Todos = todoCenter.Items;
+                dto.TodoCountByKind = todoCenter.CountByKind;
+                dto.PendingReminders = todoCenter.Total;
 
                 dto.ArrearCount = Count(connection,
                     "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (0,1,2)");
@@ -73,18 +96,37 @@ namespace PropertyManagement.Server.Services
                     "date(COALESCE((SELECT MAX(i.i_date) FROM t_inspection_record i WHERE i.device_id = d.id), d.enable_date, d.created_at), '+1 year') " +
                     "<= date('now','localtime','+30 day'))");
 
-                // 本月应收/已收/收缴率（M4 财务切片细化口径）
+                // 应收/已收/收缴率（R17：按所选月份口径）
                 dto.MonthReceivable = Sum(connection,
                     "SELECT COALESCE(SUM(amount), 0) FROM t_bill WHERE del_flag = 0 " +
-                    "AND strftime('%Y-%m', due_at) = strftime('%Y-%m', 'now', 'localtime')");
+                    "AND strftime('%Y-%m', due_at) = @period", new { period = periodText });
 
                 dto.MonthReceived = Sum(connection,
                     "SELECT COALESCE(SUM(amount), 0) FROM t_payment WHERE status = 0 " +
-                    "AND strftime('%Y-%m', paid_at) = strftime('%Y-%m', 'now', 'localtime')");
+                    "AND strftime('%Y-%m', paid_at) = @period", new { period = periodText });
 
                 dto.CollectionRate = dto.MonthReceivable > 0
                     ? Math.Round(dto.MonthReceived / dto.MonthReceivable * 100m, 1)
                     : 0m;
+
+                // 环比：与上一月对比（应收/已收按百分比，逾期户数按户数差）
+                decimal previousReceivable = Sum(connection,
+                    "SELECT COALESCE(SUM(amount), 0) FROM t_bill WHERE del_flag = 0 " +
+                    "AND strftime('%Y-%m', due_at) = @period", new { period = previousPeriod });
+                decimal previousReceived = Sum(connection,
+                    "SELECT COALESCE(SUM(amount), 0) FROM t_payment WHERE status = 0 " +
+                    "AND strftime('%Y-%m', paid_at) = @period", new { period = previousPeriod });
+                dto.ReceivableTrend = PercentTrend(dto.MonthReceivable, previousReceivable);
+                dto.ReceivedTrend = PercentTrend(dto.MonthReceived, previousReceived);
+
+                int currentOverdue = Count(connection,
+                    "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
+                    "AND strftime('%Y-%m', due_at) = @period", new { period = periodText });
+                int previousOverdue = Count(connection,
+                    "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
+                    "AND strftime('%Y-%m', due_at) = @period", new { period = previousPeriod });
+                int overdueDelta = currentOverdue - previousOverdue;
+                dto.OverdueTrend = "较上月 " + (overdueDelta >= 0 ? "+" : string.Empty) + overdueDelta + " 户";
 
                 dto.RecentReminders = connection
                     .Query<ReminderDto>(
@@ -101,9 +143,49 @@ namespace PropertyManagement.Server.Services
             return connection.ExecuteScalar<int>(sql);
         }
 
+        private static int Count(IDbConnection connection, string sql, object param)
+        {
+            return connection.ExecuteScalar<int>(sql, param);
+        }
+
         private static decimal Sum(IDbConnection connection, string sql)
         {
             return connection.ExecuteScalar<decimal?>(sql) ?? 0m;
+        }
+
+        private static decimal Sum(IDbConnection connection, string sql, object param)
+        {
+            return connection.ExecuteScalar<decimal?>(sql, param) ?? 0m;
+        }
+
+        /// <summary>环比文案：上月为 0 时以 +100%/0% 兜底，避免除零。</summary>
+        private static string PercentTrend(decimal current, decimal previous)
+        {
+            if (previous <= 0m)
+            {
+                return current > 0m ? "较上月 +100%" : "较上月 0%";
+            }
+
+            decimal delta = Math.Round((current - previous) / previous * 100m, 1);
+            return "较上月 " + (delta >= 0 ? "+" : string.Empty) + delta.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+        }
+
+        /// <summary>解析统计月份（yyyy-MM；空/非法回退当前月）。</summary>
+        private static DateTime ResolveMonthStart(string period, out string periodText)
+        {
+            DateTime parsed;
+            if (!string.IsNullOrWhiteSpace(period) &&
+                DateTime.TryParseExact(period.Trim() + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                    DateTimeStyles.None, out parsed))
+            {
+                periodText = parsed.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+                return parsed;
+            }
+
+            var today = DateTime.Today;
+            var start = new DateTime(today.Year, today.Month, 1);
+            periodText = start.ToString("yyyy-MM", CultureInfo.InvariantCulture);
+            return start;
         }
     }
 }

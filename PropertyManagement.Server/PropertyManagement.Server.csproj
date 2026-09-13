@@ -197,10 +197,12 @@
     <Compile Include="Services\EquipmentService.cs" />
     <Compile Include="Services\CommonService.cs" />
     <Compile Include="Services\ExpenseService.cs" />
+    <Compile Include="Services\GlobalSearchService.cs" />
     <Compile Include="Services\OrgService.cs" />
     <Compile Include="Services\PhoneBookService.cs" />
     <Compile Include="Services\PaymentService.cs" />
     <Compile Include="Services\ReportService.cs" />
+    <Compile Include="Services\TodoService.cs" />
     <Compile Include="Startup.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -300,9 +302,12 @@
   <EmbeddedResource Include="Infrastructure\Data\migration_028.sql">
     <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_028.sql</LogicalName>
   </EmbeddedResource>
-  <EmbeddedResource Include="Infrastructure\Data\migration_029.sql">
-    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_029.sql</LogicalName>
-  </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_029.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_029.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_030.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_030.sql</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

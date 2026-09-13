@@ -30,6 +30,12 @@ namespace PropertyManagement.Server.Domain.Repositories
         // ---------- 账单生成/发布（UC-FIN-002，FL-FIN-01） ----------
         IEnumerable<BillObjectCandidate> ListPropertyCandidates(IDbConnection connection);
         IEnumerable<BillObjectCandidate> ListParkingCandidates(IDbConnection connection);
+        /// <summary>
+        /// BR-INF-02（M7 BUG-002 修复）：缴费对象是否存在有效「房产-业主」关系。
+        /// 房产取 t_owner_property_rel（del_flag=0 且 rel_status≠2 已解除）；车位取 t_parking_space.owner_id。
+        /// 口径与收款侧 <see cref="GetOwnerIdByBill"/> 一致。
+        /// </summary>
+        bool HasValidOwnerRelation(IDbConnection connection, int? propertyId, int? parkingId);
         BillDto FindDuplicateBill(IDbConnection connection, IDbTransaction transaction, int chargeItemId, int? propertyId, int? parkingId, int cycleId);
         int InsertBill(IDbConnection connection, IDbTransaction transaction, BillDto bill); // 按 bill.DelFlag 落库（失败占位=1）
         void UpdateBillPaidAmount(IDbConnection connection, IDbTransaction transaction, BillDto bill);

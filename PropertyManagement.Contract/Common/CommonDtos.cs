@@ -138,6 +138,16 @@ namespace PropertyManagement.Contract.Common
         public string OverdueTrend { get; set; }
         public int MaintenanceDue { get; set; }
         public int DutyToday { get; set; }
+
+        // ---- CHG-M7-02（R17）新增：统计口径月份 + 待办提醒（与顶部铃铛同源）----
+        /// <summary>统计口径月份（yyyy-MM；默认当前月，由仪表盘月份选择器传入）。</summary>
+        public string Period { get; set; }
+
+        /// <summary>待办提醒（前 N 条，与顶部铃铛通知中心共用数据源）。</summary>
+        public System.Collections.Generic.List<TodoItemDto> Todos { get; set; }
+
+        /// <summary>待办分类计数（kind → 数量）。</summary>
+        public System.Collections.Generic.Dictionary<string, int> TodoCountByKind { get; set; }
     }
 
     public class DictTypeRequest

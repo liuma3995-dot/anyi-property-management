@@ -39,11 +39,14 @@
     <Compile Include="Auth\ChangePasswordRequest.cs" />
     <Compile Include="Auth\LoginRequest.cs" />
     <Compile Include="Auth\LoginResult.cs" />
+    <Compile Include="Auth\UserProfileDtos.cs" />
     <Compile Include="Common\ApiResponse.cs" />
     <Compile Include="Common\CommonDtos.cs" />
     <Compile Include="Common\ErrorCode.cs" />
     <Compile Include="Common\PageRequest.cs" />
     <Compile Include="Common\PageResult.cs" />
+    <Compile Include="Common\SearchDtos.cs" />
+    <Compile Include="Common\TodoDtos.cs" />
     <Compile Include="Dispute\DisputeDtos.cs" />
     <Compile Include="Emergency\EmergencyDtos.cs" />
     <Compile Include="Emergency\EmergencyRequests.cs" />

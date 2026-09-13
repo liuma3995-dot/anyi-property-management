@@ -1,0 +1,91 @@
+<Window x:Class="PropertyManagement.Client.Views.ProfileWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:hc="https://handyorg.github.io/handycontrol"
+        Title="个人信息设置" Width="560" Height="560"
+        Icon="/Assets/app.ico"
+        ResizeMode="NoResize" WindowStartupLocation="CenterOwner"
+        Background="White" FontFamily="微软雅黑">
+    <StackPanel Margin="28,22">
+        <TextBlock Text="个人信息设置" FontSize="18" FontWeight="Bold"
+                   Foreground="{StaticResource TextPrimaryBrush}" />
+        <TextBlock Text="以下内容均为选填，仅用于本机客户端展示（R17）" FontSize="12"
+                   Foreground="{StaticResource TextHintBrush}" Margin="0,4,0,16" />
+
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <!-- 内置头像选择 -->
+            <StackPanel Grid.Column="0" Margin="0,0,22,0">
+                <TextBlock Text="内置头像" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <Border Width="72" Height="72" Background="{Binding AvatarBrush}" CornerRadius="36" Margin="0,8,0,10">
+                    <TextBlock Text="{Binding AvatarGlyph}" Foreground="White" FontSize="26" FontWeight="Bold"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+                <ListBox x:Name="AvatarList" ItemsSource="{Binding AvatarOptions}" SelectedItem="{Binding SelectedAvatar}"
+                         BorderThickness="0" Background="Transparent" Width="196" MaxHeight="132"
+                         ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="AutomationProperties.Name" Value="{Binding Label}" />
+                            <Setter Property="Padding" Value="0" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <WrapPanel />
+                        </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Width="42" Margin="2">
+                                <Border Width="34" Height="34" CornerRadius="17" Background="{Binding Brush}">
+                                    <TextBlock Text="{Binding Glyph}"
+                                               Foreground="White" FontSize="13" FontWeight="Bold"
+                                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </Border>
+                                <TextBlock Text="{Binding Label}" FontSize="9" Foreground="{StaticResource TextMutedBrush}"
+                                           HorizontalAlignment="Center" Margin="0,3,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
+            <!-- 表单 -->
+            <StackPanel Grid.Column="1">
+                <TextBlock Text="名字" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <TextBox x:Name="NameBox" Text="{Binding DisplayName, UpdateSourceTrigger=PropertyChanged}"
+                         MaxLength="20" Margin="0,6,0,0" hc:InfoElement.Placeholder="例如：张伟（可不填）" />
+                <TextBlock Text="{Binding DisplayNameHint}" FontSize="10" Foreground="{StaticResource TextHintBrush}"
+                           Margin="0,4,0,12" HorizontalAlignment="Right" />
+
+                <TextBlock Text="手机号码" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <TextBox x:Name="PhoneBox" Text="{Binding Phone, UpdateSourceTrigger=PropertyChanged}"
+                         MaxLength="20" Margin="0,6,0,0" hc:InfoElement.Placeholder="例如：13800001234（可不填）" />
+                <TextBlock Text="支持 11 位手机号或带区号座机；留空表示不展示" FontSize="10"
+                           Foreground="{StaticResource TextHintBrush}" Margin="0,4,0,12" />
+
+                <TextBlock Text="个人简介" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                <TextBox x:Name="BioBox" Text="{Binding Bio, UpdateSourceTrigger=PropertyChanged}"
+                         MaxLength="200" Height="86" AcceptsReturn="True" TextWrapping="Wrap"
+                         VerticalScrollBarVisibility="Auto" Margin="0,6,0,0"
+                         hc:InfoElement.Placeholder="例如：负责社区秩序与设备维保协同（可不填）" />
+                <TextBlock Text="{Binding BioHint}" FontSize="10" Foreground="{StaticResource TextHintBrush}"
+                           Margin="0,4,0,0" HorizontalAlignment="Right" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Text="{Binding ErrorMessage}" Foreground="{StaticResource DangerBrush}"
+                   FontSize="12" TextWrapping="Wrap" Margin="0,12,0,0" MinHeight="18" />
+
+        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,10,0,0">
+            <Button Content="取消" Width="88" Margin="0,0,12,0" Click="OnCancelClick" />
+            <Button Content="保存" Width="88" Command="{Binding SaveCommand}"
+                    Style="{StaticResource ButtonPrimary}" />
+        </StackPanel>
+    </StackPanel>
+</Window>

@@ -15,9 +15,9 @@ namespace PropertyManagement.Client.ViewModels
     /// 成功后弹窗确认并触发 Succeeded → 视图清会话强制退出至登录页（同 ChangePasswordWindow 链路）。</summary>
     public class ChangePasswordPageViewModel : BaseInfoPageViewModel
     {
-        private static readonly Regex UpperRegex = new Regex("[A-Z]", RegexOptions.Compiled);
+        /// <summary>字母（大小写均可，简化规则不再区分大写）。</summary>
+        private static readonly Regex LetterRegex = new Regex("[A-Za-z]", RegexOptions.Compiled);
         private static readonly Regex DigitRegex = new Regex("[0-9]", RegexOptions.Compiled);
-        private static readonly Regex SpecialRegex = new Regex("[^A-Za-z0-9]", RegexOptions.Compiled);
 
         private string _oldPassword = string.Empty;
         private string _newPassword = string.Empty;
@@ -100,13 +100,13 @@ namespace PropertyManagement.Client.ViewModels
 
         private async Task SubmitAsync()
         {
-            // 客户端先校验一致性与强度（8-20 位 + 大写字母/数字/特殊字符），服务端规则错误经 ErrorText 展示（422 文案透传）
+            // 客户端先校验一致性与规则（6-20 位 + 必须含字母与数字；不要求大写/特殊字符），服务端规则错误经 ErrorText 展示（422 文案透传）
             if (string.IsNullOrWhiteSpace(OldPassword)) { ErrorText = "请输入原密码"; return; }
             if (string.IsNullOrEmpty(NewPassword)) { ErrorText = "请输入新密码"; return; }
-            if (NewPassword.Length < 8 || NewPassword.Length > 20) { ErrorText = "新密码长度需为 8-20 位"; return; }
-            if (!UpperRegex.IsMatch(NewPassword) || !DigitRegex.IsMatch(NewPassword) || !SpecialRegex.IsMatch(NewPassword))
+            if (NewPassword.Length < 6 || NewPassword.Length > 20) { ErrorText = "新密码长度需为 6-20 位"; return; }
+            if (!LetterRegex.IsMatch(NewPassword) || !DigitRegex.IsMatch(NewPassword))
             {
-                ErrorText = "新密码必须包含大写字母、数字与特殊字符";
+                ErrorText = "新密码必须同时包含字母和数字";
                 return;
             }
             if (string.Equals(NewPassword, OldPassword, StringComparison.Ordinal)) { ErrorText = "新密码不能与原密码相同"; return; }
@@ -139,7 +139,7 @@ namespace PropertyManagement.Client.ViewModels
             ConfirmPassword = string.Empty;
         }
 
-        /// <summary>强度：四条件（长度≥8 / 含大写 / 含数字 / 含特殊字符）→ ≤1 弱、2-3 中、4 强。</summary>
+        /// <summary>强度（简化规则）：三条件（长度≥6 / 含字母 / 含数字）→ ≤1 弱、2 中、3 强。</summary>
         private void UpdateStrength()
         {
             if (string.IsNullOrEmpty(NewPassword))
@@ -152,12 +152,11 @@ namespace PropertyManagement.Client.ViewModels
             }
 
             int score = 0;
-            if (NewPassword.Length >= 8) { score++; }
-            if (UpperRegex.IsMatch(NewPassword)) { score++; }
+            if (NewPassword.Length >= 6) { score++; }
+            if (LetterRegex.IsMatch(NewPassword)) { score++; }
             if (DigitRegex.IsMatch(NewPassword)) { score++; }
-            if (SpecialRegex.IsMatch(NewPassword)) { score++; }
 
-            if (score >= 4)
+            if (score >= 3)
             {
                 StrengthText = "强度：强";
                 StrengthBrush1 = BrushesHelper.Success;

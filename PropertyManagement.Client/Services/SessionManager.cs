@@ -29,6 +29,16 @@ namespace PropertyManagement.Client.Services
 
         public SessionInfo Current { get; private set; }
 
+        /// <summary>
+        /// 会话失效通知（服务端返回 40100：token 无效 / 过期 / 改密后旧 token 失效）。
+        /// 参数为给用户的提示文案；由主窗口订阅后强制回到登录页（M7 修复：
+        /// 此前仅弹「token 无效或过期」提示，界面停留在主窗口且不清除本地会话，用户无法自愈）。
+        /// </summary>
+        public event Action<string> SessionExpired;
+
+        /// <summary>防止并发请求（如仪表盘 + 提醒同时 401）重复触发登录页切换。</summary>
+        private bool _expiredNotified;
+
         public bool HasValidSession
         {
             get { return Current != null && Current.ExpiresAt > DateTime.Now; }
@@ -63,6 +73,7 @@ namespace PropertyManagement.Client.Services
 
         public void Save(SessionInfo session)
         {
+            _expiredNotified = false;
             Current = session;
             try
             {
@@ -92,6 +103,39 @@ namespace PropertyManagement.Client.Services
             catch
             {
                 // 忽略清理失败
+            }
+        }
+
+        /// <summary>
+        /// 服务端判定 token 失效时调用：清空本地会话并通知 UI 回落登录页（幂等）。
+        /// 与「登录失败」区分：登录接口自身的 40100 属业务错误，不调用本方法。
+        /// </summary>
+        public void NotifyExpired(string message)
+        {
+            if (_expiredNotified)
+            {
+                return;
+            }
+
+            _expiredNotified = true;
+            Clear();
+
+            Action<string> handler = SessionExpired;
+            if (handler == null)
+            {
+                return;
+            }
+
+            var dispatcher = System.Windows.Application.Current != null
+                ? System.Windows.Application.Current.Dispatcher
+                : null;
+            if (dispatcher != null && !dispatcher.CheckAccess())
+            {
+                dispatcher.BeginInvoke(new Action(() => handler(message)));
+            }
+            else
+            {
+                handler(message);
             }
         }
     }

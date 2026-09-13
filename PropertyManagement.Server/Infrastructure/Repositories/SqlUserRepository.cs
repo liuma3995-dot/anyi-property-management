@@ -85,5 +85,37 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 new { userId, keep },
                 transaction);
         }
+
+        /// <summary>R17：个人信息读取（t_user 扩展列，空值统一返回空字符串便于前端绑定）。</summary>
+        public PropertyManagement.Contract.Auth.UserProfileDto GetProfile(IDbConnection connection, string username)
+        {
+            return connection.QueryFirstOrDefault<PropertyManagement.Contract.Auth.UserProfileDto>(
+                "SELECT id, username AS UserName, COALESCE(display_name,'') AS DisplayName, " +
+                "COALESCE(phone,'') AS Phone, COALESCE(bio,'') AS Bio, COALESCE(avatar_key,'') AS AvatarKey " +
+                "FROM t_user WHERE username = @username", new { username });
+        }
+
+        /// <summary>R17：个人信息保存（四项均可空；空字符串写入 NULL，保持库内干净）。</summary>
+        public void UpdateProfile(IDbConnection connection, IDbTransaction transaction, int userId,
+            string displayName, string phone, string bio, string avatarKey)
+        {
+            connection.Execute(
+                "UPDATE t_user SET display_name = @displayName, phone = @phone, bio = @bio, avatar_key = @avatarKey, " +
+                "updated_at = datetime('now','localtime') WHERE id = @userId",
+                new
+                {
+                    displayName = NullIfEmpty(displayName),
+                    phone = NullIfEmpty(phone),
+                    bio = NullIfEmpty(bio),
+                    avatarKey = NullIfEmpty(avatarKey),
+                    userId
+                },
+                transaction);
+        }
+
+        private static string NullIfEmpty(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        }
     }
 }

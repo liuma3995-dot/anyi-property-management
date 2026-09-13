@@ -167,6 +167,13 @@ namespace PropertyManagement.Client.Services
             {
                 throw new ApiClientException(ErrorCode.ValidationFailed, "新密码长度不能少于 6 位");
             }
+            // 与后端简化规则一致：6-20 位且必须同时包含字母和数字（演示模式同样给出规则提示）
+            if (request.NewPassword.Length > 20 ||
+                !System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, "[A-Za-z]") ||
+                !System.Text.RegularExpressions.Regex.IsMatch(request.NewPassword, "[0-9]"))
+            {
+                throw new ApiClientException(ErrorCode.ValidationFailed, "新密码需 6-20 位且同时包含字母和数字");
+            }
             return Task.CompletedTask;
         }
 
@@ -197,6 +204,117 @@ namespace PropertyManagement.Client.Services
                 }
             };
             return Task.FromResult(dto);
+        }
+
+        // ==================== R17 顶部栏与仪表盘交互（演示数据） ====================
+
+        public Task<DashboardDto> GetDashboardAsync(string period)
+        {
+            return GetDashboardAsync();
+        }
+
+        public Task<TodoCenterDto> GetTodosAsync(int limit = 20)
+        {
+            var items = new List<TodoItemDto>
+            {
+                new TodoItemDto
+                {
+                    Id = "reminder-1", Kind = "maintenance", KindText = "到期提醒",
+                    Title = "B 栋电梯 年检到期",
+                    Meta = "设备台账  ·  截止 " + DateTime.Today.AddDays(3).ToString("MM-dd") + "  ·  责任班组 工程部",
+                    Tag = "3 天后到期", Level = "warning", DueAt = DateTime.Today.AddDays(3),
+                    TargetModule = "equipment", TargetPage = "到期提醒", TargetId = 1
+                },
+                new TodoItemDto
+                {
+                    Id = "bill-1", Kind = "arrears", KindText = "欠费催缴",
+                    Title = "3 栋 201 室 欠费 ¥1,200.00",
+                    Meta = "财务收费  ·  应收 ¥1,200.00  ·  逾期 12 天  ·  业主 张伟",
+                    Tag = "逾期", Level = "danger", DueAt = DateTime.Today.AddDays(-12),
+                    TargetModule = "finance", TargetPage = "欠费台账", TargetId = 1
+                },
+                new TodoItemDto
+                {
+                    Id = "dispute-1", Kind = "dispute", KindText = "纠纷处理",
+                    Title = "JF-2609-003  楼上漏水纠纷",
+                    Meta = "纠纷调解  ·  漏水  ·  发生 08-26（已 17 天）",
+                    Tag = "处理中", Level = "info", DueAt = DateTime.Today.AddDays(-17),
+                    TargetModule = "dispute", TargetPage = "纠纷列表", TargetId = 1
+                }
+            };
+
+            var center = new TodoCenterDto
+            {
+                Total = items.Count,
+                CountByKind = items.GroupBy(x => x.Kind).ToDictionary(g => g.Key, g => g.Count()),
+                Items = items.Take(limit <= 0 ? 20 : limit).ToList()
+            };
+            return Task.FromResult(center);
+        }
+
+        public Task<GlobalSearchResultDto> SearchAsync(string keyword)
+        {
+            var result = new GlobalSearchResultDto
+            {
+                Keyword = keyword ?? string.Empty,
+                Groups = new List<GlobalSearchGroupDto>()
+            };
+            if (string.IsNullOrWhiteSpace(keyword))
+            {
+                return Task.FromResult(result);
+            }
+
+            result.Groups.Add(new GlobalSearchGroupDto
+            {
+                Module = "baseinfo",
+                ModuleName = "基础信息",
+                Items = new List<GlobalSearchItemDto>
+                {
+                    new GlobalSearchItemDto
+                    {
+                        Title = "3 栋 1 单元 " + keyword, Subtitle = "澜庭花园  ·  建筑面积 88.5 ㎡",
+                        TargetModule = "baseinfo", TargetPage = "房产列表", Keyword = keyword, TargetId = 1
+                    }
+                }
+            });
+            result.Total = 1;
+            return Task.FromResult(result);
+        }
+
+        private string _profileDisplayName;
+        private string _profilePhone;
+        private string _profileBio;
+        private string _profileAvatarKey;
+
+        public Task<UserProfileDto> GetProfileAsync()
+        {
+            return Task.FromResult(new UserProfileDto
+            {
+                Id = 1, UserName = MockUser, DisplayName = _profileDisplayName,
+                Phone = _profilePhone, Bio = _profileBio, AvatarKey = _profileAvatarKey,
+                Role = "系统管理员", AvatarOptions = MockAvatarOptions()
+            });
+        }
+
+        public Task<UserProfileDto> UpdateProfileAsync(UserProfileRequest request)
+        {
+            _profileDisplayName = request == null ? null : request.DisplayName;
+            _profilePhone = request == null ? null : request.Phone;
+            _profileBio = request == null ? null : request.Bio;
+            _profileAvatarKey = request == null ? null : request.AvatarKey;
+            return GetProfileAsync();
+        }
+
+        private static List<AvatarOptionDto> MockAvatarOptions()
+        {
+            var keys = new[] { "avatar-01", "avatar-02", "avatar-03", "avatar-04", "avatar-05", "avatar-06", "avatar-07", "avatar-08" };
+            var labels = new[] { "管理员", "客服", "工程", "安保", "财务", "保洁", "秩序", "访客" };
+            var list = new List<AvatarOptionDto>();
+            for (int i = 0; i < keys.Length; i++)
+            {
+                list.Add(new AvatarOptionDto { Key = keys[i], Label = labels[i] });
+            }
+            return list;
         }
 
         // ==================== M4 财务收费（PG-FIN-01~08） ====================

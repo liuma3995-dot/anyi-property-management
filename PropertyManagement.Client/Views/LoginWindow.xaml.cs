@@ -14,12 +14,19 @@ namespace PropertyManagement.Client.Views
         private readonly LoginViewModel _vm;
 
         public LoginWindow()
+            : this(null)
+        {
+        }
+
+        /// <param name="notice">非空时显示在登录页提示区（会话失效回落时使用）。</param>
+        public LoginWindow(string notice)
         {
             InitializeComponent();
 
             _vm = new LoginViewModel(ApiClientFactory.Create());
             _vm.LoginSucceeded += OnLoginSucceeded;
             DataContext = _vm;
+            _vm.ShowNotice(notice);
 
             Loaded += OnLoaded;
         }

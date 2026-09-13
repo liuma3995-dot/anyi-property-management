@@ -34,5 +34,12 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         /// <summary>只保留最近 keep 条历史（PG-COM-04：保留 5 条，供「最近 3 次不重复」校验）。</summary>
         void TrimPasswordHistory(IDbConnection connection, IDbTransaction transaction, int userId, int keep);
+
+        /// <summary>R17：读取账号个人信息（display_name/phone/bio/avatar_key）。</summary>
+        PropertyManagement.Contract.Auth.UserProfileDto GetProfile(IDbConnection connection, string username);
+
+        /// <summary>R17：保存账号个人信息（四项均可空，传空字符串即清空）。</summary>
+        void UpdateProfile(IDbConnection connection, IDbTransaction transaction, int userId,
+            string displayName, string phone, string bio, string avatarKey);
     }
 }

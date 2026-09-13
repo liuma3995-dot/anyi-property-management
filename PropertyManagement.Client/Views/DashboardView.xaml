@@ -33,6 +33,21 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- R17：待办行可点击（仅提供透明的可点击容器，行内视觉沿用原 Border 布局） -->
+        <Style x:Key="TodoRowButton" TargetType="Button">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <ContentPresenter HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -60,22 +75,71 @@
                 <TextBlock Text="{Binding WelcomeDate}" FontSize="11"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0" />
             </StackPanel>
-            <Border Grid.Column="1" Height="34" VerticalAlignment="Center"
-                    Background="{StaticResource SurfaceBrush}"
-                    BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1"
-                    CornerRadius="7" Padding="12,0" Cursor="Hand">
-                <StackPanel Orientation="Horizontal">
-                    <Path Data="{StaticResource Icon.CalendarDays}" Style="{StaticResource IconStroke}"
-                          Stroke="{StaticResource TextSecondaryBrush}"
-                          Width="15" Height="15" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding MonthText}" FontSize="11"
-                               Foreground="{StaticResource TextPrimaryBrush}"
-                               Margin="8,0,0,0" VerticalAlignment="Center" />
-                    <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource IconStroke}"
-                          Stroke="{StaticResource TextMutedBrush}"
-                          Width="14" Height="14" Margin="8,0,0,0" VerticalAlignment="Center" />
-                </StackPanel>
-            </Border>
+            <!-- R17：月份选择器（可交互下拉，切换统计口径月份） -->
+            <Grid Grid.Column="1" VerticalAlignment="Center">
+                <Button x:Name="MonthPickerButton" Command="{Binding ToggleMonthPickerCommand}"
+                        AutomationProperties.Name="统计月份"
+                        Height="34" Padding="12,0" Cursor="Hand"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.CalendarDays}" Style="{StaticResource IconStroke}"
+                              Stroke="{StaticResource TextSecondaryBrush}"
+                              Width="15" Height="15" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding MonthText}" FontSize="11"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="8,0,0,0" VerticalAlignment="Center" />
+                        <Path Data="{StaticResource Icon.ChevronDown}" Style="{StaticResource IconStroke}"
+                              Stroke="{StaticResource TextMutedBrush}"
+                              Width="14" Height="14" Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
+                <Popup IsOpen="{Binding IsMonthPickerOpen, Mode=TwoWay}" PlacementTarget="{Binding ElementName=MonthPickerButton}"
+                       Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+                    <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                            BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,6,0,0">
+                        <ListBox x:Name="MonthList" Width="180" MaxHeight="248" BorderThickness="0"
+                                 ItemsSource="{Binding Months}" Background="Transparent"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="0" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Button Command="{Binding DataContext.SelectMonthCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            AutomationProperties.Name="{Binding Text}"
+                                            CommandParameter="{Binding}" Padding="10,6" Cursor="Hand"
+                                            HorizontalContentAlignment="Left">
+                                        <Button.Template>
+                                            <ControlTemplate TargetType="Button">
+                                                <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                                </Border>
+                                            </ControlTemplate>
+                                        </Button.Template>
+                                        <TextBlock Text="{Binding Text}" FontSize="12"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                    </Button>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Border>
+                </Popup>
+            </Grid>
         </Grid>
 
         <!-- ============ 财务指标行 h100（4卡） ============ -->
@@ -91,7 +155,7 @@
                               Stroke="{StaticResource PrimaryBrush}" Width="20" Height="20" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="本月应收" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ReceivableLabelText}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Text="{Binding MonthReceivableText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding ReceivableTrend}" FontSize="9"
@@ -110,7 +174,7 @@
                               Stroke="{StaticResource SuccessBrush}" Width="20" Height="20" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="本月已收" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="{Binding ReceivedLabelText}" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Text="{Binding MonthReceivedText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding ReceivedTrend}" FontSize="9"
@@ -129,7 +193,8 @@
                               Stroke="{StaticResource DangerBrush}" Width="20" Height="20" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="待收欠费" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="待收欠费" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                                   ToolTip="欠费余额为实时口径，不随月份切换" />
                         <TextBlock Text="{Binding ArrearAmountText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding ArrearTrend}" FontSize="9"
@@ -148,7 +213,8 @@
                               Stroke="{StaticResource WarningBrush}" Width="20" Height="20" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="逾期户数" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Text="逾期户数" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                                   ToolTip="逾期户数为实时口径，不随月份切换（环比按所选月份计算）" />
                         <TextBlock Text="{Binding OverdueCountText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding OverdueTrend}" FontSize="9"
@@ -352,9 +418,17 @@
                                        Foreground="{StaticResource PrimaryBrush}"
                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                         </Border>
-                        <TextBlock Grid.Column="3" Text="查看全部" FontSize="10" FontWeight="SemiBold"
-                                   Foreground="{StaticResource PrimaryBrush}" Cursor="Hand"
-                                   VerticalAlignment="Center" />
+                    <Button Grid.Column="3" Content="查看全部" FontSize="10" FontWeight="SemiBold"
+                            Foreground="{StaticResource PrimaryBrush}" Cursor="Hand" Padding="4,2"
+                            VerticalAlignment="Center" Command="{Binding ViewAllTodosCommand}">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="Transparent" Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center" />
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
                     </Grid>
 
                     <TextBlock Text="{Binding LoadError}" FontSize="10" Foreground="{StaticResource DangerBrush}"
@@ -373,17 +447,21 @@
                     <ItemsControl ItemsSource="{Binding Reminders}" Margin="0,6,0,0">
                         <ItemsControl.ItemTemplate>
                             <DataTemplate>
-                                <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,0,0,1"
-                                        Padding="0,8" Margin="0,4,0,0">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsLast}" Value="True">
-                                                    <Setter Property="BorderThickness" Value="0" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </Border.Style>
+                                <Button Command="{Binding DataContext.OpenTodoCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                        AutomationProperties.Name="{Binding Title}"
+                                        CommandParameter="{Binding}" Style="{StaticResource TodoRowButton}">
+                                    <Border Background="Transparent"
+                                            BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,0,0,1"
+                                            Padding="0,8" Margin="0,4,0,0">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsLast}" Value="True">
+                                                        <Setter Property="BorderThickness" Value="0" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -415,7 +493,8 @@
                                               Width="14" Height="14" Margin="14,0,0,0"
                                               VerticalAlignment="Center" />
                                     </Grid>
-                                </Border>
+                                    </Border>
+                                </Button>
                             </DataTemplate>
                         </ItemsControl.ItemTemplate>
                     </ItemsControl>
@@ -430,10 +509,10 @@
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
-                        <TextBlock Grid.Column="0" Text="本月收缴概览" FontSize="13" FontWeight="Bold"
-                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Column="1" Text="08 月" FontSize="9"
-                                   Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="0" Text="{Binding CollectionOverviewTitle}" FontSize="13" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Grid.Column="1" Text="{Binding MonthShortText}" FontSize="9"
+                               Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
                     </Grid>
 
                     <Grid Margin="0,12,0,0">

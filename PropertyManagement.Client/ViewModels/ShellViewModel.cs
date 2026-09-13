@@ -1,11 +1,15 @@
 ﻿using System;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
+using PropertyManagement.Contract.Auth;
+using PropertyManagement.Contract.Common;
 
 namespace PropertyManagement.Client.ViewModels
 {
@@ -27,6 +31,21 @@ namespace PropertyManagement.Client.ViewModels
         private int? _pendingDisputeId;
         private readonly bool _mustChangePassword;
 
+        // ---- R17：顶栏搜索 / 待办中心 / 个人信息 ----
+        private readonly DispatcherTimer _searchTimer;
+        private bool _searchBusy;
+        private bool _isSearchOpen;
+        private string _searchSummary = string.Empty;
+        private bool _isTodoCenterOpen;
+        private int _todoTotal;
+        private string _todoSummary = "待办 0 项";
+        private string _todoDetail = "欠费 0  ·  纠纷 0  ·  到期 0";
+        private string _userName;
+        private string _userAvatar = "管";
+        private Brush _userAvatarBrush = AvatarPalette.BrushOf(null);
+        private string _userPhone = string.Empty;
+        private string _userBio = string.Empty;
+
         /// <summary>导航树：仪表盘 + 8 个模块（两级，原型评审记录 §七 定稿）。</summary>
         public ObservableCollection<NavNode> NavNodes { get; } = new ObservableCollection<NavNode>();
 
@@ -34,6 +53,10 @@ namespace PropertyManagement.Client.ViewModels
         {
             get
             {
+                if (!string.IsNullOrWhiteSpace(_userName))
+                {
+                    return _userName;
+                }
                 var session = SessionManager.Instance.Current;
                 return session == null ? "系统管理员" : session.DisplayName;
             }
@@ -46,7 +69,31 @@ namespace PropertyManagement.Client.ViewModels
 
         public string UserAvatar
         {
-            get { return "管"; }
+            get { return _userAvatar; }
+        }
+
+        /// <summary>头像底色（R17：个人信息页选择的内置头像色）。</summary>
+        public Brush UserAvatarBrush
+        {
+            get { return _userAvatarBrush; }
+        }
+
+        /// <summary>顶栏下拉展示的手机号（未填写时提示补全）。</summary>
+        public string UserPhoneText
+        {
+            get { return string.IsNullOrWhiteSpace(_userPhone) ? "未填写手机号" : _userPhone; }
+        }
+
+        /// <summary>顶栏下拉展示的个人简介（未填写时给出引导文案）。</summary>
+        public string UserBioText
+        {
+            get { return string.IsNullOrWhiteSpace(_userBio) ? "未填写个人简介" : _userBio; }
+        }
+
+        /// <summary>是否需要强制修改密码（首登/管理员标记）：落地页仍为仪表盘，仅额外弹改密对话框。</summary>
+        public bool MustChangePassword
+        {
+            get { return _mustChangePassword; }
         }
 
         public IApiClient Api
@@ -82,12 +129,14 @@ namespace PropertyManagement.Client.ViewModels
 
         public string TodoSummary
         {
-            get { return "待办 6 项"; }
+            get { return _todoSummary; }
+            private set { SetProperty(ref _todoSummary, value); }
         }
 
         public string TodoDetail
         {
-            get { return "欠费 1  ·  应急 1  ·  纠纷 3  ·  到期 2"; }
+            get { return _todoDetail; }
+            private set { SetProperty(ref _todoDetail, value); }
         }
 
         public string VersionText
@@ -120,11 +169,75 @@ namespace PropertyManagement.Client.ViewModels
             set { SetProperty(ref _isUserMenuOpen, value); }
         }
 
-        /// <summary>顶栏全局搜索框（PG-SHELL；M4 起接入查询，本期仅界面）。</summary>
+        // ==================== R17：顶栏全局搜索 ====================
+
+        /// <summary>顶栏全局搜索框（PG-SHELL）：输入 300ms 防抖后跨模块检索（房产/业主/设备/电话/员工/纠纷）。</summary>
         public string SearchText
         {
             get { return _searchText; }
-            set { SetProperty(ref _searchText, value); }
+            set
+            {
+                if (SetProperty(ref _searchText, value))
+                {
+                    ScheduleSearch();
+                }
+            }
+        }
+
+        /// <summary>搜索结果（按模块分组）。</summary>
+        public ObservableCollection<GlobalSearchGroupDto> SearchGroups { get; } = new ObservableCollection<GlobalSearchGroupDto>();
+
+        public bool IsSearchOpen
+        {
+            get { return _isSearchOpen; }
+            set { SetProperty(ref _isSearchOpen, value); }
+        }
+
+        public bool SearchBusy
+        {
+            get { return _searchBusy; }
+            private set { SetProperty(ref _searchBusy, value); }
+        }
+
+        /// <summary>结果摘要（"共 N 条" / "未找到匹配结果"）。</summary>
+        public string SearchSummary
+        {
+            get { return _searchSummary; }
+            private set { SetProperty(ref _searchSummary, value); }
+        }
+
+        // ==================== R17：待办中心（顶部铃铛） ====================
+
+        public ObservableCollection<TodoItemDto> Todos { get; } = new ObservableCollection<TodoItemDto>();
+
+        public bool IsTodoCenterOpen
+        {
+            get { return _isTodoCenterOpen; }
+            set { SetProperty(ref _isTodoCenterOpen, value); }
+        }
+
+        public int TodoTotal
+        {
+            get { return _todoTotal; }
+            private set
+            {
+                if (SetProperty(ref _todoTotal, value))
+                {
+                    OnPropertyChanged(nameof(TodoBadgeText));
+                    OnPropertyChanged(nameof(HasTodoBadge));
+                }
+            }
+        }
+
+        /// <summary>铃铛红点数字（>99 显示 99+）。</summary>
+        public string TodoBadgeText
+        {
+            get { return _todoTotal > 99 ? "99+" : _todoTotal.ToString(); }
+        }
+
+        public bool HasTodoBadge
+        {
+            get { return _todoTotal > 0; }
         }
 
         public IAsyncRelayCommand LogoutCommand { get; }
@@ -137,9 +250,28 @@ namespace PropertyManagement.Client.ViewModels
 
         public IRelayCommand ToggleUserMenuCommand { get; }
 
+        public IAsyncRelayCommand RefreshTodosCommand { get; }
+
+        public IRelayCommand ToggleTodoCenterCommand { get; }
+
+        public IRelayCommand<TodoItemDto> OpenTodoCommand { get; }
+
+        public IRelayCommand CloseTodoCenterCommand { get; }
+
+        public IRelayCommand<GlobalSearchItemDto> OpenSearchItemCommand { get; }
+
+        public IRelayCommand OpenFirstSearchResultCommand { get; }
+
+        public IRelayCommand CloseSearchCommand { get; }
+
+        public IAsyncRelayCommand OpenProfileCommand { get; }
+
         public event Action LogoutRequested;
 
         public event Action ChangePasswordRequested;
+
+        /// <summary>顶栏下拉「个人信息设置」被点击（由 MainWindow 打开设置窗口）。</summary>
+        public event Action ProfileRequested;
 
         public ShellViewModel(IApiClient api)
         {
@@ -155,14 +287,25 @@ namespace PropertyManagement.Client.ViewModels
             SelectNodeCommand = new RelayCommand<NavNode>(SelectNode);
             SelectPageCommand = new RelayCommand<NavPage>(SelectPage);
             ToggleUserMenuCommand = new RelayCommand(() => IsUserMenuOpen = !IsUserMenuOpen);
+            RefreshTodosCommand = new AsyncRelayCommand(RefreshTodosAsync);
+            ToggleTodoCenterCommand = new RelayCommand(ToggleTodoCenter);
+            OpenTodoCommand = new RelayCommand<TodoItemDto>(OpenTodo);
+            CloseTodoCenterCommand = new RelayCommand(() => IsTodoCenterOpen = false);
+            OpenSearchItemCommand = new RelayCommand<GlobalSearchItemDto>(OpenSearchItem);
+            OpenFirstSearchResultCommand = new RelayCommand(OpenFirstSearchResult);
+            CloseSearchCommand = new RelayCommand(CloseSearch);
+            OpenProfileCommand = new AsyncRelayCommand(OpenProfileAsync);
+
+            _searchTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _searchTimer.Tick += async (sender, args) =>
+            {
+                _searchTimer.Stop();
+                await RunSearchAsync();
+            };
 
             SelectNode(NavNodes.First());
             _ = InitializeAsync();
-
-            if (_mustChangePassword)
-            {
-                NavigateToPage("system", "修改密码");
-            }
+            _ = LoadProfileAsync();
         }
 
         /// <summary>T4F-2-1：财务模块内页级跳转（如账单工作台"催缴"→欠费台账）。</summary>
@@ -275,7 +418,8 @@ namespace PropertyManagement.Client.ViewModels
                 _selectedPage = null;
                 PageTitle = "仪表盘";
                 PagePath = "首页  /  工作概览";
-                CurrentViewModel = new DashboardViewModel(_api, NavigateTo);
+                    CurrentViewModel = new DashboardViewModel(_api, NavigateTo, NavigateToPageWithKeyword,
+                        OpenTodoCenterFromDashboard, () => UserName);
             }
             else
             {
@@ -440,9 +584,246 @@ namespace PropertyManagement.Client.ViewModels
             _pendingDisputeId = null;
         }
 
+        // ==================== R17：全局搜索 / 待办中心 / 个人信息 ====================
+
+        private void ScheduleSearch()
+        {
+            _searchTimer.Stop();
+            if (string.IsNullOrWhiteSpace(_searchText))
+            {
+                SearchGroups.Clear();
+                SearchSummary = string.Empty;
+                IsSearchOpen = false;
+                return;
+            }
+
+            IsSearchOpen = true;
+            SearchSummary = "搜索中…";
+            _searchTimer.Start();
+        }
+
+        private async Task RunSearchAsync()
+        {
+            string keyword = (_searchText ?? string.Empty).Trim();
+            if (keyword.Length == 0)
+            {
+                IsSearchOpen = false;
+                return;
+            }
+
+            SearchBusy = true;
+            try
+            {
+                GlobalSearchResultDto result = await _api.SearchAsync(keyword);
+                // 结果过期保护：请求期间用户已改词则丢弃本次结果
+                if (!string.Equals((_searchText ?? string.Empty).Trim(), keyword, StringComparison.Ordinal))
+                {
+                    return;
+                }
+
+                SearchGroups.Clear();
+                if (result.Groups != null)
+                {
+                    foreach (GlobalSearchGroupDto group in result.Groups)
+                    {
+                        SearchGroups.Add(group);
+                    }
+                }
+                SearchSummary = result.Total == 0 ? "未找到匹配结果" : "共 " + result.Total + " 条匹配";
+                IsSearchOpen = true;
+            }
+            catch (Exception)
+            {
+                SearchGroups.Clear();
+                SearchSummary = "搜索失败，请确认本地服务已启动";
+                IsSearchOpen = true;
+            }
+            finally
+            {
+                SearchBusy = false;
+            }
+        }
+
+        private void CloseSearch()
+        {
+            IsSearchOpen = false;
+        }
+
+        private void OpenFirstSearchResult()
+        {
+            GlobalSearchItemDto first = SearchGroups
+                .SelectMany(g => g.Items ?? new List<GlobalSearchItemDto>())
+                .FirstOrDefault();
+            OpenSearchItem(first);
+        }
+
+        private void OpenSearchItem(GlobalSearchItemDto item)
+        {
+            if (item == null)
+            {
+                return;
+            }
+            IsSearchOpen = false;
+            NavigateToPageWithKeyword(item.TargetModule, item.TargetPage, item.Keyword);
+        }
+
+        /// <summary>跳转模块页并带关键词过滤（R17：搜索结果 / 待办跳转复用；无关键词时仅跳页）。</summary>
+        public void NavigateToPageWithKeyword(string moduleKey, string pageTitle, string keyword)
+        {
+            NavigateToPage(moduleKey, pageTitle);
+            if (string.IsNullOrWhiteSpace(keyword) || CurrentViewModel == null)
+            {
+                return;
+            }
+
+            switch (CurrentViewModel)
+            {
+                case PropertyListViewModel property:
+                    property.SearchText = keyword;
+                    property.QueryCommand.Execute(null);
+                    break;
+                case OwnerProfileViewModel owner:
+                    owner.SearchText = keyword;
+                    owner.SearchCommand.Execute(null);
+                    break;
+                case DeviceListViewModel device:
+                    device.Keyword = keyword;
+                    device.SearchCommand.Execute(null);
+                    break;
+                case PhoneQueryViewModel phone:
+                    phone.Keyword = keyword; // setter 内部自动重载
+                    break;
+                case EmployeeListViewModel employee:
+                    employee.Keyword = keyword;
+                    employee.SearchCommand.Execute(null);
+                    break;
+                case DisputeListViewModel dispute:
+                    dispute.Keyword = keyword; // setter 内部自动重载
+                    break;
+            }
+        }
+
+        private void ToggleTodoCenter()
+        {
+            IsTodoCenterOpen = !IsTodoCenterOpen;
+            if (IsTodoCenterOpen)
+            {
+                _ = RefreshTodosAsync();
+            }
+        }
+
+        /// <summary>仪表盘「查看全部」→ 打开顶部铃铛待办中心（同一数据源）。</summary>
+        private void OpenTodoCenterFromDashboard()
+        {
+            IsTodoCenterOpen = true;
+            _ = RefreshTodosAsync();
+        }
+
+        private async Task RefreshTodosAsync()
+        {
+            try
+            {
+                TodoCenterDto center = await _api.GetTodosAsync(20);
+                Todos.Clear();
+                if (center.Items != null)
+                {
+                    foreach (TodoItemDto todo in center.Items)
+                    {
+                        Todos.Add(todo);
+                    }
+                }
+
+                TodoTotal = center.Total;
+                TodoSummary = "待办 " + center.Total + " 项";
+                // 与待办中心同源（应急发起/工作台已按 R4 下线，故摘要不含应急项）
+                TodoDetail = "欠费 " + CountOf(center.CountByKind, "arrears") +
+                             "  ·  纠纷 " + CountOf(center.CountByKind, "dispute") +
+                             "  ·  到期 " + CountOf(center.CountByKind, "maintenance");
+            }
+            catch (Exception)
+            {
+                TodoTotal = 0;
+                TodoSummary = "待办 -- 项";
+                TodoDetail = "待办加载失败（本地服务未就绪）";
+            }
+        }
+
+        private static int CountOf(Dictionary<string, int> counts, string key)
+        {
+            int value;
+            return counts != null && counts.TryGetValue(key, out value) ? value : 0;
+        }
+
+        private void OpenTodo(TodoItemDto todo)
+        {
+            if (todo == null)
+            {
+                return;
+            }
+            IsTodoCenterOpen = false;
+            NavigateToPage(todo.TargetModule, todo.TargetPage);
+        }
+
+        private Task OpenProfileAsync()
+        {
+            IsUserMenuOpen = false;
+            ProfileRequested?.Invoke();
+            return Task.CompletedTask;
+        }
+
+        /// <summary>加载个人信息并刷新顶栏（失败静默：回退会话默认展示）。</summary>
+        public async Task LoadProfileAsync()
+        {
+            try
+            {
+                ApplyProfile(await _api.GetProfileAsync());
+            }
+            catch (Exception)
+            {
+                // 顶栏保持会话默认值即可，不打断用户
+            }
+        }
+
+        /// <summary>应用个人信息（设置页保存后即时回填顶栏，无需重登）。</summary>
+        public void ApplyProfile(UserProfileDto profile)
+        {
+            if (profile == null)
+            {
+                return;
+            }
+
+            _userName = string.IsNullOrWhiteSpace(profile.DisplayName) ? null : profile.DisplayName.Trim();
+            _userPhone = profile.Phone ?? string.Empty;
+            _userBio = profile.Bio ?? string.Empty;
+            _userAvatar = AvatarPalette.IsKnown(profile.AvatarKey)
+                ? AvatarPalette.GlyphOf(profile.AvatarKey)
+                : InitialOf(UserName);
+            _userAvatarBrush = AvatarPalette.BrushOf(profile.AvatarKey);
+
+            OnPropertyChanged(nameof(UserName));
+            OnPropertyChanged(nameof(UserAvatar));
+            OnPropertyChanged(nameof(UserAvatarBrush));
+            OnPropertyChanged(nameof(UserPhoneText));
+            OnPropertyChanged(nameof(UserBioText));
+            OnPropertyChanged(nameof(StatusSummary));
+
+            // 问候语使用个人信息中的名字（跨模块引用：仪表盘 ← 个人信息）
+            var dashboard = CurrentViewModel as DashboardViewModel;
+            if (dashboard != null)
+            {
+                dashboard.RefreshGreeting();
+            }
+        }
+
+        private static string InitialOf(string text)
+        {
+            return string.IsNullOrWhiteSpace(text) ? "管" : text.Trim().Substring(0, 1);
+        }
+
         private async Task InitializeAsync()
         {
             SyncTimeText = "数据更新于 " + DateTime.Now.ToString("HH:mm");
+            await RefreshTodosAsync();
 
             if (_api.IsMock)
             {
