@@ -51,6 +51,11 @@ namespace PropertyManagement.Server.Domain.Repositories
         int InsertVendor(IDbConnection connection, IDbTransaction transaction, VendorDto dto);
         void UpdateVendor(IDbConnection connection, IDbTransaction transaction, VendorDto dto);
         void SoftDeleteVendor(IDbConnection connection, IDbTransaction transaction, int id);
+        /// <summary>
+        /// 维保单位被引用条数（BR-EQP-06，M7 BUG-001 修复）：保养记录 + 年检记录 + 自定义类型记录 + 支出关联
+        /// （t_expense_object_rel.object_type=2，且支出未软删）。已软删的自定义记录不计数。
+        /// </summary>
+        int CountVendorReferences(IDbConnection connection, int vendorId);
 
         // ---------- 到期提醒（PG-EQP-04，t_reminder 物化 + 催办子记录） ----------
         List<ReminderCandidateRow> ListMaintenanceDueCandidates(IDbConnection connection);

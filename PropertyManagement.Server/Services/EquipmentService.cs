@@ -533,11 +533,19 @@ namespace PropertyManagement.Server.Services
                 return dto;
             });
 
-        /// <summary>删除维保单位（软删）：历史保养/年检记录的 vendor_id 仍指向该行，台账执行方名称不丢失。</summary>
+        /// <summary>
+        /// 删除维保单位（软删）：BR-EQP-06 强制引用校验——已被保养/年检/自定义记录或支出引用的单位不可删除
+        /// （M7 T7-9-7 修复，BUG-001）；未被引用时软删，历史记录的 vendor_id 仍指向该行，执行方名称不丢失。
+        /// </summary>
         public void DeleteVendor(int id) =>
             WithTransaction((c, tx) =>
             {
                 if (_repo.GetVendor(c, id) == null) throw ApiException.NotFound("维保单位不存在");
+                int referenced = _repo.CountVendorReferences(c, id);
+                if (referenced > 0)
+                    throw ApiException.Conflict(
+                        "该维保单位已被 " + referenced + " 条保养/年检/自定义记录或支出引用，不可删除（BR-EQP-06）；" +
+                        "如不再合作请先解除相关记录的关联");
                 _repo.SoftDeleteVendor(c, tx, id);
             });
 

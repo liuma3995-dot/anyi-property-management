@@ -367,6 +367,19 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 new { id }, transaction);
         }
 
+        /// <summary>BR-EQP-06 引用计数（M7 BUG-001）：保养 + 年检 + 自定义记录 + 未软删支出关联。</summary>
+        public int CountVendorReferences(IDbConnection connection, int vendorId)
+        {
+            return connection.ExecuteScalar<int>(
+                "SELECT " +
+                "(SELECT COUNT(1) FROM t_maintenance_record WHERE vendor_id = @vendorId) + " +
+                "(SELECT COUNT(1) FROM t_inspection_record  WHERE vendor_id = @vendorId) + " +
+                "(SELECT COUNT(1) FROM t_device_custom_record WHERE vendor_id = @vendorId AND del_flag = 0) + " +
+                "(SELECT COUNT(1) FROM t_expense_object_rel r JOIN t_expense e ON e.id = r.expense_id " +
+                "  WHERE r.object_type = 2 AND r.object_id = @vendorId AND e.del_flag = 0)",
+                new { vendorId });
+        }
+
         // ===================== 到期提醒（PG-EQP-04，t_reminder 物化） =====================
         // 催办/处置流水复用 t_reminder（不加列）：type='urge'/'handled'，target_id=提醒 id，due_at=操作时间。
 
