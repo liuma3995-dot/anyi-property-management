@@ -96,7 +96,7 @@ namespace PropertyManagement.Client.ViewModels
         public Brush BorderBrush { get { return IsCurrent ? _primary : _border; } }
         public Brush Foreground { get { return IsCurrent ? Brushes.White : _textSecondary; } }
 
-        private static readonly Brush _primary = FromHex("#2B7DE9");
+        private static readonly Brush _primary = FromHex("#1F4B43");
         private static readonly Brush _surface = Brushes.White;
         private static readonly Brush _border = FromHex("#E4EAF2");
         private static readonly Brush _textSecondary = FromHex("#667085");

@@ -2,9 +2,9 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 
 [assembly: AssemblyTitle("PropertyManagement.Tests")]
-[assembly: AssemblyDescription("澜庭物业管理系统 · M7 单元测试工程（阶段 ① / D7-9）")]
+[assembly: AssemblyDescription("安怡物业管理系统 · M7 单元测试工程（阶段 ① / D7-9）")]
 [assembly: AssemblyConfiguration("")]
-[assembly: AssemblyCompany("澜庭")]
+[assembly: AssemblyCompany("安怡物业")]
 [assembly: AssemblyProduct("PropertyManagement.Tests")]
 [assembly: AssemblyCopyright("Copyright © 2026")]
 [assembly: AssemblyTrademark("")]

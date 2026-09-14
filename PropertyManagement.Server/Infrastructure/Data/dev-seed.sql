@@ -9,7 +9,7 @@
 
 -- 楼栋/单元（UNIQUE 幂等）
 INSERT OR IGNORE INTO t_building (community_id, building_no, floors)
-SELECT id, '1号楼', 6 FROM t_community WHERE name = '澜庭小区';
+SELECT id, '1号楼', 6 FROM t_community WHERE name = '安怡小区';
 
 INSERT OR IGNORE INTO t_unit (building_id, unit_no)
 SELECT id, '1单元' FROM t_building WHERE building_no = '1号楼';

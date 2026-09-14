@@ -2,16 +2,20 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:hc="https://handyorg.github.io/handycontrol">
 
-    <!-- M3 修版设计令牌（对齐前端原型 v1.0 / quanju.pen variables，2026-08-31） -->
-    <SolidColorBrush x:Key="PrimaryBrush" Color="#2B7DE9" />
+    <!-- M8-D8-0 品牌化修版（对齐前端原型 v1.0 / quanju.pen variables，2026-09-14）：主色/强调色/底色三方对齐品牌色（深青绿 #1F4B43 + 暖金 #C8A96A + 米白 #FAF8F4），语义状态色保持不变 -->
+    <SolidColorBrush x:Key="PrimaryBrush" Color="#1F4B43" />
     <!-- 主色深一档（页签选中态悬停：保持白字可读的对比度） -->
-    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#1B62BF" />
-    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#1F6FD4" />
-    <SolidColorBrush x:Key="PrimarySoftBrush" Color="#EAF3FF" />
-    <SolidColorBrush x:Key="NavyBrush" Color="#12345B" />
-    <SolidColorBrush x:Key="PageBgBrush" Color="#F4F7FB" />
+    <SolidColorBrush x:Key="PrimaryDarkBrush" Color="#12332D" />
+    <SolidColorBrush x:Key="PrimaryHoverBrush" Color="#173A34" />
+    <SolidColorBrush x:Key="PrimarySoftBrush" Color="#E9F0EE" />
+    <SolidColorBrush x:Key="NavyBrush" Color="#12332D" />
+    <!-- 强调色（暖金）：徽记地平线/叶片同源，仅用于点缀与强调，不用于正文与语义状态 -->
+    <SolidColorBrush x:Key="AccentBrush" Color="#C8A96A" />
+    <SolidColorBrush x:Key="AccentDeepBrush" Color="#8A6E3C" />
+    <SolidColorBrush x:Key="AccentSoftBrush" Color="#F3E9D6" />
+    <SolidColorBrush x:Key="PageBgBrush" Color="#FAF8F4" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#FFFFFF" />
-    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#F8FAFD" />
+    <SolidColorBrush x:Key="SurfaceAltBrush" Color="#F7F4EE" />
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#172033" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#667085" />
     <SolidColorBrush x:Key="TextMutedBrush" Color="#98A2B3" />
@@ -24,17 +28,17 @@
     <SolidColorBrush x:Key="DangerSoftBrush" Color="#FDECEC" />
     <SolidColorBrush x:Key="InfoBrush" Color="#7A5AF8" />
     <SolidColorBrush x:Key="InfoSoftBrush" Color="#F1EDFD" />
-    <SolidColorBrush x:Key="TrackBrush" Color="#E7EEF7" />
+    <SolidColorBrush x:Key="TrackBrush" Color="#EAE5DA" />
     <SolidColorBrush x:Key="OnlineBrush" Color="#36C993" />
-    <SolidColorBrush x:Key="NavIconBrush" Color="#B8CBE0" />
-    <SolidColorBrush x:Key="NavTextBrush" Color="#D7E3F0" />
-    <SolidColorBrush x:Key="NavArrowBrush" Color="#7EA3CC" />
-    <SolidColorBrush x:Key="NavSubBrush" Color="#8FB7E4" />
-    <SolidColorBrush x:Key="NavHoverBrush" Color="#1E3A66" />
+    <SolidColorBrush x:Key="NavIconBrush" Color="#B9CCC6" />
+    <SolidColorBrush x:Key="NavTextBrush" Color="#D8E4E0" />
+    <SolidColorBrush x:Key="NavArrowBrush" Color="#7FA69D" />
+    <SolidColorBrush x:Key="NavSubBrush" Color="#8FB7A8" />
+    <SolidColorBrush x:Key="NavHoverBrush" Color="#1B423B" />
 
     <!-- 旧键别名（兼容既有引用） -->
-    <SolidColorBrush x:Key="PageBackgroundBrush" Color="#F4F7FB" />
-    <SolidColorBrush x:Key="NavBackgroundBrush" Color="#12345B" />
+    <SolidColorBrush x:Key="PageBackgroundBrush" Color="#FAF8F4" />
+    <SolidColorBrush x:Key="NavBackgroundBrush" Color="#12332D" />
     <SolidColorBrush x:Key="CardBackgroundBrush" Color="#FFFFFF" />
     <SolidColorBrush x:Key="TextHintBrush" Color="#98A2B3" />
 
@@ -133,7 +137,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="#1E5FB8" />
+                            <Setter TargetName="Bg" Property="Background" Value="#173A34" />
                         </Trigger>
                         <Trigger Property="IsPressed" Value="True">
                             <Setter TargetName="Bg" Property="Opacity" Value="0.8" />
@@ -295,7 +299,7 @@
         <Setter Property="ColumnHeaderStyle">
             <Setter.Value>
                 <Style TargetType="DataGridColumnHeader">
-                    <Setter Property="Background" Value="#F4F7FB" />
+                    <Setter Property="Background" Value="#FAF8F4" />
                     <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
                     <Setter Property="FontSize" Value="11" />
                     <Setter Property="FontWeight" Value="SemiBold" />
@@ -369,7 +373,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bg" Property="Background" Value="#EAF3FF" />
+                            <Setter TargetName="Bg" Property="Background" Value="#E9F0EE" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -391,7 +395,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="TabBg" Property="Background" Value="#EAF3FF" />
+                            <Setter TargetName="TabBg" Property="Background" Value="#E9F0EE" />
                         </Trigger>
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="TabBg" Property="Background" Value="White" />
@@ -444,4 +448,3 @@
     </Style>
 
 </ResourceDictionary>
-

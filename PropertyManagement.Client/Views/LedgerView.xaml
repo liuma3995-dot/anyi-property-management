@@ -51,7 +51,7 @@
                            VerticalAlignment="Center" Margin="14,0,8,0" />
                 <ComboBox Grid.Column="7" Height="32" FontSize="12" VerticalContentAlignment="Center"
                           ItemsSource="{Binding Subjects}" SelectedIndex="{Binding SubjectFilter}" />
-                <Border Grid.Column="8" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                <Border Grid.Column="8" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6" Margin="14,0,14,0">
                     <TextBox Style="{StaticResource SearchTextBox}" FontSize="12"
                              Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"

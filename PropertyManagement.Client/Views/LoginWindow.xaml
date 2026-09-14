@@ -2,30 +2,30 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:hc="https://handyorg.github.io/handycontrol"
-        Title="登录 - 澜庭物业管理系统"
+        Title="登录 - 安怡物业管理系统"
         Width="680" Height="560"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         ResizeMode="NoResize"
-        Background="#F4F7FB"
+        Background="#FAF8F4"
         MouseLeftButtonDown="Window_MouseLeftButtonDown"
         TextOptions.TextFormattingMode="Display"
         UseLayoutRounding="True"
         FontFamily="微软雅黑">
     <Grid>
-        <!-- 登录主面板：680x560 无边框两栏铺满（登录页不套 1366x768 画布）；窗口轮廓为直角（兼容性决策 2026-08-31）；左栏品牌渐变 #12345B→#2B7DE9 直抵左边缘，右栏表单区白色直抵右边缘，边缘颜色与区域颜色一致 -->
+        <!-- 登录主面板：680x560 无边框两栏铺满（登录页不套 1366x768 画布）；窗口轮廓为直角（兼容性决策 2026-08-31）；左栏品牌渐变 #12332D→#1F4B43 直抵左边缘，右栏表单区白色直抵右边缘，边缘颜色与区域颜色一致 -->
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="282" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- 品牌信息区：渐变 #12345B → #2B7DE9（150°），铺满左栏直达左边缘 -->
+            <!-- 品牌信息区：渐变 #12332D → #1F4B43（150°），铺满左栏直达左边缘 -->
             <Border Grid.Column="0">
                     <Border.Background>
                         <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                            <GradientStop Color="#12345B" Offset="0" />
-                            <GradientStop Color="#2B7DE9" Offset="1" />
+                            <GradientStop Color="#12332D" Offset="0" />
+                            <GradientStop Color="#1F4B43" Offset="1" />
                         </LinearGradientBrush>
                     </Border.Background>
                     <Grid Margin="34,42">
@@ -37,25 +37,32 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <Border Grid.Row="0" Width="52" Height="52"
-                                HorizontalAlignment="Left"
-                                Background="#1FFFFFFF"
-                                BorderBrush="#47FFFFFF" BorderThickness="1"
-                                CornerRadius="14">
-                            <Path Data="{StaticResource Icon.Building2}"
-                                  Style="{StaticResource IconStroke}"
-                                  Stroke="White"
-                                  Width="28" Height="28" />
+                        <!-- M8-D8-0 徽记对齐（2026-09-14）：唯一源 docs\brand\anyi-logo-square-color.svg（与 app.ico 同源）
+                             采用母版 240×240 网格坐标 + LayoutTransform 等比缩放至 52×52（52/240 = 0.2166667），
+                             几何/色值/叶片与母版逐值一致；已移除原「半透明白描边容器」（与 exe 图标 1:1） -->
+                        <Border Grid.Row="0" Width="240" Height="240"
+                                HorizontalAlignment="Left" VerticalAlignment="Top"
+                                Background="#1F4B43" CornerRadius="54">
+                            <Border.LayoutTransform>
+                                <ScaleTransform ScaleX="0.2166667" ScaleY="0.2166667" />
+                            </Border.LayoutTransform>
+                            <Canvas Width="240" Height="240">
+                                <Rectangle Canvas.Left="57.7" Canvas.Top="135" Width="34.5" Height="68.5" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                                <Rectangle Canvas.Left="101.3" Canvas.Top="97.5" Width="42" Height="106" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                                <Rectangle Canvas.Left="152.3" Canvas.Top="147" Width="30" Height="56.5" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                                <Rectangle Canvas.Left="52.5" Canvas.Top="200.6" Width="135" Height="5.8" Fill="#C8A96A" RadiusX="2.9" RadiusY="2.9" />
+                                <Path Data="M99.3,88.7 Q99.3,43.1 144.9,43.1 Q144.9,88.7 99.3,88.7 Z" Fill="#C8A96A" />
+                            </Canvas>
                         </Border>
 
-                        <TextBlock Grid.Row="1" Text="澜庭物业&#x0a;管理系统"
+                        <TextBlock Grid.Row="1" Text="安怡物业&#x0a;管理系统"
                                    Foreground="White"
                                    FontSize="30" FontWeight="Bold"
                                    LineHeight="40" LineStackingStrategy="BlockLineHeight"
                                    Margin="0,20,0,0" />
 
                         <TextBlock Grid.Row="2" Text="社区运营 · 财务收费 · 应急协同&#x0a;让物业服务更清晰、更高效"
-                                   Foreground="#DCEBFF" FontSize="13" LineHeight="24"
+                                   Foreground="#DCE9E4" FontSize="13" LineHeight="24"
                                    LineStackingStrategy="BlockLineHeight"
                                    Margin="0,20,0,0" />
 
@@ -73,7 +80,7 @@
                         </Border>
 
                         <TextBlock Grid.Row="5" Text="DESKTOP CLIENT  ·  V1.0"
-                                   Foreground="#BFD8FA" FontSize="10" />
+                                   Foreground="#BFD8D2" FontSize="10" />
                     </Grid>
                 </Border>
 
@@ -105,7 +112,7 @@
                     <TextBlock Grid.Row="2" Text="账号" Foreground="#172033"
                                FontSize="12" FontWeight="SemiBold" />
                     <Border Grid.Row="3" Height="46" Margin="0,8,0,18"
-                            Background="#F8FAFD"
+                            Background="#F7F4EE"
                             BorderBrush="#E4EAF2" BorderThickness="1"
                             CornerRadius="8">
                         <Grid>
@@ -126,7 +133,7 @@
                                         Background="Transparent" BorderThickness="0"
                                         Height="46" Margin="12,0"
                                         VerticalContentAlignment="Center"
-                                        CaretBrush="#2B7DE9" />
+                                        CaretBrush="#1F4B43" />
                         </Grid>
                     </Border>
 
@@ -134,7 +141,7 @@
                     <TextBlock Grid.Row="4" Text="密码" Foreground="#172033"
                                FontSize="12" FontWeight="SemiBold" />
                     <Border Grid.Row="5" Height="46" Margin="0,8,0,18"
-                            Background="#F8FAFD"
+                            Background="#F7F4EE"
                             BorderBrush="#E4EAF2" BorderThickness="1"
                             CornerRadius="8">
                         <Grid>
@@ -172,13 +179,13 @@
                                 <ControlTemplate TargetType="CheckBox">
                                     <StackPanel Orientation="Horizontal">
                                         <Border x:Name="Box" Width="16" Height="16"
-                                                Background="#F4F7FB"
+                                                Background="#FAF8F4"
                                                 BorderBrush="#E4EAF2" BorderThickness="1"
                                                 CornerRadius="4">
                                             <Path x:Name="Check"
                                                   Data="{StaticResource Icon.Check}"
                                                   Style="{StaticResource IconStroke}"
-                                                  Stroke="#2B7DE9"
+                                                  Stroke="#1F4B43"
                                                   Width="10" Height="10"
                                                   Visibility="Collapsed" />
                                         </Border>
@@ -190,7 +197,7 @@
                                             <Setter TargetName="Check" Property="Visibility" Value="Visible" />
                                         </Trigger>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter TargetName="Box" Property="BorderBrush" Value="#2B7DE9" />
+                                            <Setter TargetName="Box" Property="BorderBrush" Value="#1F4B43" />
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -275,5 +282,4 @@
         </Grid>
     </Grid>
 </Window>
-
 

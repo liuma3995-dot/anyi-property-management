@@ -4,7 +4,7 @@
         xmlns:hc="https://handyorg.github.io/handycontrol"
         xmlns:vm="clr-namespace:PropertyManagement.Client.ViewModels"
         xmlns:views="clr-namespace:PropertyManagement.Client.Views"
-        Title="澜庭物业管理系统"
+        Title="安怡物业管理系统"
         Width="1366" Height="768"
         MinWidth="1200" MinHeight="700"
         WindowStartupLocation="CenterScreen"
@@ -18,7 +18,7 @@
        FontFamily="微软雅黑">
     <!-- 自定义窗口模板：移除 HandyControl 默认模板中为最大化阴影预留的 Padding 内缩
          （Margin="{TemplateBinding Padding}"），使主窗口内容直抵四边，避免最大化后
-         四周露出窗口底色 #F4F7FB（2026-08-31）。 -->
+         四周露出窗口底色 #FAF8F4（2026-08-31）。 -->
     <hc:Window.Template>
         <ControlTemplate TargetType="hc:Window">
             <Border Background="{TemplateBinding Background}">
@@ -197,15 +197,24 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 栏栏品牌 -->
+                <!-- 栏栏品牌（M8-D8-0 徽记对齐 2026-09-14）：唯一源 docs\brand\anyi-logo-square-color.svg
+                     母版 240×240 网格 + LayoutTransform 等比缩放至 36×36（36/240 = 0.15），含金色叶片 -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,18">
-                    <Border Width="36" Height="36" Background="{StaticResource PrimaryBrush}" CornerRadius="9">
-                        <Path Data="{StaticResource Icon.Building2}" Style="{StaticResource IconStroke}"
-                              Stroke="White" Width="20" Height="20" />
+                    <Border Width="240" Height="240" Background="{StaticResource PrimaryBrush}" CornerRadius="54">
+                        <Border.LayoutTransform>
+                            <ScaleTransform ScaleX="0.15" ScaleY="0.15" />
+                        </Border.LayoutTransform>
+                        <Canvas Width="240" Height="240">
+                            <Rectangle Canvas.Left="57.7" Canvas.Top="135" Width="34.5" Height="68.5" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                            <Rectangle Canvas.Left="101.3" Canvas.Top="97.5" Width="42" Height="106" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                            <Rectangle Canvas.Left="152.3" Canvas.Top="147" Width="30" Height="56.5" Fill="#FAF8F4" RadiusX="3.4" RadiusY="3.4" />
+                            <Rectangle Canvas.Left="52.5" Canvas.Top="200.6" Width="135" Height="5.8" Fill="#C8A96A" RadiusX="2.9" RadiusY="2.9" />
+                            <Path Data="M99.3,88.7 Q99.3,43.1 144.9,43.1 Q144.9,88.7 99.3,88.7 Z" Fill="#C8A96A" />
+                        </Canvas>
                     </Border>
                     <StackPanel Margin="11,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="澜庭物业" Foreground="White" FontSize="16" FontWeight="Bold" />
-                        <TextBlock Text="PROPERTY OPS" Foreground="#8FB7E4" FontSize="8" />
+                        <TextBlock Text="安怡物业" Foreground="White" FontSize="16" FontWeight="Bold" />
+                        <TextBlock Text="ANYI" Foreground="#8FB7A8" FontSize="8" />
                     </StackPanel>
                 </StackPanel>
 

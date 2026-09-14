@@ -71,7 +71,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 string result = Dto.Result ?? string.Empty;
                 if (result.Contains("失败")) { return BrushHelper.FromHex("#FDECEC"); }
-                if (result.Length == 0) { return BrushHelper.FromHex("#F4F7FB"); }
+                if (result.Length == 0) { return BrushHelper.FromHex("#FAF8F4"); }
                 return BrushHelper.FromHex("#E8F7F1");
             }
         }
@@ -103,7 +103,7 @@ namespace PropertyManagement.Client.ViewModels
         private static readonly Brush MutedBrush = BrushHelper.FromHex("#98A2B3");
         private static readonly Brush SuccessSoftBrush = BrushHelper.FromHex("#E8F7F1");
         private static readonly Brush DangerSoftBrush = BrushHelper.FromHex("#FDECEC");
-        private static readonly Brush MutedSoftBrush = BrushHelper.FromHex("#F4F7FB");
+        private static readonly Brush MutedSoftBrush = BrushHelper.FromHex("#FAF8F4");
 
         private string _lastAutoBackupText = "—";
         private string _lastAutoBackupResult = "尚未执行备份";

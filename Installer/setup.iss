@@ -1,7 +1,7 @@
-; 澜庭物业管理系统 安装脚本（M0 骨架，M8 完善）
-#define AppName "澜庭物业管理系统"
+; 安怡物业管理系统 安装脚本（M0 骨架，M8 完善）
+#define AppName "安怡物业管理系统"
 #define AppVersion "0.1.0"
-#define AppPublisher "澜庭物业"
+#define AppPublisher "安怡物业"
 #define ClientExe "..\PropertyManagement.Client\bin\Release\PropertyManagement.Client.exe"
 #define ServerExe "..\PropertyManagement.Server\bin\Release\PropertyManagement.Server.exe"
 
@@ -13,7 +13,7 @@ AppPublisher={#AppPublisher}
 DefaultDirName={autopf}\PropertyManagement
 DefaultGroupName={#AppName}
 OutputDir=..\output
-OutputBaseFilename=PropertyManagement-Setup-{#AppVersion}
+OutputBaseFilename=安怡物业管理系统-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 ArchitecturesInstallIn64BitMode=x64

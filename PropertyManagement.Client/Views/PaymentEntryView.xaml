@@ -25,7 +25,7 @@
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
                     <Style TargetType="DataGridColumnHeader">
-                        <Setter Property="Background" Value="#F4F7FB" />
+                        <Setter Property="Background" Value="#FAF8F4" />
                         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
                         <Setter Property="FontSize" Value="11" />
                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -106,7 +106,7 @@
                     <TextBlock Text="收款登记" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
 
                     <TextBlock Text="缴费房产" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,14,0,4" />
-                    <Border Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6" Margin="0,0,0,8">
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -201,7 +201,7 @@
                         </StackPanel>
                         <StackPanel Grid.Column="2">
                             <TextBlock Text="收据号" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6" />
-                            <Border Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                            <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                                     BorderThickness="1" CornerRadius="6">
                                 <TextBlock Text="{Binding ReceiptNo}" FontSize="12" FontWeight="SemiBold"
                                            Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" Margin="10,0" />
@@ -218,7 +218,7 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="经手人" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6" />
-                            <Border Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                            <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                                     BorderThickness="1" CornerRadius="6">
                                 <TextBlock Text="{Binding ReceiptHandlerText}" FontSize="12"
                                            Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="10,0" />
@@ -233,7 +233,7 @@
 
                     <!-- 备注（T4R-3：可输入并随收款落库） -->
                     <TextBlock Text="备注" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,14,0,6" />
-                    <Border Height="76" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="76" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="8">
                         <TextBox Style="{StaticResource SearchTextBox}" AcceptsReturn="True" TextWrapping="Wrap"
                                  VerticalContentAlignment="Top" FontSize="11"

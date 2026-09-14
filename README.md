@@ -1,4 +1,8 @@
-# 澜庭物业管理系统
+# 安怡物业管理系统
+
+<p align="left"><img src="docs/brand/anyi-logo-square-color-256.png" width="88" alt="安怡物业 Logo"></p>
+
+> ANYI · 深青绿 `#1F4B43` + 暖金 `#C8A96A` + 米白 `#FAF8F4` ｜ 品牌资产与规范见 `docs/brand/`（M8-D8-0 定稿）
 
 > 单机、前后端分离的物业管理系统。模型基线 v1.0 冻结，前端原型 v1.0 冻结，详见 [docs/models/模型基线-v1.0/README.md](docs/models/模型基线-v1.0/README.md) 与 [docs/prototypes/前端原型-v0.1/原型页面索引.md](docs/prototypes/前端原型-v0.1/原型页面索引.md)。
 

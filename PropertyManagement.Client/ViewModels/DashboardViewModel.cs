@@ -48,8 +48,8 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>仪表盘首页（PG-DASH，UC-COM-006，按原型 §2.3 一比一修版）。</summary>
     public class DashboardViewModel : ObservableObject
     {
-        private static readonly Brush Primary = Brush("#2B7DE9");
-        private static readonly Brush PrimarySoft = Brush("#EAF3FF");
+        private static readonly Brush Primary = Brush("#1F4B43");
+        private static readonly Brush PrimarySoft = Brush("#E9F0EE");
         private static readonly Brush Success = Brush("#12805C");
         private static readonly Brush SuccessSoft = Brush("#E8F7F1");
         private static readonly Brush Warning = Brush("#B76E00");

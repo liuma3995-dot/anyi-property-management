@@ -193,7 +193,7 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>强度条颜色取值（对齐 Theme.xaml 设计令牌）。</summary>
         private static class BrushesHelper
         {
-            internal static readonly Brush Track = FromHex("#E7EEF7");
+            internal static readonly Brush Track = FromHex("#EAE5DA");
             internal static readonly Brush Success = FromHex("#12805C");
             internal static readonly Brush Warning = FromHex("#B76E00");
             internal static readonly Brush Danger = FromHex("#D64545");

@@ -67,7 +67,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                <Border Grid.Column="0" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -162,7 +162,7 @@
                               SelectedItem="{Binding SelectedCategory}" />
 
                     <TextBlock Text="金额（元）" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <Border Height="34" Margin="0,8,0,14" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="34" Margin="0,8,0,14" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6">
                         <TextBox Style="{StaticResource SearchTextBox}"
                                  Text="{Binding Amount, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}" />
@@ -172,7 +172,7 @@
                     <DatePicker Height="34" Margin="0,8,0,14" FontSize="12" SelectedDate="{Binding ExpenseDate}" />
 
                     <TextBlock Text="摘要" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <Border Height="64" Margin="0,8,0,20" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="64" Margin="0,8,0,20" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6">
                         <TextBox Style="{StaticResource SearchTextBox}" Height="64" TextWrapping="Wrap"
                                  AcceptsReturn="True" VerticalContentAlignment="Top" Padding="10,8"
@@ -181,7 +181,7 @@
                     </Border>
 
                     <TextBlock Text="收款方" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <Border Height="34" Margin="0,8,0,20" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="34" Margin="0,8,0,20" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6">
                         <TextBox Style="{StaticResource SearchTextBox}"
                                  Text="{Binding Payee, UpdateSourceTrigger=PropertyChanged}" />

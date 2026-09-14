@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-> 澜庭物业管理系统：单机、前后端分离（WPF 客户端 + 本地 OWIN 后端）。架构与决策见模型基线；文档位于 `docs/`（已排除版本控制）。
+> 安怡物业管理系统：单机、前后端分离（WPF 客户端 + 本地 OWIN 后端）。架构与决策见模型基线；文档位于 `docs/`（已排除版本控制）。
 
 ## Project Structure & Module Organization（项目结构）
 

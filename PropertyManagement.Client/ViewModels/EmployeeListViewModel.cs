@@ -56,7 +56,7 @@ namespace PropertyManagement.Client.ViewModels
                 switch (Dto.Status)
                 {
                     case EmployeeStatus.Active: return Solid("#E8F7F1");   // 在岗 绿
-                    case EmployeeStatus.Vacation: return Solid("#EAF3FF"); // 休假 蓝
+                    case EmployeeStatus.Vacation: return Solid("#E9F0EE"); // 休假 蓝
                     case EmployeeStatus.OffDuty: return Solid("#FFF5DC");  // 离岗 橙
                     default: return Solid("#F2F4F8");                      // 离职 灰
                 }
@@ -70,7 +70,7 @@ namespace PropertyManagement.Client.ViewModels
                 switch (Dto.Status)
                 {
                     case EmployeeStatus.Active: return Solid("#12805C");
-                    case EmployeeStatus.Vacation: return Solid("#2B7DE9");
+                    case EmployeeStatus.Vacation: return Solid("#1F4B43");
                     case EmployeeStatus.OffDuty: return Solid("#B76E00");
                     default: return Solid("#98A2B3");
                 }

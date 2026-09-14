@@ -19,7 +19,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="#EAF3FF" />
+                                <Setter TargetName="Bg" Property="Background" Value="#E9F0EE" />
                             </Trigger>
                             <DataTrigger Binding="{Binding IsCurrent}" Value="True">
                                 <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimarySoftBrush}" />

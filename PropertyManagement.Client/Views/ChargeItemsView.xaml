@@ -25,7 +25,7 @@
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
                     <Style TargetType="DataGridColumnHeader">
-                        <Setter Property="Background" Value="#F4F7FB" />
+                        <Setter Property="Background" Value="#FAF8F4" />
                         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
                         <Setter Property="FontSize" Value="11" />
                         <Setter Property="FontWeight" Value="SemiBold" />
@@ -98,7 +98,7 @@
                         </Border>
                         <ControlTemplate.Triggers>
                             <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bg" Property="Background" Value="#EAF3FF" />
+                                <Setter TargetName="Bg" Property="Background" Value="#E9F0EE" />
                             </Trigger>
                         </ControlTemplate.Triggers>
                     </ControlTemplate>
@@ -162,7 +162,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
-                <Border Grid.Column="0" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                <Border Grid.Column="0" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -273,7 +273,7 @@
                                    Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,18" />
 
                         <TextBlock Text="项目名称" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <Border Height="34" Margin="0,8,0,14" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                        <Border Height="34" Margin="0,8,0,14" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                                 BorderThickness="1" CornerRadius="6">
                             <TextBox Style="{StaticResource SearchTextBox}" Text="{Binding FormName, UpdateSourceTrigger=PropertyChanged}"
                                         hc:InfoElement.Placeholder="如：物业服务费" />
@@ -315,7 +315,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="0" Height="34" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                            <Border Grid.Column="0" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                                     BorderThickness="1" CornerRadius="6">
                                 <TextBox Style="{StaticResource SearchTextBox}" Text="{Binding FormUnitPrice, StringFormat={}{0:0.##}, UpdateSourceTrigger=PropertyChanged}"
                                             hc:InfoElement.Placeholder="0.00" />
@@ -372,7 +372,7 @@
                     <TextBlock Text="{Binding CustomDialogTitle}" FontSize="15" FontWeight="Bold"
                                Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
                     <TextBlock Text="名称" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <Border Height="34" Margin="0,8,0,10" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="34" Margin="0,8,0,10" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6">
                         <TextBox Style="{StaticResource SearchTextBox}" Text="{Binding CustomInputName, UpdateSourceTrigger=PropertyChanged}"
                                     hc:InfoElement.Placeholder="请输入名称（如：按卡）" />
@@ -380,7 +380,7 @@
                     <TextBlock Text="单位文本（如：张）" FontSize="12" FontWeight="SemiBold"
                                Foreground="{StaticResource TextPrimaryBrush}"
                                Visibility="{Binding CustomShowRemark, Converter={StaticResource BoolToVis}}" />
-                    <Border Height="34" Margin="0,8,0,10" Background="#F8FAFD" BorderBrush="{StaticResource BorderBrushColor}"
+                    <Border Height="34" Margin="0,8,0,10" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6"
                             Visibility="{Binding CustomShowRemark, Converter={StaticResource BoolToVis}}">
                         <TextBox Style="{StaticResource SearchTextBox}" Text="{Binding CustomInputRemark, UpdateSourceTrigger=PropertyChanged}"

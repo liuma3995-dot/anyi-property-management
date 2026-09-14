@@ -272,7 +272,7 @@ namespace PropertyManagement.Client.Services
                 {
                     new GlobalSearchItemDto
                     {
-                        Title = "3 栋 1 单元 " + keyword, Subtitle = "澜庭花园  ·  建筑面积 88.5 ㎡",
+                        Title = "3 栋 1 单元 " + keyword, Subtitle = "安怡花园  ·  建筑面积 88.5 ㎡",
                         TargetModule = "baseinfo", TargetPage = "房产列表", Keyword = keyword, TargetId = 1
                     }
                 }
@@ -773,10 +773,10 @@ namespace PropertyManagement.Client.Services
 
         // ==================== M5 基础信息与导入（演示夹具） ====================
         public Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null) =>
-            Task.FromResult(new List<CommunityDto> { new CommunityDto { Id = 1, Name = "澜庭小区", Address = "示例大道 1 号" } });
+            Task.FromResult(new List<CommunityDto> { new CommunityDto { Id = 1, Name = "安怡小区", Address = "示例大道 1 号" } });
 
         public Task<List<BuildingDto>> GetBuildingsAsync(int? communityId = null) =>
-            Task.FromResult(new List<BuildingDto> { new BuildingDto { Id = 1, CommunityId = 1, CommunityName = "澜庭小区", BuildingNo = "1号楼", Floors = 6 } });
+            Task.FromResult(new List<BuildingDto> { new BuildingDto { Id = 1, CommunityId = 1, CommunityName = "安怡小区", BuildingNo = "1号楼", Floors = 6 } });
 
         public Task<List<UnitDto>> GetUnitsAsync(int? buildingId = null) =>
             Task.FromResult(new List<UnitDto> { new UnitDto { Id = 1, BuildingId = 1, BuildingNo = "1号楼", UnitNo = "1单元" } });

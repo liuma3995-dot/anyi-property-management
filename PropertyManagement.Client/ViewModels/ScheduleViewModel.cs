@@ -83,7 +83,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 string name = shorts[0];
                 // 原型 PG-ORG-02 配色：早=主色浅蓝、中=紫、晚=警示黄、休=浅灰
-                if (name.Contains("早")) { CellBackground = Brush("#EAF3FF"); CellForeground = Brush("#2B7DE9"); }
+                if (name.Contains("早")) { CellBackground = Brush("#E9F0EE"); CellForeground = Brush("#1F4B43"); }
                 else if (name.Contains("晚") || name.Contains("夜")) { CellBackground = Brush("#FFF5DC"); CellForeground = Brush("#B76E00"); }
                 else if (name.Contains("休")) { CellBackground = Brush("#EEF2F7"); CellForeground = Brush("#667085"); }
                 else { CellBackground = Brush("#F1EDFD"); CellForeground = Brush("#7A5AF8"); }

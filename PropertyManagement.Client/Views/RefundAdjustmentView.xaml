@@ -90,7 +90,7 @@
 
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding AmountLabel}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
-                        <Border Grid.Row="4" Grid.Column="1" Height="36" Background="#F8FAFD"
+                        <Border Grid.Row="4" Grid.Column="1" Height="36" Background="#F7F4EE"
                                 BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
                             <TextBox Style="{StaticResource SearchTextBox}" FontSize="15" FontWeight="SemiBold"
                                      Foreground="{StaticResource DangerBrush}"
@@ -104,7 +104,7 @@
 
                         <TextBlock Grid.Row="8" Grid.Column="0" Text="原因" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Top" Margin="0,6,0,0" />
-                        <Border Grid.Row="8" Grid.Column="1" Height="64" Background="#F8FAFD"
+                        <Border Grid.Row="8" Grid.Column="1" Height="64" Background="#F7F4EE"
                                 BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
                             <TextBox Style="{StaticResource SearchTextBox}" FontSize="12" TextWrapping="Wrap"
                                      VerticalContentAlignment="Top" Padding="8,5"
@@ -170,7 +170,7 @@
                                 <StackPanel Orientation="Horizontal">
                                     <StackPanel Width="92">
                                         <Border Width="26" Height="26" CornerRadius="13"
-                                                Background="#2B7DE9" HorizontalAlignment="Center">
+                                                Background="#1F4B43" HorizontalAlignment="Center">
                                             <TextBlock Text="{Binding Index}" FontSize="11" FontWeight="Bold"
                                                        Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </Border>

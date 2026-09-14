@@ -141,7 +141,7 @@ namespace PropertyManagement.Client.ViewModels
 
         public string VersionText
         {
-            get { return "LAN-TING  V1.0.0"; }
+            get { return "ANYI  V1.0.0"; }
         }
 
         /// <summary>侧栏系统状态条（原型：在线点 + 状态 + 数据更新时间）。</summary>

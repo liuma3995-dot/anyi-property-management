@@ -45,7 +45,7 @@ namespace PropertyManagement.Client.ViewModels
                     case BillStatus.Paid: return Br("#12805C");
                     case BillStatus.Overdue: return Br("#D64545");
                     case BillStatus.Draft: return Br("#98A2B3");
-                    default: return Br("#2B7DE9");
+                    default: return Br("#1F4B43");
                 }
             }
         }
@@ -59,7 +59,7 @@ namespace PropertyManagement.Client.ViewModels
                     case BillStatus.Paid: return Br("#E8F7F1");
                     case BillStatus.Overdue: return Br("#FDECEC");
                     case BillStatus.Draft: return Br("#F1F3F7");
-                    default: return Br("#EAF3FF");
+                    default: return Br("#E9F0EE");
                 }
             }
         }
@@ -107,7 +107,7 @@ namespace PropertyManagement.Client.ViewModels
         private string _receiptPayeeText = "—";
         private string _receiptItemText = "—";
         private string _receiptMethodText = "现金";
-        private string _receiptUnitText = "澜庭物业服务中心";
+        private string _receiptUnitText = "安怡物业服务中心";
         private string _receiptHandlerText;
         private string _receiptAmountCapitalText = "零元整";
         private string _receiptAmountLowerText = "¥0.00";
@@ -418,7 +418,7 @@ namespace PropertyManagement.Client.ViewModels
             ReceiptPayeeText = _selectedBill.Dto.OwnerName;
             ReceiptItemText = _selectedBill.Dto.ChargeItemName + " " + _selectedBill.Dto.CyclePeriod;
             ReceiptMethodText = PayMethodText;
-            ReceiptUnitText = "澜庭物业服务中心";
+            ReceiptUnitText = "安怡物业服务中心";
             ReceiptHandlerText = _receiptHandlerText;
             ReceiptAmountLowerText = "¥" + PayAmount.ToString("N2");
             ReceiptAmountCapitalText = ToChineseCapital(PayAmount);
@@ -498,7 +498,7 @@ namespace PropertyManagement.Client.ViewModels
             ReceiptItemText = bill == null ? "—" : bill.Dto.ChargeItemName + " " + bill.Dto.CyclePeriod +
                 (amount < bill.UnpaidAmount ? "（部分缴）" : "");
             ReceiptMethodText = PayMethodText;
-            ReceiptUnitText = "澜庭物业服务中心";
+            ReceiptUnitText = "安怡物业服务中心";
             ReceiptHandlerText = _receiptHandlerText;
             ReceiptAmountLowerText = "¥" + amount.ToString("N2");
             ReceiptAmountCapitalText = ToChineseCapital(amount);

@@ -1,5 +1,5 @@
 -- ============================================================
--- 澜庭物业管理系统 - schema.sql（M2 D2-1）
+-- 安怡物业管理系统 - schema.sql（M2 D2-1）
 -- 依据：DM-04 数据库设计（60 张表）；SQLite 单文件
 -- 约定：id INTEGER 主键自增；枚举存 INTEGER；金额 NUMERIC；
 --       时间 TEXT（ISO 8601 本地，datetime('now','localtime')）；

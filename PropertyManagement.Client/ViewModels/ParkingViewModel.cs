@@ -31,11 +31,11 @@ namespace PropertyManagement.Client.ViewModels
         public Brush StatusBrush { get { return SwFg(Dto.Status); } }
         private static Brush Sw(ParkingSpaceStatus s)
         {
-            switch (s) { case ParkingSpaceStatus.Owned: return Br("#EAF3FF"); case ParkingSpaceStatus.Rented: return Br("#E8F7F1"); case ParkingSpaceStatus.Repairing: return Br("#F1F3F7"); default: return Br("#FFF5DC"); }
+            switch (s) { case ParkingSpaceStatus.Owned: return Br("#E9F0EE"); case ParkingSpaceStatus.Rented: return Br("#E8F7F1"); case ParkingSpaceStatus.Repairing: return Br("#F1F3F7"); default: return Br("#FFF5DC"); }
         }
         private static Brush SwFg(ParkingSpaceStatus s)
         {
-            switch (s) { case ParkingSpaceStatus.Owned: return Br("#2B7DE9"); case ParkingSpaceStatus.Rented: return Br("#12805C"); case ParkingSpaceStatus.Repairing: return Br("#667085"); default: return Br("#B76E00"); }
+            switch (s) { case ParkingSpaceStatus.Owned: return Br("#1F4B43"); case ParkingSpaceStatus.Rented: return Br("#12805C"); case ParkingSpaceStatus.Repairing: return Br("#667085"); default: return Br("#B76E00"); }
         }
         private static Brush Br(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
         public string BindProperty { get { return string.IsNullOrEmpty(Dto.BindingProperty) ? "未绑定" : Dto.BindingProperty; } }

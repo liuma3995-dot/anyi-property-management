@@ -536,7 +536,7 @@ namespace PropertyManagement.Server.Services
                 row++;
                 sheet.Range(row, 1, row, 6).Merge();
                 IXLCell footer = sheet.Cell(row, 1);
-                footer.Value = "澜庭物业管理系统 · 纠纷调解子系统 · 处理与结案";
+                footer.Value = "安怡物业管理系统 · 纠纷调解子系统 · 处理与结案";
                 footer.Style.Font.SetFontSize(9);
                 footer.Style.Font.SetFontColor(XLColor.FromHtml("#8A94A6"));
                 footer.Style.Alignment.SetHorizontal(XLAlignmentHorizontalValues.Center);
@@ -957,7 +957,7 @@ namespace PropertyManagement.Server.Services
                         double y = page.Height.Point - 34;
                         gfx.DrawLine(new XPen(XColor.FromArgb(255, 210, 216, 224), 0.6),
                             MarginLeft, y - 12, page.Width.Point - MarginRight, y - 12);
-                        gfx.DrawString("澜庭物业管理系统 · 纠纷调解子系统 · 处理与结案", _smallFont, _muted, MarginLeft, y);
+                        gfx.DrawString("安怡物业管理系统 · 纠纷调解子系统 · 处理与结案", _smallFont, _muted, MarginLeft, y);
                         string pageText = "第 " + (i + 1) + " 页 / 共 " + total + " 页";
                         double width = gfx.MeasureString(pageText, _smallFont).Width;
                         gfx.DrawString(pageText, _smallFont, _muted, page.Width.Point - MarginRight - width, y);

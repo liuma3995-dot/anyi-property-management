@@ -311,6 +311,9 @@
   <EmbeddedResource Include="Infrastructure\Data\migration_031.sql">
     <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_031.sql</LogicalName>
   </EmbeddedResource>
+  <EmbeddedResource Include="Infrastructure\Data\migration_032.sql">
+    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_032.sql</LogicalName>
+  </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

@@ -18,7 +18,7 @@
         </Style>
         <!-- 调解方案与进度表头（长文本列）：内边距与单元格一致（12,0），表头文字与单元格文字左端对齐 -->
         <Style x:Key="DisputeRecordsHeader" TargetType="DataGridColumnHeader">
-            <Setter Property="Background" Value="#F4F7FB" />
+            <Setter Property="Background" Value="#FAF8F4" />
             <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
             <Setter Property="FontSize" Value="11" />
             <Setter Property="FontWeight" Value="SemiBold" />

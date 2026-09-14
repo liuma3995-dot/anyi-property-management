@@ -55,7 +55,7 @@ namespace PropertyManagement.Client.ViewModels
                     case AttendanceResult.Absent: return Solid("#FDECEC");   // 旷工 红
                     case AttendanceResult.Leave: return Solid("#EFEEFF");   // 请假 紫
                     case AttendanceResult.Abnormal: return Solid("#FDECEC");   // 异常 红
-                    case AttendanceResult.Reviewed: return Solid("#EAF3FF");   // 已审核 蓝
+                    case AttendanceResult.Reviewed: return Solid("#E9F0EE");   // 已审核 蓝
                     default: return Solid("#F2F4F8");                          // 已记录 灰
                 }
             }
@@ -72,7 +72,7 @@ namespace PropertyManagement.Client.ViewModels
                     case AttendanceResult.Absent: return Solid("#D64545");
                     case AttendanceResult.Leave: return Solid("#5B3DF5");
                     case AttendanceResult.Abnormal: return Solid("#D64545");
-                    case AttendanceResult.Reviewed: return Solid("#2B7DE9");
+                    case AttendanceResult.Reviewed: return Solid("#1F4B43");
                     default: return Solid("#98A2B3");
                 }
             }

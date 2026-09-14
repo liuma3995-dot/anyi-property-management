@@ -25,7 +25,7 @@ namespace PropertyManagement.Client.ViewModels
 
         private static readonly string[] Colors =
         {
-            "#2B7DE9", "#12805C", "#B76E00", "#D64545", "#7A5AF8", "#0E7490", "#BE185D", "#475569"
+            "#1F4B43", "#12805C", "#B76E00", "#D64545", "#7A5AF8", "#0E7490", "#BE185D", "#475569"
         };
 
         public static bool IsKnown(string key)
