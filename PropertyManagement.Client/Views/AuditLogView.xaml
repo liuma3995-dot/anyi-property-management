@@ -181,7 +181,7 @@
                     <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
                     <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
                 </StackPanel>
-                <TextBlock Text="· 日志仅支持管理员批量删除（软删留痕，可在「备份与恢复」页一键清理）；登录失败连续 5 次 → 账号锁定 10 分钟并告警" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                    <TextBlock Text="· 日志仅支持管理员批量删除（软删留痕，可在「备份与恢复」页一键清理）；登录失败连续 5 次 → 账号锁定 30 分钟并告警" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
                 <TextBlock Text="· 支持按时间范围/操作人/模块/动作/关键字组合筛选；导出记录本身也写入日志" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>
         </Border>

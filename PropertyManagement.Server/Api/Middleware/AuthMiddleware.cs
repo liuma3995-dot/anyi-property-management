@@ -8,6 +8,7 @@ using PropertyManagement.Server.Infrastructure.Data;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Serialization;
 using PropertyManagement.Contract.Common;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Server.Infrastructure.Security;
 
 namespace PropertyManagement.Server.Api.Middleware
@@ -44,6 +45,20 @@ namespace PropertyManagement.Server.Api.Middleware
                 string username;
                 if (TokenService.TryValidate(token, out username))
                 {
+                    // GAP-05（M7 阶段③ T7-11-0）：账号状态逐请求校验（不缓存），
+                    // 停用/锁定账号的既有 token 即时失效（BR-COM-03 由登录态延伸到会话态）
+                    UserStatus? status = GetAccountStatus(username);
+                    if (status.HasValue && status.Value != UserStatus.Active)
+                    {
+                        context.Response.StatusCode = 401;
+                        context.Response.ContentType = "application/json; charset=utf-8";
+                        var disabled = ApiResponse<object>.Fail(
+                            ErrorCode.Unauthorized,
+                            status.Value == UserStatus.Disabled ? "账号已停用，请联系管理员" : "账号已锁定，请稍后再试");
+                        await context.Response.WriteAsync(JsonConvert.SerializeObject(disabled, CamelCaseSettings));
+                        return;
+                    }
+
                     // 改密后旧 token 失效（M6 PG-COM-04）：token 签发时间早于密码修改时间则拒绝
                     if (IsTokenRevoked(username, token))
                     {
@@ -90,6 +105,29 @@ namespace PropertyManagement.Server.Api.Middleware
             }
 
             return issuedAt.Value < changedAt.Value;
+        }
+
+        /// <summary>
+        /// GAP-05：读取账号状态（0 正常 / 1 锁定 / 2 停用）。
+        /// 该查询逐请求执行且不缓存，确保停用或锁定后既有 token 立即失效；
+        /// 查询失败或账号不存在时返回 null（不阻断请求，交由后续业务逻辑处理）。
+        /// </summary>
+        private static UserStatus? GetAccountStatus(string username)
+        {
+            try
+            {
+                using (IDbConnection c = new SqliteConnectionFactory().OpenConnection())
+                {
+                    int? status = c.ExecuteScalar<int?>(
+                        "SELECT status FROM t_user WHERE username = @username",
+                        new { username });
+                    return status.HasValue ? (UserStatus)status.Value : (UserStatus?)null;
+                }
+            }
+            catch
+            {
+                return null; // 查询失败不阻断请求
+            }
         }
 
         private static DateTime? GetPasswordChangedAt(string username)

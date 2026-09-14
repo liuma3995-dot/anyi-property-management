@@ -98,11 +98,26 @@ namespace PropertyManagement.Client.Views
 
         private void OnChangePasswordRequested()
         {
-            var dialog = new ChangePasswordWindow(_vm.Api)
+            var dialog = new ChangePasswordWindow(_vm.Api, _vm.MustChangePassword)
             {
                 Owner = this
             };
             dialog.ShowDialog();
+            // UC-COM-002：强制改密流程未完成即关闭对话框 → 强制退出到登录页（不可跳过）
+            if (_vm.MustChangePassword && !dialog.Changed)
+            {
+                ForceLogout();
+            }
+        }
+
+        /// <summary>清会话并返回登录页（强制改密未完成 / 会话失效复用）。</summary>
+        private void ForceLogout()
+        {
+            SessionManager.Instance.Clear();
+            var login = new LoginWindow();
+            Application.Current.MainWindow = login;
+            login.Show();
+            Close();
         }
 
         /// <summary>R17：顶栏下拉 → 个人信息设置（小表单就地填写，不新增页面）。</summary>

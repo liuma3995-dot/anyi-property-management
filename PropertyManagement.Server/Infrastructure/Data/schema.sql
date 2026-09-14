@@ -314,7 +314,9 @@ CREATE TABLE IF NOT EXISTS t_bill (
     FOREIGN KEY (cycle_id) REFERENCES t_billing_cycle (id)
 );
 -- BR-FIN-01：同一缴费对象同一计费周期同一收费项目不得重复（部分唯一索引，规避 NULL 判重失效）
-CREATE UNIQUE INDEX IF NOT EXISTS ux_bill_property_cycle ON t_bill (charge_item_id, cycle_id, property_id) WHERE property_id IS NOT NULL;
+-- M7 阶段③ T7-11-0：判重口径对齐服务层 FindDuplicateBill（仅约束在用账单），
+-- 使「软删账单后重新出账」不再被留痕行阻断
+CREATE UNIQUE INDEX IF NOT EXISTS ux_bill_property_cycle ON t_bill (charge_item_id, cycle_id, property_id) WHERE property_id IS NOT NULL AND del_flag = 0;
 CREATE UNIQUE INDEX IF NOT EXISTS ux_bill_parking_cycle  ON t_bill (charge_item_id, cycle_id, parking_id)  WHERE parking_id  IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS t_payment (

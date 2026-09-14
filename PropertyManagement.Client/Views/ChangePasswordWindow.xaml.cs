@@ -10,17 +10,34 @@ namespace PropertyManagement.Client.Views
     public partial class ChangePasswordWindow : Window
     {
         private readonly ChangePasswordViewModel _vm;
+        private readonly bool _forced;
+        private bool _changed;
 
-        public ChangePasswordWindow(IApiClient api)
+        /// <summary>
+        /// 修改密码对话框。
+        /// forced=true（首登/管理员标记强制改密，UC-COM-002）时禁用「取消」；
+        /// 用户以关闭窗口方式离开时由调用方强制退出到登录页（不可跳过，M7 阶段③ 修复）。
+        /// </summary>
+        public ChangePasswordWindow(IApiClient api, bool forced = false)
         {
             InitializeComponent();
 
+            _forced = forced;
             _vm = new ChangePasswordViewModel(api);
             _vm.Succeeded += OnSucceeded;
             DataContext = _vm;
 
+            if (_forced)
+            {
+                ForcedTip.Visibility = Visibility.Visible;
+                CancelButton.IsEnabled = false;
+            }
+
             Loaded += OnLoaded;
         }
+
+        /// <summary>是否已成功改密（调用方据此决定是否强制退出登录）。</summary>
+        public bool Changed { get { return _changed; } }
 
         private void OnLoaded(object sender, RoutedEventArgs e)
         {
@@ -45,6 +62,7 @@ namespace PropertyManagement.Client.Views
 
         private void OnSucceeded()
         {
+            _changed = true;
             SessionManager.Instance.Clear();
 
             var login = new LoginWindow();

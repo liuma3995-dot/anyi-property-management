@@ -64,7 +64,7 @@ if (Test-Path $resultXml) {
     Write-Host ''
     Write-Host ("用例总数：{0}；失败：{1}；跳过：{2}" -f $total, $failed, $skipped) -ForegroundColor Green
     Write-Host ("结果留档：" + $resultXml)
-    Write-Host 'BR 覆盖校验：执行 python tmp\gen_mapping.py 可重建《M7-单元测试覆盖矩阵与执行记录（v0.1）.md》'
+    Write-Host 'BR 覆盖校验：执行 python tmp\gen_mapping.py 可重建《M7-阶段①单元测试覆盖矩阵与执行记录（v0.1）.md》'
 
     # 验收标准 §七-4：运行后临时目录清理干净（失败时保留现场供排查）
     $leftover = Get-ChildItem $tempRoot -Directory -ErrorAction SilentlyContinue

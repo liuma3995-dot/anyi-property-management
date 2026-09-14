@@ -18,7 +18,7 @@ namespace PropertyManagement.Server.Infrastructure.Data
     /// </summary>
     public static class DatabaseInitializer
     {
-        private const int SchemaVersion = 30;
+        private const int SchemaVersion = 31;
 
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 

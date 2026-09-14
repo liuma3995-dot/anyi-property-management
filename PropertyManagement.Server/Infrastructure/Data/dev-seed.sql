@@ -136,6 +136,7 @@ FROM t_charge_item ci
 JOIN t_property p ON p.room_no IN ('101', '102', '201')
 JOIN t_billing_cycle cy ON cy.cycle_type = 1 AND cy.start_date = '2026-05-01'
 WHERE ci.name = '物业服务费'
+  AND p.del_flag = 0
   AND NOT EXISTS (
       SELECT 1 FROM t_bill b
       WHERE b.charge_item_id = ci.id AND b.property_id = p.id AND b.cycle_id = cy.id AND b.del_flag = 0
@@ -148,6 +149,7 @@ FROM t_charge_item ci
 JOIN t_parking_space ps ON ps.space_no = 'B1-01'
 JOIN t_billing_cycle cy ON cy.cycle_type = 1 AND cy.start_date = '2026-05-01'
 WHERE ci.name = '地下车位管理费'
+  AND ps.del_flag = 0
   AND NOT EXISTS (
       SELECT 1 FROM t_bill b
       WHERE b.charge_item_id = ci.id AND b.parking_id = ps.id AND b.cycle_id = cy.id AND b.del_flag = 0
@@ -160,6 +162,7 @@ FROM t_charge_item ci
 JOIN t_property p ON p.room_no = '101'
 JOIN t_billing_cycle cy ON cy.cycle_type = 1 AND cy.start_date = '2026-06-01'
 WHERE ci.name = '物业服务费'
+  AND p.del_flag = 0
   AND NOT EXISTS (
       SELECT 1 FROM t_bill b
       WHERE b.charge_item_id = ci.id AND b.property_id = p.id AND b.cycle_id = cy.id AND b.del_flag = 0
