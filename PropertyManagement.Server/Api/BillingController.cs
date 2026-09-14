@@ -1,3 +1,4 @@
+using PropertyManagement.Server.Api.Middleware;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
@@ -32,21 +33,21 @@ namespace PropertyManagement.Server.Api
         [Route("charge-items")]
         public ApiResponse<ChargeItemDto> CreateChargeItem(ChargeItemRequest request)
         {
-            return ApiResponse<ChargeItemDto>.Ok(_billing.CreateChargeItem(request));
+            return ApiResponse<ChargeItemDto>.Ok(_billing.CreateChargeItem(request, GetUsername(), GetIp()));
         }
 
         [HttpPut]
         [Route("charge-items/{id:int}")]
         public ApiResponse<ChargeItemDto> UpdateChargeItem(int id, ChargeItemRequest request)
         {
-            return ApiResponse<ChargeItemDto>.Ok(_billing.UpdateChargeItem(id, request));
+            return ApiResponse<ChargeItemDto>.Ok(_billing.UpdateChargeItem(id, request, GetUsername(), GetIp()));
         }
 
         [HttpDelete]
         [Route("charge-items/{id:int}")]
         public ApiResponse<object> DeleteChargeItem(int id)
         {
-            _billing.DeleteChargeItem(id);
+            _billing.DeleteChargeItem(id, GetUsername(), GetIp());
             return ApiResponse<object>.Ok(null);
         }
 
@@ -85,14 +86,14 @@ namespace PropertyManagement.Server.Api
         [Route("bills/generate")]
         public ApiResponse<BillGenerateLogDto> GenerateBill(BillGenerateRequest request)
         {
-            return ApiResponse<BillGenerateLogDto>.Ok(_billing.GenerateBill(request));
+            return ApiResponse<BillGenerateLogDto>.Ok(_billing.GenerateBill(request, GetUsername(), GetIp()));
         }
 
         [HttpPost]
         [Route("bills/publish")]
         public ApiResponse<BillGenerateLogDto> PublishBills(BillPublishRequest request)
         {
-            return ApiResponse<BillGenerateLogDto>.Ok(_billing.PublishBills(request));
+            return ApiResponse<BillGenerateLogDto>.Ok(_billing.PublishBills(request, GetUsername(), GetIp()));
         }
 
         [HttpPost]
@@ -120,7 +121,7 @@ namespace PropertyManagement.Server.Api
             {
                 throw ApiException.BadRequest("批次不能为空");
             }
-            _billing.DeleteBillBatch(request.BatchId);
+            _billing.DeleteBillBatch(request.BatchId, GetUsername(), GetIp());
             return ApiResponse<object>.Ok(null);
         }
 
@@ -170,7 +171,7 @@ namespace PropertyManagement.Server.Api
         [Route("bills/remind")]
         public ApiResponse<object> RecordRemind(ArrearRemindRequest request)
         {
-            _billing.RecordRemind(request);
+            _billing.RecordRemind(request, GetUsername(), GetIp());
             return ApiResponse<object>.Ok(null);
         }
 
@@ -178,8 +179,38 @@ namespace PropertyManagement.Server.Api
         [Route("bills/{id:int}")]
         public ApiResponse<object> DeleteBill(int id)
         {
-            _billing.DeleteArrearBill(id);
+            _billing.DeleteArrearBill(id, GetUsername(), GetIp());
             return ApiResponse<object>.Ok(null);
+        }
+
+        /// <summary>操作人（BR-COM-01 / DM-07 §三 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
+        private string GetUsername()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Get<string>(AuthMiddleware.UsernameEnvKey) ?? string.Empty;
+                }
+            }
+            return string.Empty;
+        }
+
+        /// <summary>客户端 IP（BR-COM-01 / DM-07 §三 审计八列）。</summary>
+        private string GetIp()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Request.RemoteIpAddress;
+                }
+            }
+            return null;
         }
 
         [HttpGet]

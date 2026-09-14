@@ -45,7 +45,7 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        public ChargeItemDto CreateChargeItem(ChargeItemRequest request)
+        public ChargeItemDto CreateChargeItem(ChargeItemRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
             {
@@ -99,11 +99,12 @@ namespace PropertyManagement.Server.Services
             }
 
             _audit.Write("CHARGE_ITEM_CREATE", "charge_item", item.Id.ToString(),
-                "新增收费项目：" + item.Name + "，类别 " + item.Category + "，单价 " + item.UnitPrice.ToString("0.00") + "/" + item.PriceUnit);
+                "新增收费项目：" + item.Name + "，类别 " + item.Category + "，单价 " + item.UnitPrice.ToString("0.00") + "/" + item.PriceUnit,
+                userName: operatorName, ip: ip, result: "Success");
             return item;
         }
 
-        public ChargeItemDto UpdateChargeItem(int id, ChargeItemRequest request)
+        public ChargeItemDto UpdateChargeItem(int id, ChargeItemRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || string.IsNullOrWhiteSpace(request.Name))
             {
@@ -151,12 +152,13 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("CHARGE_ITEM_UPDATE", "charge_item", id.ToString(),
-                    "修改收费项目：" + existing.Name + "，类别 " + existing.Category + "，单价 " + existing.UnitPrice.ToString("0.00") + "/" + existing.PriceUnit);
+                    "修改收费项目：" + existing.Name + "，类别 " + existing.Category + "，单价 " + existing.UnitPrice.ToString("0.00") + "/" + existing.PriceUnit,
+                    userName: operatorName, ip: ip, result: "Success");
                 return existing;
             }
         }
 
-        public void DeleteChargeItem(int id)
+        public void DeleteChargeItem(int id, string operatorName = null, string ip = null)
         {
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
@@ -171,7 +173,8 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("CHARGE_ITEM_DELETE", "charge_item", id.ToString(),
-                    "停用收费项目：" + existing.Name + "（停用不影响已出账单 BR-FIN-03）");
+                    "停用收费项目：" + existing.Name + "（停用不影响已出账单 BR-FIN-03）",
+                    userName: operatorName, ip: ip, result: "Success");
             }
         }
 
@@ -252,7 +255,7 @@ namespace PropertyManagement.Server.Services
             }
         }
         // ---------- 账单生成/发布/失败重推（UC-FIN-002，FL-FIN-01） ----------
-        public BillGenerateLogDto GenerateBill(BillGenerateRequest request)
+        public BillGenerateLogDto GenerateBill(BillGenerateRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || request.ChargeItemId <= 0 || request.CycleId <= 0)
             {
@@ -364,13 +367,14 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("BILL_GENERATE", "bill_generate_log", logId.ToString(),
-                    string.Format("生成账单：项目 {0}，周期 {1}，成功 {2}，失败 {3}", chargeItem.Name, cycle.StartDate.ToString("yyyy-MM-dd"), success, failures.Count));
+                    string.Format("生成账单：项目 {0}，周期 {1}，成功 {2}，失败 {3}", chargeItem.Name, cycle.StartDate.ToString("yyyy-MM-dd"), success, failures.Count),
+                    userName: operatorName, ip: ip, result: "Success");
 
                 return _finance.GetBillGenerateLog(connection, logId);
             }
         }
 
-        public BillGenerateLogDto PublishBills(BillPublishRequest request)
+        public BillGenerateLogDto PublishBills(BillPublishRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || request.BatchId <= 0)
             {
@@ -390,7 +394,8 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("BILL_PUBLISH", "bill_generate_log", request.BatchId.ToString(),
-                    "发布账单批次，草稿转待缴（FL-FIN-01）");
+                    "发布账单批次，草稿转待缴（FL-FIN-01）",
+                    userName: operatorName, ip: ip, result: "Success");
                 return _finance.GetBillGenerateLog(connection, request.BatchId);
             }
         }
@@ -637,7 +642,7 @@ namespace PropertyManagement.Server.Services
 
 
         /// <summary>删除账单批次（CHG-M4-16 修订：任意状态均可删除，批次及其账单一并软删，保留操作轨迹；已缴/部分缴流水不回退）。</summary>
-        public void DeleteBillBatch(int batchId)
+        public void DeleteBillBatch(int batchId, string operatorName = null, string ip = null)
         {
             if (batchId <= 0)
             {
@@ -656,9 +661,11 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
             }
 
-            _audit.Write("BILL_BATCH_DELETE", "bill_generate_log", batchId.ToString(), "删除账单批次（软删并保留轨迹，已缴/部分缴流水不回退）");
+            _audit.Write("BILL_BATCH_DELETE", "bill_generate_log", batchId.ToString(),
+                "删除账单批次（软删并保留轨迹，已缴/部分缴流水不回退）",
+                userName: operatorName, ip: ip, result: "Success");
         }
-        public void RecordRemind(ArrearRemindRequest request)
+        public void RecordRemind(ArrearRemindRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || request.BillId <= 0)
             {
@@ -682,12 +689,13 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("ARREARS_REMIND", "bill", request.BillId.ToString(),
-                    "欠费催缴记录：渠道 " + request.Channel.Trim() + (string.IsNullOrWhiteSpace(request.Note) ? "" : "，备注 " + request.Note.Trim()));
+                    "欠费催缴记录：渠道 " + request.Channel.Trim() + (string.IsNullOrWhiteSpace(request.Note) ? "" : "，备注 " + request.Note.Trim()),
+                    userName: operatorName, ip: ip, result: "Success");
             }
         }
 
         /// <summary>欠费台账删除（UC-FIN-007：软删除账单，保留查账轨迹）。</summary>
-        public void DeleteArrearBill(int billId)
+        public void DeleteArrearBill(int billId, string operatorName = null, string ip = null)
         {
             if (billId <= 0)
             {
@@ -707,7 +715,8 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
             }
 
-            _audit.Write("ARREARS_DELETE", "bill", billId.ToString(), "欠费台账删除（软删除，保留查账轨迹）");
+            _audit.Write("ARREARS_DELETE", "bill", billId.ToString(), "欠费台账删除（软删除，保留查账轨迹）",
+                userName: operatorName, ip: ip, result: "Success");
         }
 
         /// <summary>批次失败明细（fail_detail JSON 结构）。</summary>
