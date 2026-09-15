@@ -60,6 +60,9 @@ namespace PropertyManagement.Client.Services
                 {
                     UseShellExecute = false,
                     WindowStyle = ProcessWindowStyle.Hidden,
+                    // 关键（M8 D8-4 修复）：控制台程序仅靠 WindowStyle=Hidden 仍会创建并显示控制台窗口，
+                    // 必须同时置 CreateNoWindow，后端才能完全隐藏在后台（避免用户误触关闭服务）。
+                    CreateNoWindow = true,
                     WorkingDirectory = Path.GetDirectoryName(exe)
                 };
                 Process.Start(psi);
@@ -73,15 +76,20 @@ namespace PropertyManagement.Client.Services
 
         /// <summary>
         /// 定位后端可执行文件：优先开发布局（Client/bin → ../../Server/bin），
-        /// 其次安装布局（Client 同级 Server/，M8 安装包定稿后校对）。
+        /// 其次安装布局（M8 D8-1 定稿：`{app}\Client\` 与 `{app}\Server\` 并列，见 T8-1-2），
+        /// 最后兼容 Client 目录内直放 Server 的扁平布局。
         /// </summary>
         public static string FindServerExecutable()
         {
             string clientDir = AppDomain.CurrentDomain.BaseDirectory;
             string[] candidates =
             {
+                // 安装布局（M8 T8-1-2 口径）：{app}\Client\..\Server\PropertyManagement.Server.exe
+                Path.Combine(clientDir, "..", "Server", "PropertyManagement.Server.exe"),
+                // 开发布局
                 Path.Combine(clientDir, "..", "..", "..", "Server", "bin", "Debug", "PropertyManagement.Server.exe"),
                 Path.Combine(clientDir, "..", "..", "..", "Server", "bin", "Release", "PropertyManagement.Server.exe"),
+                // 扁平布局
                 Path.Combine(clientDir, "Server", "PropertyManagement.Server.exe")
             };
 

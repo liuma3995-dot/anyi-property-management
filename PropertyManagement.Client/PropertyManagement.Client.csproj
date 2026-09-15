@@ -267,6 +267,7 @@
     <Compile Include="Services\ApiClientFactory.cs" />
     <Compile Include="Services\CrashLog.cs" />
     <Compile Include="Services\BackendLauncher.cs" />
+    <Compile Include="Services\BackendStartup.cs" />
     <Compile Include="Services\HttpApiClient.cs" />
     <Compile Include="Services\IApiClient.cs" />
     <Compile Include="Services\MockApiClient.cs" />

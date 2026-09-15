@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
@@ -12,11 +13,18 @@ namespace PropertyManagement.Client.ViewModels
     {
         private readonly IApiClient _api;
 
+        private static readonly SolidColorBrush ReadyBrush = Freeze(Color.FromRgb(0x12, 0x80, 0x5C));
+        private static readonly SolidColorBrush PendingBrush = Freeze(Color.FromRgb(0x8A, 0x6E, 0x3C));
+        private static readonly SolidColorBrush FailedBrush = Freeze(Color.FromRgb(0xD6, 0x45, 0x45));
+
         private string _userName;
         private string _password = string.Empty;
         private string _errorMessage = string.Empty;
         private bool _isBusy;
         private bool _rememberAccount;
+        private string _serviceStatusText = "● 本地服务检测中…";
+        private SolidColorBrush _serviceStatusBrush = PendingBrush;
+        private string _hintText;
 
         public string UserName
         {
@@ -53,15 +61,29 @@ namespace PropertyManagement.Client.ViewModels
             get { return _api.IsMock; }
         }
 
+        /// <summary>登录页辅助提示：演示模式提示，或后端未就绪时的排查指引（M8 T8-4-3）。</summary>
         public string HintText
         {
-            get { return _api.IsMock ? "演示模式：admin / Admin@123" : string.Empty; }
+            get { return _hintText; }
+            private set { SetProperty(ref _hintText, value); }
         }
 
+        /// <summary>本地服务状态（M8 T8-4-1）：未启动 → 启动中（含重试次数）→ 正常 / 超时。</summary>
         public string ServiceStatusText
         {
-            get { return "● 本地服务正常"; }
+            get { return _serviceStatusText; }
+            private set { SetProperty(ref _serviceStatusText, value); }
         }
+
+        /// <summary>本地服务状态配色：就绪=绿、等待/启动=暖金、超时=红。</summary>
+        public SolidColorBrush ServiceStatusBrush
+        {
+            get { return _serviceStatusBrush; }
+            private set { SetProperty(ref _serviceStatusBrush, value); }
+        }
+
+        /// <summary>启动编排是否已判定本地服务就绪。</summary>
+        public bool IsBackendReady { get; private set; }
 
         public IAsyncRelayCommand LoginCommand { get; }
 
@@ -73,6 +95,7 @@ namespace PropertyManagement.Client.ViewModels
             ClientPrefs.Load();
             UserName = ClientPrefs.Current.RememberAccount ? ClientPrefs.Current.SavedUserName : "admin";
             RememberAccount = ClientPrefs.Current.RememberAccount;
+            _hintText = _api.IsMock ? "演示模式：admin / Admin@123" : string.Empty;
             LoginCommand = new AsyncRelayCommand(LoginAsync);
         }
 
@@ -83,6 +106,57 @@ namespace PropertyManagement.Client.ViewModels
             {
                 ErrorMessage = message;
             }
+        }
+
+        /// <summary>接收启动编排进度（M8 T8-4-1）；须在 UI 线程调用。</summary>
+        public void ApplyStartupProgress(BackendStartupProgress progress)
+        {
+            if (progress == null)
+            {
+                return;
+            }
+
+            ServiceStatusText = progress.Text;
+            switch (progress.State)
+            {
+                case BackendStartupState.Ready:
+                    ServiceStatusBrush = ReadyBrush;
+                    break;
+                case BackendStartupState.TimedOut:
+                    ServiceStatusBrush = FailedBrush;
+                    break;
+                default:
+                    ServiceStatusBrush = PendingBrush;
+                    break;
+            }
+        }
+
+        /// <summary>接收启动编排结果（M8 T8-4-3：超时给出含日志路径的排查指引）。</summary>
+        public void ApplyStartupResult(BackendStartupResult result)
+        {
+            if (result == null)
+            {
+                return;
+            }
+
+            IsBackendReady = result.Ready;
+            if (result.Ready)
+            {
+                ServiceStatusText = "● 本地服务正常";
+                ServiceStatusBrush = ReadyBrush;
+                return;
+            }
+
+            ServiceStatusText = "● 本地服务未就绪（已超时）";
+            ServiceStatusBrush = FailedBrush;
+            HintText = BackendStartup.BuildTimeoutGuidance(result);
+        }
+
+        private static SolidColorBrush Freeze(Color color)
+        {
+            var brush = new SolidColorBrush(color);
+            brush.Freeze();
+            return brush;
         }
 
         private async Task LoginAsync()

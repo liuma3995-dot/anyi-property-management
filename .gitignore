@@ -12,6 +12,12 @@ tmp/
 .claude/
 output/
 
+# 打包资源（M8 T8-1-1：.NET 4.8 离线安装器约 120 MB，不进仓库）
+Installer/redist/
+
+# 安装包构建中间产物（M8 T8-1-3：向导品牌图 BMP 等，由 build-setup.ps1 生成）
+Installer/build/
+
 # 运行期生成（日志/数据库/备份/导出）
 *.log
 logs/

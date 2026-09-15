@@ -866,13 +866,70 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 else
                 {
-                    SidebarStatusText = "后端服务：响应异常";
+                    // M8 T8-4-2：健康检查未通过时兜底拉起一次（同目录存在 Server.exe）
+                    if (await ProbeBackendWithFallbackAsync())
+                    {
+                        StatusDotBrush = new SolidColorBrush(Color.FromRgb(0x36, 0xC9, 0x93));
+                        SidebarStatusText = "本地服务运行正常";
+                    }
+                    else
+                    {
+                        StatusDotBrush = new SolidColorBrush(Color.FromRgb(0xD6, 0x45, 0x45));
+                        SidebarStatusText = "后端服务：响应异常（已尝试启动，可查看日志目录排查）";
+                    }
                 }
             }
             catch (Exception)
             {
-                StatusDotBrush = new SolidColorBrush(Color.FromRgb(0xD6, 0x45, 0x45));
-                SidebarStatusText = "后端服务：未连接";
+                if (await ProbeBackendWithFallbackAsync())
+                {
+                    StatusDotBrush = new SolidColorBrush(Color.FromRgb(0x36, 0xC9, 0x93));
+                    SidebarStatusText = "本地服务运行正常";
+                }
+                else
+                {
+                    StatusDotBrush = new SolidColorBrush(Color.FromRgb(0xD6, 0x45, 0x45));
+                    SidebarStatusText = "后端服务：未连接";
+                }
+            }
+        }
+
+        /// <summary>
+        /// M8 T8-4-2：健康检查失败时，兜底拉起一次本地后端并在约 5 s 内复探（D8-4 口径 1：判定只认 /health）。
+        /// </summary>
+        private static async Task<bool> ProbeBackendWithFallbackAsync()
+        {
+            if (await ProbeBackendOnceAsync())
+            {
+                return true;
+            }
+
+            if (!BackendLauncher.TryStartServer())
+            {
+                return false;
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                await Task.Delay(1000);
+                if (await ProbeBackendOnceAsync())
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        private static async Task<bool> ProbeBackendOnceAsync()
+        {
+            try
+            {
+                var health = await BackendLauncher.ProbeAsync(2000);
+                return health != null && string.Equals(health.Status, "ok", StringComparison.OrdinalIgnoreCase);
+            }
+            catch
+            {
+                return false;
             }
         }
 

@@ -129,6 +129,7 @@
                             <hc:TextBox Grid.Column="1" x:Name="UserNameInput"
                                         Text="{Binding UserName, UpdateSourceTrigger=PropertyChanged}"
                                         hc:InfoElement.Placeholder="请输入用户名"
+                                        InputMethod.IsInputMethodEnabled="False"
                                         FontSize="13" Foreground="#172033"
                                         Background="Transparent" BorderThickness="0"
                                         Height="46" Margin="12,0"
@@ -160,11 +161,42 @@
                                             FontSize="13" Foreground="#172033"
                                             Background="Transparent" BorderThickness="0"
                                             Height="46" Margin="12,0" />
-                            <Path Grid.Column="2"
-                                  Data="{StaticResource Icon.Eye}"
-                                  Style="{StaticResource IconStroke}"
-                                  Stroke="#98A2B3"
-                                  Width="18" Height="18" Margin="0,0,14,0" />
+                            <!-- 显示密码：明文输入框（默认隐藏，与 PasswordBox 同位置切换） -->
+                            <hc:TextBox Grid.Column="1" x:Name="PasswordPlainInput"
+                                        hc:InfoElement.Placeholder="请输入密码"
+                                        AutomationProperties.AutomationId="PasswordPlainInput"
+                                        InputMethod.IsInputMethodEnabled="False"
+                                        FontSize="13" Foreground="#172033"
+                                        Background="Transparent" BorderThickness="0"
+                                        Height="46" Margin="12,0"
+                                        VerticalContentAlignment="Center"
+                                        CaretBrush="#1F4B43"
+                                        Visibility="Collapsed" />
+                            <!-- 小眼睛：切换密码明文/密文（点击区域 30x30，避免误触） -->
+                            <Button Grid.Column="2" x:Name="TogglePasswordButton"
+                                    AutomationProperties.AutomationId="TogglePasswordButton"
+                                    Click="TogglePasswordButton_Click"
+                                    Cursor="Hand" ToolTip="显示密码"
+                                    Background="Transparent" BorderThickness="0"
+                                    Width="30" Height="30" Margin="0,0,8,0">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bg" Background="Transparent" CornerRadius="8">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bg" Property="Background" Value="#F1F4F9" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Button.Template>
+                                <Path x:Name="TogglePasswordIcon"
+                                      Data="{StaticResource Icon.Eye}"
+                                      Style="{StaticResource IconStroke}"
+                                      Stroke="#98A2B3"
+                                      Width="18" Height="18" />
+                            </Button>
                         </Grid>
                     </Border>
 
@@ -204,8 +236,10 @@
                             </CheckBox.Template>
                             <TextBlock Text="记住账号" Foreground="#667085" FontSize="12" />
                         </CheckBox>
+                        <!-- M8 T8-4-1：本地服务状态（未启动 → 启动中（含重试次数）→ 正常 / 超时） -->
                         <TextBlock Grid.Column="1" Text="{Binding ServiceStatusText}"
-                                   Foreground="#12805C" FontSize="11"
+                                   Foreground="{Binding ServiceStatusBrush}" FontSize="11"
+                                   AutomationProperties.AutomationId="ServiceStatusText"
                                    HorizontalAlignment="Right" VerticalAlignment="Center" />
                     </Grid>
 
@@ -219,8 +253,10 @@
                                    FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
                     </StackPanel>
 
+                    <!-- IsDefault：在用户名/密码框内直接回车即可登录（M8 登录体验修复） -->
                     <Button Grid.Row="8" Height="46" Margin="0,16,0,18"
                             Command="{Binding LoginCommand}"
+                            IsDefault="True"
                             Style="{StaticResource ButtonPrimary}">
                         <StackPanel Orientation="Horizontal">
                             <TextBlock Text="登 录" Foreground="White"
@@ -282,4 +318,3 @@
         </Grid>
     </Grid>
 </Window>
-
