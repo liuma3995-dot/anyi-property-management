@@ -1,0 +1,32 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  windows:
+    name: Build and test (Windows / .NET Framework 4.8)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Setup NuGet
+        uses: nuget/setup-nuget@v2
+
+      - name: Restore packages
+        run: nuget restore PropertyManagement.sln
+
+      - name: Build (Release)
+        run: msbuild PropertyManagement.sln /p:Configuration=Release /m /v:m /nologo
+
+      - name: Run unit tests
+        shell: powershell
+        run: powershell -NoProfile -ExecutionPolicy Bypass -File PropertyManagement.Tests\run-tests.ps1 -Configuration Release

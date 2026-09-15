@@ -1,6 +1,6 @@
 # Repository Guidelines
 
-> 安怡物业管理系统：单机、前后端分离（WPF 客户端 + 本地 OWIN 后端）。架构与决策见模型基线；文档位于 `docs/`（已排除版本控制）。
+> 安怡物业管理系统：单机、前后端分离（WPF 客户端 + 本地 OWIN 后端）。对外文档见 `documentation/`，贡献约定见 `CONTRIBUTING.md`。
 
 ## Project Structure & Module Organization（项目结构）
 
@@ -12,8 +12,8 @@ PropertyManagement.sln
 └─ Installer/                    # Inno Setup 安装脚本
 ```
 
-- `docs/`（模型基线、计划、原型）不在版本控制内，其改动不会出现在 git 面板；
-- 分层遵循 DM-01：前端只调 API，业务规则只在 Server 领域层，前后端只共享 Contract。
+- 分层约定：前端只调 API，业务规则只在 Server 领域层，前后端只共享 Contract；
+- 架构与选型说明见 [documentation/architecture](documentation/architecture/)。
 
 ## Build, Test, and Development Commands（构建/测试/开发）
 
@@ -32,7 +32,7 @@ PropertyManagement.Client\bin\Debug\PropertyManagement.Client.exe
 Invoke-WebRequest http://127.0.0.1:5210/api/v1/health
 ```
 
-测试：当前无测试工程；后端领域规则（AM-06 BR）在 M7 前以 xUnit/NUnit（net48 兼容版）补充。
+测试：`PropertyManagement.Tests`（xUnit + 控制台 runner），执行 `PowerShell -File PropertyManagement.Tests\run-tests.ps1`。
 
 ## Coding Style & Naming Conventions（编码风格）
 
@@ -44,15 +44,19 @@ Invoke-WebRequest http://127.0.0.1:5210/api/v1/health
 ## Testing Guidelines（测试规范）
 
 - 领域规则优先覆盖；测试类命名 `XxxTests`，方法 `方法名_场景_期望`（如 `Pay_OverAmount_Rejects`）；
-- 验收依据 60 用例追溯矩阵，测试工程加入后以 `MSBuild /t:Test` 运行。
+- 单元测试使用 `%TEMP%` 下的隔离库，不得读写 `%ProgramData%\PropertyManagement`；
+- 提交前须保证编译通过且测试全绿。
 
 ## Commit & Pull Request Guidelines（提交规范）
 
-- **必须经项目负责人明确指令后方可提交**，禁止私自 git add/commit/rm；
-- 提交信息中文，格式 `<里程碑/范围>：<简述>`（如 `M1 契约先行：…`）；
-- 当前为本地单仓（main），无 PR 流程；推送远程或多人协作前先与负责人确认。
+- 提交信息中文，格式 `<范围>：<简述>`（如 `财务收费：修正部分缴款金额校验`）；
+- 主分支为 `main`；外部贡献走分支 + Pull Request 流程，约定见 [CONTRIBUTING.md](CONTRIBUTING.md)；
+- 不提交生成物（`bin/`、`obj/`、`packages/`、`output/`、`Installer/redist/`）。
 
-## Agent-Specific Instructions（代理注意事项）
+## AI 辅助开发说明
 
-- 改动文件后留在工作区供审阅，等负责人指示"提交"再执行提交；
-- 敏感操作（备份恢复、删除、基线变更）先征求负责人同意；模型/契约变更走 CHG 流程。
+本项目在开发过程中使用了 AI 辅助编程工具（本文件即其协作约定）。对贡献者的期望一致：
+
+- 改动后先在本地自测（编译 + 单元测试），再提交；
+- 敏感操作（数据备份恢复、批量删除、数据结构变更）须有明确说明与迁移方案；
+- 契约（DTO/枚举/错误码）变更须同步更新 API 契约与数据库设计文档。

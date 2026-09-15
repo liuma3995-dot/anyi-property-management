@@ -129,7 +129,7 @@ namespace PropertyManagement.Server.Services
         // ============================================================
 
         /// <summary>
-        /// 结案报告默认落盘目录：当前登录用户的「文档」目录（如 C:\Users\Administrator\Documents），
+        /// 结案报告默认落盘目录：当前登录用户的「文档」目录（如 C:\Users\<用户名>\Documents），
         /// 便于用户直接归档/打印；文档目录不可用时回退到程序导出目录（%ProgramData%\PropertyManagement\exports）。
         /// </summary>
         private static string ResolveOutputDirectory()

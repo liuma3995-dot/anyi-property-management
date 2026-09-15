@@ -1,0 +1,24 @@
+# 统一文本处理：以仓库内 LF 为准，检出时遵循各平台 core.autocrlf 设置。
+# 说明：本项目源码当前以 LF 入库（Windows 上同样可正常编译），此处刻意不强制
+# eol=crlf，避免一次全仓换行符重写产生大量无意义 diff。
+* text=auto
+
+# 二进制文件：禁止行尾转换与文本 diff/合并，避免破坏文件
+*.png  binary
+*.jpg  binary
+*.ico  binary
+*.exe  binary
+*.dll  binary
+*.pdb  binary
+*.db   binary
+*.pen  binary
+
+# 文档与脚本按文本处理
+*.md   text
+*.ps1  text
+*.sql  text
+*.cs   text
+*.xaml text
+*.config text
+*.csproj text
+*.sln  text

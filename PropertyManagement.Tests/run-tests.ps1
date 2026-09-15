@@ -11,14 +11,40 @@
 param(
     [switch]$SkipBuild,
     [switch]$Clean,
-    [string]$Configuration = 'Debug'
+    [string]$Configuration = 'Debug',
+    [string]$MSBuildPath
 )
 
 $ErrorActionPreference = 'Stop'
 $testsDir = $PSScriptRoot
 $repoRoot = Split-Path -Parent $testsDir
 $solution = Join-Path $repoRoot 'PropertyManagement.sln'
-$msbuild = 'F:\.NET\MSBuild\Current\Bin\MSBuild.exe'
+# MSBuild 解析（可移植）：显式参数 → setup-msbuild 环境变量 → PATH → vswhere → 常见安装路径
+function Resolve-MSBuildPath([string]$Explicit) {
+    if ($Explicit -and (Test-Path $Explicit)) { return $Explicit }
+    if ($env:MSBUILD_EXE_PATH -and (Test-Path $env:MSBUILD_EXE_PATH)) { return $env:MSBUILD_EXE_PATH }
+    $cmd = Get-Command 'msbuild.exe' -ErrorAction SilentlyContinue
+    if ($cmd) { return $cmd.Source }
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (Test-Path $vswhere) {
+        $vsPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath 2>$null
+        if ($vsPath) {
+            $candidate = Join-Path $vsPath 'MSBuild\Current\Bin\MSBuild.exe'
+            if (Test-Path $candidate) { return $candidate }
+        }
+    }
+    foreach ($candidate in @(
+            'F:\.NET\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe',
+            'C:\Program Files (x86)\Microsoft Visual Studio\2019\BuildTools\MSBuild\Current\Bin\MSBuild.exe')) {
+        if (Test-Path $candidate) { return $candidate }
+    }
+    return $null
+}
+
+$msbuild = Resolve-MSBuildPath $MSBuildPath
 $runner = Join-Path $repoRoot 'packages\xunit.runner.console.2.4.2\tools\net472\xunit.console.exe'
 $testDll = Join-Path $testsDir "bin\$Configuration\PropertyManagement.Tests.dll"
 $resultXml = Join-Path $repoRoot 'tmp\unit_test_result.xml'
@@ -39,7 +65,10 @@ if (-not (Test-Path $runner)) {
 }
 
 if (-not $SkipBuild) {
-    if (-not (Test-Path $msbuild)) { throw ("未找到 MSBuild：" + $msbuild) }
+    if (-not $msbuild) {
+        throw '未找到 MSBuild：请安装 Visual Studio（含 .NET Framework 4.8 目标包），或用 -MSBuildPath 指定 MSBuild.exe 路径'
+    }
+    Write-Host ("使用 MSBuild：" + $msbuild) -ForegroundColor DarkGray
     Get-Process -Name 'PropertyManagement*' -ErrorAction SilentlyContinue | Stop-Process -Force
     Write-Host '编译中 ...' -ForegroundColor Cyan
     & $msbuild $solution "/p:Configuration=$Configuration" /m /v:m /nologo
