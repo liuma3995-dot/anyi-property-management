@@ -43,6 +43,14 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportReport(request));
         }
 
+        /// <summary>导出收据打印模板（CHG-v1.1.0-14：收据号下线，模板含逐项收款明细）。</summary>
+        [HttpPost]
+        [Route("receipt-template")]
+        public ApiResponse<ReportLogDto> ExportReceiptTemplate(ReceiptTemplateRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportReceiptTemplate(request));
+        }
+
         [HttpGet]
         [Route("files/{logId:int}")]
         public HttpResponseMessage DownloadFile(int logId)

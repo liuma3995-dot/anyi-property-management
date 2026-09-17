@@ -87,6 +87,25 @@ namespace PropertyManagement.Client.ViewModels
 
         public string StatusText { get { return Dto.Status == 0 ? "启用" : "停用"; } }
 
+        /// <summary>
+        /// CHG-v1.1.0-16/17：缴费对象展示（房产/车位/业主/自定义项名称）。
+        /// 名称以 charge_object 字典为准，字典项缺失时按对象类型回落。
+        /// </summary>
+        public string ObjectTypeText
+        {
+            get
+            {
+                if (!string.IsNullOrWhiteSpace(Dto.ObjectName)) { return Dto.ObjectName.Trim(); }
+                switch (Dto.ObjectType)
+                {
+                    case ChargeObjectType.Parking: return "车位";
+                    case ChargeObjectType.Owner: return "业主";
+                    case ChargeObjectType.Custom: return "自定义";
+                    default: return "房产";
+                }
+            }
+        }
+
         public string ToggleText { get { return IsEnabled ? "停用" : "启用"; } }
 
         public Brush StatusBrush { get { return Dto.Status == 0 ? StatusOkBrush : StatusOffBrush; } }
@@ -123,6 +142,7 @@ namespace PropertyManagement.Client.ViewModels
         private DictItemDto _formCategory;
         private DictItemDto _formMethod;
         private decimal _formUnitPrice;
+        private DictItemDto _formObject;
         private DictItemDto _formCycle;
         private bool _formEnabled = true;
 
@@ -131,6 +151,8 @@ namespace PropertyManagement.Client.ViewModels
         private string _customTypeCode = string.Empty;
         private bool _customShowRemark;
         private string _customInputName = string.Empty;
+        /// <summary>CHG-v1.1.0-19：自定义弹窗名称输入框的语境化提示（类别/计价方式/计费周期/缴费对象各不相同）。</summary>
+        private string _customInputPlaceholder = "请输入名称";
         private readonly DispatcherTimer _searchDebounce;
         private bool _isConfirmVisible;
         private ChargeItemRow _confirmRow;
@@ -151,6 +173,7 @@ namespace PropertyManagement.Client.ViewModels
             OpenCustomCategoryCommand = new RelayCommand(() => OpenCustomDialog("charge_category", "自定义类别", false));
             OpenCustomMethodCommand = new RelayCommand(() => OpenCustomDialog("charge_method", "自定义计价方式", true));
             OpenCustomCycleCommand = new RelayCommand(() => OpenCustomDialog("charge_cycle", "自定义计费周期", false));
+            OpenCustomObjectCommand = new RelayCommand(() => OpenCustomDialog("charge_object", "自定义缴费对象", false));
             ConfirmCustomCommand = new AsyncRelayCommand(ConfirmCustomAsync);
             CancelCustomCommand = new RelayCommand(CancelCustom);
             _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
@@ -172,6 +195,8 @@ namespace PropertyManagement.Client.ViewModels
         public ObservableCollection<DictItemDto> FormCategories { get; } = new ObservableCollection<DictItemDto>();
         public ObservableCollection<DictItemDto> Methods { get; } = new ObservableCollection<DictItemDto>();
         public ObservableCollection<DictItemDto> Cycles { get; } = new ObservableCollection<DictItemDto>();
+        /// <summary>CHG-v1.1.0-17：缴费对象选项（charge_object 字典：房产/车位/业主 + 自定义项）。</summary>
+        public ObservableCollection<DictItemDto> ChargeObjects { get; } = new ObservableCollection<DictItemDto>();
         public ObservableCollection<ChargeItemRow> Items { get; } = new ObservableCollection<ChargeItemRow>();
 
         public string Keyword
@@ -229,11 +254,65 @@ namespace PropertyManagement.Client.ViewModels
                 if (SetProperty(ref _formMethod, value))
                 {
                     OnPropertyChanged(nameof(PriceUnitHint));
+                    // CHG-v1.1.0-16/17：计价方式决定缴费对象的默认值（按车位→车位；按卡/一次性→业主；其余→房产）
+                    if (value != null)
+                    {
+                        string code = value.ItemCode ?? string.Empty;
+                        string objectCode = string.Equals(code, "parking", StringComparison.OrdinalIgnoreCase) ? "parking"
+                            : (string.Equals(code, "card", StringComparison.OrdinalIgnoreCase) ||
+                               string.Equals(code, "onetime", StringComparison.OrdinalIgnoreCase) ? "owner" : "property");
+                        DictItemDto fixedObject = ChargeObjects.FirstOrDefault(x =>
+                            string.Equals(x.ItemCode, objectCode, StringComparison.OrdinalIgnoreCase));
+                        if (fixedObject != null) { FormObject = fixedObject; }
+                    }
                 }
             }
         }
 
         public decimal FormUnitPrice { get { return _formUnitPrice; } set { SetProperty(ref _formUnitPrice, value); } }
+
+        /// <summary>
+        /// CHG-v1.1.0-16/17：缴费对象（charge_object 字典项）——房产/车位/业主为系统固定三项，
+        /// 其余为自定义项（租户/广告商/外部单位等）。口径与生成账单表单的「缴费对象」一致。
+        /// </summary>
+        public DictItemDto FormObject
+        {
+            get { return _formObject; }
+            set
+            {
+                if (SetProperty(ref _formObject, value))
+                {
+                    OnPropertyChanged(nameof(FormObjectHint));
+                    OnPropertyChanged(nameof(IsCustomObjectSelected));
+                }
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-17：自定义缴费对象提示（出账时按基础信息调用，自定义项暂不支持批量出账）。</summary>
+        public string FormObjectHint
+        {
+            get
+            {
+                if (FormObject == null) { return "缴费对象决定该项目可对哪类对象出账"; }
+                return IsCustomObjectSelected
+                    ? "自定义缴费对象：适用于租户、广告商等无房产/车位/业主档案的缴费方；出账时在账单工作台手工填写缴费对象名称"
+                    : "缴费对象决定该项目向哪类对象出账（与生成账单表单一致）";
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-17：当前是否选择了自定义缴费对象。</summary>
+        public bool IsCustomObjectSelected
+        {
+            get { return FormObject != null && !IsFixedObjectCode(FormObject.ItemCode); }
+        }
+
+        /// <summary>CHG-v1.1.0-17：系统固定缴费对象编码（property/parking/owner）。</summary>
+        internal static bool IsFixedObjectCode(string itemCode)
+        {
+            return string.Equals(itemCode, "property", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(itemCode, "parking", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(itemCode, "owner", StringComparison.OrdinalIgnoreCase);
+        }
 
         public DictItemDto FormCycle { get { return _formCycle; } set { SetProperty(ref _formCycle, value); } }
 
@@ -276,6 +355,9 @@ namespace PropertyManagement.Client.ViewModels
 
         public string CustomInputName { get { return _customInputName; } set { SetProperty(ref _customInputName, value); } }
 
+        /// <summary>CHG-v1.1.0-19：自定义项名称输入框提示（按字典类型区分语境）。</summary>
+        public string CustomInputPlaceholder { get { return _customInputPlaceholder; } private set { SetProperty(ref _customInputPlaceholder, value); } }
+
         public string CustomInputRemark { get { return _customInputRemark; } set { SetProperty(ref _customInputRemark, value); } }
 
         public IRelayCommand NewCommand { get; }
@@ -287,6 +369,8 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand OpenCustomCategoryCommand { get; }
         public IRelayCommand OpenCustomMethodCommand { get; }
         public IRelayCommand OpenCustomCycleCommand { get; }
+        /// <summary>CHG-v1.1.0-17：自定义缴费对象（与类别/计价方式/计费周期的自定义入口对齐）。</summary>
+        public IRelayCommand OpenCustomObjectCommand { get; }
         public IAsyncRelayCommand ConfirmCustomCommand { get; }
         public IRelayCommand CancelCustomCommand { get; }
         public IRelayCommand<ChargeItemRow> DeleteCommand { get; }
@@ -332,12 +416,14 @@ namespace PropertyManagement.Client.ViewModels
             var categories = await Api.GetDictItemsAsync("charge_category");
             var methods = await Api.GetDictItemsAsync("charge_method");
             var cycles = await Api.GetDictItemsAsync("charge_cycle");
+            var objects = await Api.GetDictItemsAsync("charge_object");
 
             string filterName = CategoryFilterName;
             string formCat = _formCategory == null ? null : _formCategory.ItemName;
             string methodCode = _formMethod == null ? null : _formMethod.ItemCode;
             string methodName = _formMethod == null ? null : _formMethod.ItemName;
             string cycleName = _formCycle == null ? null : _formCycle.ItemName;
+            string objectCode = _formObject == null ? null : _formObject.ItemCode;
 
             _isLoadingDicts = true;
             try
@@ -347,6 +433,7 @@ namespace PropertyManagement.Client.ViewModels
                 FormCategories.Clear();
                 Methods.Clear();
                 Cycles.Clear();
+                ChargeObjects.Clear();
                 foreach (DictItemDto d in categories)
                 {
                     FilterCategories.Add(d);
@@ -354,6 +441,7 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 foreach (DictItemDto d in methods) { Methods.Add(d); }
                 foreach (DictItemDto d in cycles) { Cycles.Add(d); }
+                foreach (DictItemDto d in objects) { ChargeObjects.Add(d); }
             }
             finally
             {
@@ -366,7 +454,19 @@ namespace PropertyManagement.Client.ViewModels
             FormCategory = string.IsNullOrEmpty(formCat) ? null : FormCategories.FirstOrDefault(x => x.ItemName == formCat);
             FormMethod = ResolveMethod(methodCode, methodName);
             FormCycle = ResolveCycle(cycleName);
+            FormObject = ResolveObject(objectCode);
             OnPropertyChanged(nameof(PriceUnitHint));
+        }
+
+        /// <summary>CHG-v1.1.0-17：按字典编码回填缴费对象（字典项缺失时回落房产）。</summary>
+        private DictItemDto ResolveObject(string objectCode)
+        {
+            if (!string.IsNullOrEmpty(objectCode))
+            {
+                DictItemDto byCode = ChargeObjects.FirstOrDefault(x => x.ItemCode == objectCode);
+                if (byCode != null) { return byCode; }
+            }
+            return ChargeObjects.FirstOrDefault(x => x.ItemCode == "property") ?? ChargeObjects.FirstOrDefault();
         }
 
         private string CategoryFilterName
@@ -416,11 +516,16 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(FormTitle));
             OnPropertyChanged(nameof(IsEditing));
             FormName = string.Empty;
-            FormCategory = null;
+            // CHG-v1.1.0-19：类别默认「物业费」（原为空，需用户先选类别才能保存）
+            FormCategory = FormCategories.FirstOrDefault(x =>
+                string.Equals(x.ItemCode, "property_fee", StringComparison.OrdinalIgnoreCase))
+                ?? FormCategories.FirstOrDefault(x => x.ItemName == "物业费")
+                ?? FormCategories.FirstOrDefault();
             FormMethod = Methods.FirstOrDefault();
             FormUnitPrice = 0m;
             FormCycle = Cycles.FirstOrDefault(x => x.ItemCode == "monthly") ?? Cycles.FirstOrDefault();
             FormEnabled = true;
+            FormObject = ResolveObject("property");   // 默认房产，用户可按计价方式调整
             IsFormVisible = true;
         }
 
@@ -441,7 +546,21 @@ namespace PropertyManagement.Client.ViewModels
             FormUnitPrice = row.Dto.UnitPrice;
             FormCycle = ResolveCycle(row.Dto.CycleType == BillingCycleType.Custom ? row.Dto.CycleName : null);
             FormEnabled = row.Dto.Status == 0;
+            FormObject = ResolveObject(ResolveObjectCode(row.Dto));
             IsFormVisible = true;
+        }
+
+        /// <summary>CHG-v1.1.0-17：收费项目缴费对象编码（历史数据无 object_code 时按对象类型回落）。</summary>
+        private static string ResolveObjectCode(ChargeItemDto dto)
+        {
+            if (dto == null) { return "property"; }
+            if (!string.IsNullOrWhiteSpace(dto.ObjectCode)) { return dto.ObjectCode.Trim(); }
+            switch (dto.ObjectType)
+            {
+                case ChargeObjectType.Parking: return "parking";
+                case ChargeObjectType.Owner: return "owner";
+                default: return "property";
+            }
         }
 
         private async Task SaveAsync()
@@ -471,6 +590,11 @@ namespace PropertyManagement.Client.ViewModels
                 ErrorText = "请选择计费周期";
                 return;
             }
+            if (FormObject == null)
+            {
+                ErrorText = "请选择缴费对象";
+                return;
+            }
 
             BillingCycleType cycleType = ResolveFormCycleType();
             if (cycleType == BillingCycleType.Custom && string.IsNullOrWhiteSpace(FormCycle.ItemName))
@@ -494,8 +618,13 @@ namespace PropertyManagement.Client.ViewModels
                                  : (cycleType == BillingCycleType.OneTime ? "一次性" : string.Empty),
                     Status = FormEnabled ? 0 : 1,
                     PayMode = MapPayMode(cycleType),
-                    ObjectType = string.Equals(FormMethod.ItemCode, "parking", StringComparison.OrdinalIgnoreCase)
-                                 ? ChargeObjectType.Parking : ChargeObjectType.Property
+                    // CHG-v1.1.0-16/17：缴费对象由表单显式选择（与生成账单的缴费对象一致；以字典编码为准）
+                    ObjectCode = FormObject.ItemCode,
+                    ObjectType = IsFixedObjectCode(FormObject.ItemCode)
+                        ? (string.Equals(FormObject.ItemCode, "parking", StringComparison.OrdinalIgnoreCase) ? ChargeObjectType.Parking
+                            : (string.Equals(FormObject.ItemCode, "owner", StringComparison.OrdinalIgnoreCase) ? ChargeObjectType.Owner
+                                : ChargeObjectType.Property))
+                        : ChargeObjectType.Custom
                 };
                 if (_editingId > 0)
                 {
@@ -547,6 +676,7 @@ namespace PropertyManagement.Client.ViewModels
                     UnitPrice = row.Dto.UnitPrice,
                     CycleType = row.Dto.CycleType,
                     CycleName = row.Dto.CycleName,
+                    ObjectCode = row.Dto.ObjectCode,
                     ObjectType = row.Dto.ObjectType,
                     PayMode = row.Dto.PayMode,
                     Status = row.Dto.Status == 0 ? 1 : 0
@@ -604,9 +734,26 @@ namespace PropertyManagement.Client.ViewModels
             _customTypeCode = typeCode;
             CustomDialogTitle = title;
             CustomShowRemark = showRemark;
+            CustomInputPlaceholder = CustomInputHint(typeCode);
             CustomInputName = string.Empty;
             CustomInputRemark = string.Empty;
             IsCustomDialogVisible = true;
+        }
+
+        /// <summary>
+        /// CHG-v1.1.0-19：自定义项名称输入框提示语 —— 原统一写死「请输入名称（如：按卡）」，
+        /// 在自定义类别/缴费对象场景下语境不符；现按字典类型给出对应示例。
+        /// </summary>
+        internal static string CustomInputHint(string typeCode)
+        {
+            switch (typeCode)
+            {
+                case "charge_object": return "如：1号楼租户 / XX广告公司";
+                case "charge_category": return "如：装修管理费 / 电梯维保费";
+                case "charge_cycle": return "如：每季 / 每半年";
+                case "charge_method": return "如：按卡 / 按人";
+                default: return "请输入名称";
+            }
         }
 
         private void CancelCustom()
@@ -650,6 +797,10 @@ namespace PropertyManagement.Client.ViewModels
             else if (typeCode == "charge_cycle")
             {
                 FormCycle = Cycles.FirstOrDefault(x => x.ItemName == name);
+            }
+            else if (typeCode == "charge_object")
+            {
+                FormObject = ChargeObjects.FirstOrDefault(x => x.ItemName == name);
             }
         }
     }

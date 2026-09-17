@@ -53,9 +53,9 @@
                           ItemsSource="{Binding Subjects}" SelectedIndex="{Binding SubjectFilter}" />
                 <Border Grid.Column="8" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6" Margin="14,0,14,0">
-                    <TextBox Style="{StaticResource SearchTextBox}" FontSize="12"
+                    <TextBox x:Name="LedgerKeywordBox" Style="{StaticResource SearchTextBox}" FontSize="12"
                              Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
-                             hc:InfoElement.Placeholder="搜索单据号（收据号/退款单号）" VerticalContentAlignment="Center" />
+                             hc:InfoElement.Placeholder="搜索单据号 / 付款人 / 项目" VerticalContentAlignment="Center" />
                 </Border>
                 <Button Grid.Column="9" Style="{StaticResource ButtonPrimary}" Content="查询" Command="{Binding SearchCommand}"
                         Margin="0,0,10,0" />
@@ -100,7 +100,8 @@
                         <DataGridTextColumn Header="金额" Width="120" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="支付方式" Width="100" Binding="{Binding PayMethodText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="关联单据" Width="130" Binding="{Binding BizNo}" ElementStyle="{StaticResource GridCellText}" />
-                        <DataGridTextColumn Header="付款户主" Width="100" Binding="{Binding OwnerNameText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.0-18：表头口径改为「付款人」（含业主与自定义缴费对象手工填写的名称） -->
+                        <DataGridTextColumn Header="付款人" Width="100" Binding="{Binding OwnerNameText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="经手人" Width="100" Binding="{Binding OperatorName}" ElementStyle="{StaticResource GridCellText}" />
                     </DataGrid.Columns>
                 </DataGrid>
@@ -156,7 +157,7 @@
                         <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding SelectedRow.PayMethodText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
                         <TextBlock Grid.Row="12" Grid.Column="0" Text="关联单据" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedRow.BizNo}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="14" Grid.Column="0" Text="付款户主" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="14" Grid.Column="0" Text="付款人" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding SelectedRow.OwnerNameText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
                     </Grid>
 

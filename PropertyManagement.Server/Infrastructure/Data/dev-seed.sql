@@ -93,6 +93,17 @@ INSERT INTO t_charge_item (name, category, method_code, method_name, unit_price,
 SELECT '二次供水清洗费', '代收代缴', 'house', '按户', 15.00, '户', 3, '每半年', 0, 1, 1
 WHERE NOT EXISTS (SELECT 1 FROM t_charge_item WHERE name = '二次供水清洗费' AND del_flag = 0);
 
+-- CHG-v1.1.0-21：演示造数与迁移口径对齐 —— 回填「缴费对象」字典编码与类型
+--   按车位 → 车位；按卡 → 业主（持卡人即业主）；按建筑面积 → 房产；其余 → 房产
+-- （dev-seed 在迁移之后执行，故 migration_041/042 的数据校正不覆盖演示数据，此处显式对齐、幂等）
+UPDATE t_charge_item SET object_code = 'parking', object_type = 1
+ WHERE del_flag = 0 AND method_code = 'parking';
+UPDATE t_charge_item SET object_code = 'owner', object_type = 2
+ WHERE del_flag = 0 AND method_code = 'card';
+UPDATE t_charge_item SET object_code = 'property', object_type = 0
+ WHERE del_flag = 0 AND (object_code IS NULL OR object_code = '')
+   AND method_code NOT IN ('parking', 'card');
+
 -- 计费周期（cycle_type: 0按年 1按月 2一次性 3自定义；幂等）
 INSERT INTO t_billing_cycle (cycle_type, start_date, end_date)
 SELECT 1, '2026-05-01', '2026-05-31' WHERE NOT EXISTS (SELECT 1 FROM t_billing_cycle WHERE cycle_type = 1 AND start_date = '2026-05-01');

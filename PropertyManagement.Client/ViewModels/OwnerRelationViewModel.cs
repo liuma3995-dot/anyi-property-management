@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -118,10 +120,58 @@ namespace PropertyManagement.Client.ViewModels
 
         public ObservableCollection<OwnerRelationRow> Items { get; } = new ObservableCollection<OwnerRelationRow>();
         public ObservableCollection<PropertyDto> Properties { get; } = new ObservableCollection<PropertyDto>();
-        public ObservableCollection<PropertyDto> FilteredProperties { get; } = new ObservableCollection<PropertyDto>();
         public ObservableCollection<OwnerDto> Owners { get; } = new ObservableCollection<OwnerDto>();
-        public ObservableCollection<OwnerRow> FilteredOwners { get; } = new ObservableCollection<OwnerRow>();
         private ObservableCollection<OwnerRow> _ownerRows = new ObservableCollection<OwnerRow>();
+
+        /// <summary>
+        /// F-03 修复：候选列表改用 <see cref="ICollectionView"/> 过滤。
+        /// V1.0.0 用 <c>FilteredProperties.Clear() + Add</c> 过滤，每次文本变化都会向 WPF <c>Selector</c>
+        /// 抛 <c>Reset</c>，导致「刚选中的项被丢弃」→ <c>FormPropertyId</c> 回写 null → 保存必然失败。
+        /// 视图过滤只改可见性、不重建集合，选中项不再丢失。
+        /// </summary>
+        public ICollectionView PropertiesView
+        {
+            get { return _propertiesView ?? (_propertiesView = BuildView(Properties)); }
+        }
+        private ICollectionView _propertiesView;
+        private ICollectionView _ownersView;
+        public ICollectionView OwnersView
+        {
+            get { return _ownersView ?? (_ownersView = BuildView(_ownerRows)); }
+        }
+
+        private ICollectionView BuildView(System.Collections.IEnumerable source)
+        {
+            var view = CollectionViewSource.GetDefaultView(source);
+            view.Filter = o =>
+            {
+                if (o is PropertyDto) return MatchesProperty((PropertyDto)o);
+                if (o is OwnerRow) return MatchesOwner((OwnerRow)o);
+                return true;
+            };
+            return view;
+        }
+
+        private bool MatchesProperty(PropertyDto p)
+        {
+            // 已选中的房产恒定保留，避免过滤刷新后下拉里找不到当前选中项
+            if (_formPropertyId.HasValue && p.Id == _formPropertyId.Value) return true;
+            string q = (_propertySearchText ?? string.Empty).Trim();
+            if (q.Length == 0) return true;
+            return (p.UnitPath ?? string.Empty).Contains(q)
+                || (p.RoomNo ?? string.Empty).Contains(q)
+                || (p.OwnerName ?? string.Empty).Contains(q);
+        }
+
+        private bool MatchesOwner(OwnerRow o)
+        {
+            if (_formOwnerId.HasValue && o.Id == _formOwnerId.Value) return true;
+            string q = (_ownerSearchText ?? string.Empty).Trim();
+            if (q.Length == 0) return true;
+            return (o.Name ?? string.Empty).Contains(q)
+                || (o.Phone ?? string.Empty).Contains(q)
+                || (o.IdCard ?? string.Empty).Contains(q);
+        }
 
         public string RoomKeyword
         {
@@ -135,6 +185,38 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
         public int? FormPropertyId { get { return _formPropertyId; } set { SetProperty(ref _formPropertyId, value); } }
         public int? FormOwnerId { get { return _formOwnerId; } set { SetProperty(ref _formOwnerId, value); } }
+
+        /// <summary>
+        /// 房产下拉选中项（对齐「纠纷登记」单框内检索模式：一个可编辑下拉同时承担检索与选择）。
+        /// 输入过程中的瞬时 null 忽略，避免过滤刷新把已选值清空（FormPropertyId 才是保存口径）。
+        /// </summary>
+        public PropertyDto SelectedProperty
+        {
+            get { return _selectedProperty; }
+            set
+            {
+                if (value == null) return;
+                if (SetProperty(ref _selectedProperty, value)) FormPropertyId = value.Id;
+                // 选中后把输入框文本替换为所选对象的展示文本，避免残留检索关键字（现场反馈）
+                string display = string.IsNullOrEmpty(value.UnitPath) ? (value.RoomNo ?? string.Empty) : value.UnitPath;
+                if (!string.Equals(_propertySearchText, display, StringComparison.Ordinal)) PropertySearchText = display;
+            }
+        }
+        private PropertyDto _selectedProperty;
+
+        /// <summary>业主下拉选中项（同上）。</summary>
+        public OwnerRow SelectedOwner
+        {
+            get { return _selectedOwner; }
+            set
+            {
+                if (value == null) return;
+                if (SetProperty(ref _selectedOwner, value)) FormOwnerId = value.Id;
+                string display = value.OwnerDisplayName ?? value.Name ?? string.Empty;
+                if (!string.Equals(_ownerSearchText, display, StringComparison.Ordinal)) OwnerSearchText = display;
+            }
+        }
+        private OwnerRow _selectedOwner;
         public OwnerRelType FormRelType
         {
             get { return _formRelType; }
@@ -185,39 +267,13 @@ namespace PropertyManagement.Client.ViewModels
 
         private void ApplyPropertyFilter()
         {
-            string q = string.IsNullOrWhiteSpace(_propertySearchText) ? string.Empty : _propertySearchText.Trim();
-            int? sel = _formPropertyId;
-            FilteredProperties.Clear();
-            foreach (var p in Properties)
-            {
-                bool match = q.Length == 0
-                    || (p.UnitPath ?? string.Empty).Contains(q)
-                    || (p.RoomNo ?? string.Empty).Contains(q)
-                    || (p.OwnerName ?? string.Empty).Contains(q);
-                // 固定已选房产：选中后 Text 变化会触发本过滤，若不固定会把已选项移出下拉、导致 WPF 丢失 FormPropertyId。
-                if (match || (sel.HasValue && p.Id == sel.Value))
-                {
-                    FilteredProperties.Add(p);
-                }
-            }
+            // F-03：只刷新视图过滤，不重建集合（重建会丢选中项）
+            PropertiesView.Refresh();
         }
 
         private void ApplyOwnerFilter()
         {
-            string q = string.IsNullOrWhiteSpace(_ownerSearchText) ? string.Empty : _ownerSearchText.Trim();
-            int? sel = _formOwnerId;
-            FilteredOwners.Clear();
-            foreach (var o in _ownerRows)
-            {
-                bool match = q.Length == 0
-                    || (o.Name ?? string.Empty).Contains(q)
-                    || (o.Phone ?? string.Empty).Contains(q)
-                    || (o.IdCard ?? string.Empty).Contains(q);
-                if (match || (sel.HasValue && o.Id == sel.Value))
-                {
-                    FilteredOwners.Add(o);
-                }
-            }
+            OwnersView.Refresh();
         }
 
         public async Task LoadAsync()
@@ -244,7 +300,6 @@ namespace PropertyManagement.Client.ViewModels
             {
                 var props = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
                 Properties.Clear();
-                FilteredProperties.Clear();
                 foreach (var p in props.Items) Properties.Add(p);
                 ApplyPropertyFilter();
                 var owners = await Api.QueryOwnersAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
@@ -256,6 +311,12 @@ namespace PropertyManagement.Client.ViewModels
                 OwnerSearchText = string.Empty;
                 FormPropertyId = null;
                 FormOwnerId = null;
+                _selectedProperty = null;
+                _selectedOwner = null;
+                OnPropertyChanged(nameof(SelectedProperty));
+                OnPropertyChanged(nameof(SelectedOwner));
+                PropertiesView.Refresh();
+                OwnersView.Refresh();
                 FormRelType = OwnerRelType.Owner;
                 FormShare = 100;
                 FormStart = DateTime.Today;
@@ -274,8 +335,11 @@ namespace PropertyManagement.Client.ViewModels
 
         private async Task SaveAsync()
         {
-            if (!FormPropertyId.HasValue) { ErrorText = "请选择房产"; return; }
-            if (!FormOwnerId.HasValue) { ErrorText = "请选择业主"; return; }
+            // F-04：手动键入唯一可匹配的房号/姓名/电话时自动落选；否则给出明确指引
+            if (!FormPropertyId.HasValue) { FormPropertyId = ResolvePropertyIdFromText(); }
+            if (!FormPropertyId.HasValue) { ErrorText = "请从下拉列表选择房产（或输入可唯一匹配的房号）"; return; }
+            if (!FormOwnerId.HasValue) { FormOwnerId = ResolveOwnerIdFromText(); }
+            if (!FormOwnerId.HasValue) { ErrorText = "请从下拉列表选择业主（或输入可唯一匹配的姓名/电话）"; return; }
             var request = new OwnerPropertyRelationRequest
             {
                 PropertyId = FormPropertyId.Value,
@@ -292,6 +356,30 @@ namespace PropertyManagement.Client.ViewModels
                 IsFormVisible = false;
                 await LoadAsync();
             }, "关系已绑定");
+        }
+
+        /// <summary>F-04：把搜索框文本解析为唯一房产（完整路径或房号精确匹配）。</summary>
+        private int? ResolvePropertyIdFromText()
+        {
+            string q = (_propertySearchText ?? string.Empty).Trim();
+            if (q.Length == 0) return null;
+            var hits = Properties.Where(p =>
+                string.Equals((p.UnitPath ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals((p.RoomNo ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase)).ToList();
+            return hits.Count == 1 ? (int?)hits[0].Id : null;
+        }
+
+        /// <summary>F-04：把搜索框文本解析为唯一业主（姓名/电话/证件号/展示名精确匹配）。</summary>
+        private int? ResolveOwnerIdFromText()
+        {
+            string q = (_ownerSearchText ?? string.Empty).Trim();
+            if (q.Length == 0) return null;
+            var hits = _ownerRows.Where(o =>
+                string.Equals((o.Name ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals((o.Phone ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals((o.IdCard ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                string.Equals((o.OwnerDisplayName ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase)).ToList();
+            return hits.Count == 1 ? (int?)hits[0].Id : null;
         }
 
         private async Task ConfirmReleaseAsync()

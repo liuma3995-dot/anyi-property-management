@@ -216,8 +216,8 @@
                         </ComboBox>
                         <TextBox Text="{Binding FormIdCard, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="220" Margin="10,0,0,0" />
                     </StackPanel>
-                    <TextBlock Text="联系电话" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <TextBox Text="{Binding FormPhone, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <TextBlock Text="联系电话（选填，同名业主请填写）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBox x:Name="PhoneBox" Text="{Binding FormPhone, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
                     <TextBlock Text="常住地址" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <TextBox Text="{Binding FormAddress, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">

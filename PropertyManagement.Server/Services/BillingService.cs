@@ -20,6 +20,9 @@ namespace PropertyManagement.Server.Services
     /// </summary>
     public class BillingService
     {
+        /// <summary>CHG-v1.1.0-10：缴费对象候选单次返回上限（超出请用关键字缩小范围）。</summary>
+        private const int BillObjectQueryLimit = 2000;
+
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly IFinanceRepository _finance;
         private readonly AuditService _audit;
@@ -81,12 +84,20 @@ namespace PropertyManagement.Server.Services
                 PriceUnit = string.IsNullOrWhiteSpace(request.PriceUnit) ? ResolveDefaultPriceUnit(request.MethodCode) : request.PriceUnit.Trim(),
                 CycleName = request.CycleType == BillingCycleType.Custom ? (request.CycleName ?? string.Empty).Trim()
                             : (request.CycleType == BillingCycleType.OneTime ? "一次性" : string.Empty),
-                ObjectType = ResolveObjectType(request.MethodCode)
+                // CHG-v1.1.0-16/17：缴费对象由表单选择；CHG-v1.1.0-17 起以 charge_object 字典为准（含自定义）
+                ObjectType = ChargeObjectType.Property,
+                ObjectCode = "property"
             };
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
+                ResolveChargeObject(connection, request.MethodCode, request.ObjectType, request.ObjectCode,
+                    out ChargeObjectType objectType, out string objectCode, out string objectName);
+                item.ObjectType = objectType;
+                item.ObjectCode = objectCode;
+                item.ObjectName = objectName;
+
                 // T4F-1-6：同名去重（软删重名允许）
                 ChargeItemDto sameName = _finance.GetChargeItemByName(connection, item.Name);
                 if (sameName != null)
@@ -147,7 +158,11 @@ namespace PropertyManagement.Server.Services
                 existing.PriceUnit = string.IsNullOrWhiteSpace(request.PriceUnit) ? ResolveDefaultPriceUnit(request.MethodCode) : request.PriceUnit.Trim();
                 existing.CycleName = request.CycleType == BillingCycleType.Custom ? (request.CycleName ?? string.Empty).Trim()
                                      : (request.CycleType == BillingCycleType.OneTime ? "一次性" : string.Empty);
-                existing.ObjectType = ResolveObjectType(request.MethodCode);
+                ResolveChargeObject(connection, request.MethodCode, request.ObjectType, request.ObjectCode,
+                    out ChargeObjectType objectType, out string objectCode, out string objectName);
+                existing.ObjectType = objectType;
+                existing.ObjectCode = objectCode;
+                existing.ObjectName = objectName;
                 _finance.UpdateChargeItem(connection, transaction, existing);
                 transaction.Commit();
 
@@ -237,6 +252,26 @@ namespace PropertyManagement.Server.Services
                 {
                     throw ApiException.NotFound("计费周期不存在");
                 }
+                // CHG-v1.1.0-17：仅自定义周期可按需删除；已被账单引用的周期一律拦截（软删账单也算引用）
+                if (existing.CycleType != BillingCycleType.Custom)
+                {
+                    throw ApiException.ValidationFailed("系统内置周期不可删除（仅自定义周期支持删除）");
+                }
+                // CHG-v1.1.0-18：引用计数**不区分软删** —— t_bill.cycle_id 是物理外键（Foreign Keys=True），
+                // 已软删的账单仍引用该周期；若只统计在用账单，DELETE 会触发 FOREIGN KEY constraint failed
+                // （表现为「数据服务暂不可用，请稍后重试」）。此处按物理引用判定并给出可读提示。
+                int used = connection.ExecuteScalar<int>(
+                    "SELECT COUNT(1) FROM t_bill WHERE cycle_id = @id", new { id }, transaction);
+                if (used > 0)
+                {
+                    int active = connection.ExecuteScalar<int>(
+                        "SELECT COUNT(1) FROM t_bill WHERE cycle_id = @id AND del_flag = 0", new { id }, transaction);
+                    string scope = active > 0
+                        ? "（其中在用账单 " + active + " 张）"
+                        : "（均为已删除账单留痕）";
+                    throw ApiException.ValidationFailed(
+                        "该周期已被 " + used + " 张账单引用" + scope + "，不能删除；如需清理请保留周期或改用其他周期出账");
+                }
 
                 _finance.DeleteCycle(connection, transaction, id);
                 transaction.Commit();
@@ -261,6 +296,13 @@ namespace PropertyManagement.Server.Services
             {
                 throw ApiException.BadRequest("收费项目和计费周期必须选择");
             }
+            // CHG-v1.1.0-10：缴费对象必须由用户显式选择；空集合＝校验失败，
+            // 彻底移除旧口径「两个都空 ⇒ 全部对象」的隐式全量出账。
+            bool hasPropertyScope = request.PropertyIds != null && request.PropertyIds.Count > 0;
+            bool hasParkingScope = request.ParkingIds != null && request.ParkingIds.Count > 0;
+            bool hasOwnerScope = request.OwnerIds != null && request.OwnerIds.Count > 0;
+            bool hasCustomScope = request.CustomPayerNames != null &&
+                                  request.CustomPayerNames.Any(x => !string.IsNullOrWhiteSpace(x));
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
@@ -270,10 +312,17 @@ namespace PropertyManagement.Server.Services
                 {
                     throw ApiException.NotFound("收费项目不存在或已停用");
                 }
+                // CHG-v1.1.0-18：空范围提示按缴费对象口径区分（自定义项目提示「填写名称」）
+                if (!hasPropertyScope && !hasParkingScope && !hasOwnerScope && !hasCustomScope)
+                {
+                    throw ApiException.ValidationFailed(chargeItem.ObjectType == ChargeObjectType.Custom
+                        ? "请至少填写一个缴费对象名称"
+                        : "请至少选择一个缴费对象");
+                }
                 if (chargeItem.Status == 1)
                 {
                     // BR-FIN-03：停用后不再生成新账单（历史账单不受影响，T4F-1-6 UC6）
-                    throw ApiException.BadRequest("收费项目已停用，无法生成新账单（BR-FIN-03）");
+                    throw ApiException.BadRequest("收费项目已停用，无法生成新账单");
                 }
                 BillingCycleDto cycle = _finance.GetCycle(connection, request.CycleId);
                 if (cycle == null)
@@ -281,13 +330,22 @@ namespace PropertyManagement.Server.Services
                     throw ApiException.NotFound("计费周期不存在");
                 }
 
+                // CHG-v1.1.0-16：缴费对象类型必须与收费项目一致（此前办卡费等按次/一次性项目可对房产出账）
+                ValidateScopeMatchesChargeItem(chargeItem, request);
+
                 List<BillObjectCandidate> candidates = BuildCandidates(connection, request);
                 if (candidates.Count == 0)
                 {
-                    throw ApiException.BadRequest("未选择缴费对象，且当前无房产/车位可生成");
+                    throw ApiException.BadRequest("所选缴费对象已不存在，请重新选择缴费对象后生成");
                 }
 
-                var log = new BillGenerateLogDto { Total = candidates.Count, Success = 0, Fail = 0 };
+                var log = new BillGenerateLogDto
+                {
+                    Total = candidates.Count,
+                    Success = 0,
+                    Fail = 0,
+                    ScopeSummary = BuildScopeSummary(candidates)
+                };
                 int logId = _finance.InsertBillGenerateLog(connection, transaction, log);
 
                 var failures = new List<BillFailureDto>();
@@ -298,47 +356,40 @@ namespace PropertyManagement.Server.Services
                 {
                     int? propertyId = candidate.Kind == BillObjectKind.Property ? (int?)candidate.Id : null;
                     int? parkingId = candidate.Kind == BillObjectKind.Parking ? (int?)candidate.Id : null;
-
-                    // BR-INF-02（M7 BUG-002 裁定补校验）：缴费对象必须存在有效「房产-业主」关系，否则记失败行不入库
-                    if (!_finance.HasValidOwnerRelation(connection, propertyId, parkingId))
+                    int? ownerId = candidate.Kind == BillObjectKind.Owner ? (int?)candidate.Id : null;
+                    // CHG-v1.1.0-18：自定义缴费对象（租户/广告商/外部单位）无基础信息档案，按手工填写的名称落账单
+                    string payerName = candidate.Kind == BillObjectKind.Custom ? candidate.No : null;
+                    // CHG-v1.1.0-21：失败行保留缴费对象信息（含自定义缴费对象名称），供「一键重推」按原对象重试
+                    var failedRow = new BillFailureDto
                     {
-                        failures.Add(new BillFailureDto
-                        {
-                            PropertyId = propertyId,
-                            ParkingId = parkingId,
-                            No = candidate.No,
-                            Reason = "缴费对象不存在有效「房产-业主」关系，请先绑定业主后再出账（BR-INF-02）"
-                        });
+                        PropertyId = propertyId,
+                        ParkingId = parkingId,
+                        OwnerId = ownerId,
+                        PayerName = payerName,
+                        No = candidate.No
+                    };
+
+                    // BR-INF-02（M7 BUG-002 裁定补校验）：缴费对象必须存在有效缴费人关系，否则记失败行不入库。
+                    // CHG-v1.1.0-11：失败文案按对象类型区分（房产-业主 / 车位-业主），不再笼统写「房产-业主」。
+                    // CHG-v1.1.0-18：自定义缴费对象无业主关系，跳过该校验（缴费人即用户手填名称）。
+                    if (candidate.Kind != BillObjectKind.Custom &&
+                        !_finance.HasValidOwnerRelation(connection, propertyId, parkingId, ownerId))
+                    {
+                        failedRow.Reason = DescribeNoOwnerReason(candidate.Kind);
+                        failures.Add(failedRow);
                         continue;
                     }
 
-                    BillDto duplicate = _finance.FindDuplicateBill(
-                        connection, transaction, request.ChargeItemId, propertyId, parkingId, request.CycleId);
-
-                    if (duplicate != null)
-                    {
-                        // BR-FIN-01：同对象同周期同项目已存在 → 入失败清单（不落账单，fail_detail 留痕，可重推）
-                        failures.Add(new BillFailureDto
-                        {
-                            PropertyId = propertyId,
-                            ParkingId = parkingId,
-                            No = candidate.No,
-                            Reason = "同对象同周期同项目账单已存在（BR-FIN-01）"
-                        });
-                        continue;
-                    }
+                    // CHG-v1.1.0-18（负责人裁定）：移除「同对象同周期同项目」重复出账拦截 ——
+                    // 同项目同周期同对象允许重复出账（补开/重开场景），不再入失败清单，
+                    // 对应唯一索引已在 migration_043 中移除（BR-FIN-01 判重口径随之废止）。
 
                     // T4F-1-6：按计价方式计算金额（按建筑面积 = 单价 × 面积；面积缺失入失败清单）
                     decimal amount = ComputeBillAmount(chargeItem, candidate);
                     if (amount <= 0)
                     {
-                        failures.Add(new BillFailureDto
-                        {
-                            PropertyId = propertyId,
-                            ParkingId = parkingId,
-                            No = candidate.No,
-                            Reason = "房产缺少建筑面积，无法按面积计费"
-                        });
+                        failedRow.Reason = DescribeMissingAreaReason(candidate.Kind);
+                        failures.Add(failedRow);
                         continue;
                     }
 
@@ -347,6 +398,8 @@ namespace PropertyManagement.Server.Services
                         ChargeItemId = request.ChargeItemId,
                         PropertyId = propertyId,
                         ParkingId = parkingId,
+                        OwnerId = ownerId,
+                        PayerName = payerName,
                         CycleId = request.CycleId,
                         Amount = amount,
                         Status = BillStatus.Draft,
@@ -400,7 +453,7 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        public BillGenerateLogDto RetryFailures(BillRetryRequest request)
+        public BillGenerateLogDto RetryFailures(BillRetryRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || request.BatchId <= 0)
             {
@@ -423,13 +476,49 @@ namespace PropertyManagement.Server.Services
                 throw ApiException.BadRequest("该批次无失败记录可重推");
             }
 
-            return GenerateBill(new BillGenerateRequest
+            BillGenerateLogDto retryLog = GenerateBill(new BillGenerateRequest
             {
                 ChargeItemId = detail.ChargeItemId,
                 CycleId = detail.CycleId,
                 PropertyIds = detail.Failures.Where(f => f.PropertyId.HasValue).Select(f => f.PropertyId.Value).ToList(),
-                ParkingIds = detail.Failures.Where(f => f.ParkingId.HasValue).Select(f => f.ParkingId.Value).ToList()
+                ParkingIds = detail.Failures.Where(f => f.ParkingId.HasValue).Select(f => f.ParkingId.Value).ToList(),
+                OwnerIds = detail.Failures.Where(f => f.OwnerId.HasValue).Select(f => f.OwnerId.Value).ToList(),
+                // CHG-v1.1.0-21：自定义缴费对象失败行按原名称重推（否则重推会因「未填写缴费对象名称」被拒）
+                CustomPayerNames = detail.Failures
+                    .Where(f => !string.IsNullOrWhiteSpace(f.PayerName))
+                    .Select(f => f.PayerName)
+                    .ToList()
             });
+
+            // CHG-v1.1.0-21：重推闭环 —— 源批次失败清单收敛为「本次仍未成功」的对象，
+            // 并记录重推时间与成功户数；全部成功时源批次状态由「发布失败」转为「已重推」（不再计入失败卡片）。
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                BillGenerateLogDto newLog = _finance.GetBillGenerateLog(connection, retryLog.Id);
+                BillFailureDetail remaining = ParseFailDetail(newLog == null ? null : newLog.FailDetail);
+                List<BillFailureDto> remainingFailures = remaining == null || remaining.Failures == null
+                    ? new List<BillFailureDto>()
+                    : remaining.Failures;
+
+                string remainingDetail = JsonConvert.SerializeObject(new BillFailureDetail
+                {
+                    ChargeItemId = detail.ChargeItemId,
+                    CycleId = detail.CycleId,
+                    RetriedCount = detail.Failures.Count - remainingFailures.Count,
+                    RetriedAt = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss"),
+                    Failures = remainingFailures
+                });
+                _finance.MarkBatchRetried(connection, transaction, request.BatchId,
+                    remainingFailures.Count, remainingDetail, detail.Failures.Count - remainingFailures.Count);
+                transaction.Commit();
+            }
+
+            _audit.Write("BILL_BATCH_RETRY", "bill_generate_log", request.BatchId.ToString(),
+                "失败对象重推：批次 " + request.BatchId + "，失败对象 " + detail.Failures.Count +
+                " 个，本次成功 " + retryLog.Success + " 户、仍失败 " + retryLog.Fail + " 户",
+                userName: operatorName, ip: ip, result: "成功");
+            return retryLog;
         }
         public BillGenerateLogDto GetGenerateLog(int id)
         {
@@ -477,12 +566,83 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        /// <summary>T4F-1-6：按计价方式派生适用对象（按车位→车位，其余→房产）。</summary>
-        private static ChargeObjectType ResolveObjectType(string methodCode)
+        /// <summary>
+        /// CHG-v1.1.0-17：确定收费项目的缴费对象（以 charge_object 字典为准）。
+        /// 规则：①「按车位」计价 → 强制车位；②「按建筑面积」计价 → 强制房产（无面积无法计价）；
+        /// ③字典编码 property/parking/owner → 系统固定三项（房产/车位/业主）；
+        /// ④其他字典编码 → 自定义缴费对象（租户/广告商/外部单位等，ChargeObjectType.Custom）；
+        /// ⑤未传字典编码时沿用旧口径（显式 ObjectType；仍缺省时按计价方式派生：按卡/一次性→业主，其余→房产）。
+        /// </summary>
+        private static void ResolveChargeObject(IDbConnection connection, string methodCode,
+            ChargeObjectType? requested, string objectCode,
+            out ChargeObjectType type, out string code, out string name)
         {
-            return string.Equals(methodCode, "parking", StringComparison.OrdinalIgnoreCase)
-                ? ChargeObjectType.Parking
-                : ChargeObjectType.Property;
+            name = null;
+            string dictCode = string.IsNullOrWhiteSpace(objectCode) ? null : objectCode.Trim();
+            if (dictCode != null)
+            {
+                string dictName = connection.ExecuteScalar<string>(
+                    "SELECT item_name FROM t_dict_item WHERE type_code = 'charge_object' AND item_code = @code AND del_flag = 0",
+                    new { code = dictCode });
+                if (string.IsNullOrWhiteSpace(dictName))
+                {
+                    throw ApiException.ValidationFailed("缴费对象「" + dictCode + "」不存在或已删除，请重新选择");
+                }
+
+                code = dictCode;
+                name = dictName.Trim();
+                if (string.Equals(dictCode, "property", StringComparison.OrdinalIgnoreCase)) { type = ChargeObjectType.Property; }
+                else if (string.Equals(dictCode, "parking", StringComparison.OrdinalIgnoreCase)) { type = ChargeObjectType.Parking; }
+                else if (string.Equals(dictCode, "owner", StringComparison.OrdinalIgnoreCase)) { type = ChargeObjectType.Owner; }
+                else { type = ChargeObjectType.Custom; }
+            }
+            else
+            {
+                // CHG-v1.1.0-25：未提供字典编码时按**计价方式**派生默认对象（与历史口径一致）：
+                // 按车位→车位、按建筑面积→房产、按卡/一次性→业主、其余→房产。
+                // 修复：第 17 轮改为「先取通用默认值再校验计价方式」后，「按车位」项目在未显式传对象时
+                // 会被默认成房产并直接抛「缴费对象必须为车位」，导致接口调用方（非客户端）无法创建按车位项目。
+                if (requested.HasValue)
+                {
+                    type = requested.Value;
+                }
+                else if (string.Equals(methodCode, "parking", StringComparison.OrdinalIgnoreCase))
+                {
+                    type = ChargeObjectType.Parking;
+                }
+                else if (string.Equals(methodCode, "area", StringComparison.OrdinalIgnoreCase))
+                {
+                    type = ChargeObjectType.Property;
+                }
+                else if (string.Equals(methodCode, "card", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(methodCode, "onetime", StringComparison.OrdinalIgnoreCase))
+                {
+                    type = ChargeObjectType.Owner;
+                }
+                else
+                {
+                    type = ChargeObjectType.Property;
+                }
+                if (type == ChargeObjectType.Custom)
+                {
+                    throw ApiException.ValidationFailed("自定义缴费对象必须指定具体的缴费对象项（charge_object 字典编码）");
+                }
+                code = type == ChargeObjectType.Parking ? "parking"
+                    : (type == ChargeObjectType.Owner ? "owner" : "property");
+                name = type == ChargeObjectType.Parking ? "车位"
+                    : (type == ChargeObjectType.Owner ? "业主" : "房产");
+            }
+
+            if (string.Equals(methodCode, "parking", StringComparison.OrdinalIgnoreCase) &&
+                type != ChargeObjectType.Parking)
+            {
+                throw ApiException.ValidationFailed("「按车位」计价的收费项目，缴费对象必须为车位");
+            }
+            if (string.Equals(methodCode, "area", StringComparison.OrdinalIgnoreCase) &&
+                type != ChargeObjectType.Property)
+            {
+                throw ApiException.ValidationFailed("「按建筑面积」计价的收费项目，缴费对象必须为房产");
+            }
         }
 
         /// <summary>T4F-1-6：内置计价方式默认单价单位（自定义由前端传入）。</summary>
@@ -509,37 +669,28 @@ namespace PropertyManagement.Server.Services
         private List<BillObjectCandidate> BuildCandidates(
             IDbConnection connection, BillGenerateRequest request)
         {
-            BillObjectKind chargeItemObjectType = BillObjectKind.Property;
-            ChargeItemDto chargeItem = _finance.GetChargeItem(connection, request.ChargeItemId);
-            if (chargeItem != null && chargeItem.ObjectType == PropertyManagement.Contract.Enums.ChargeObjectType.Parking)
-            {
-                chargeItemObjectType = BillObjectKind.Parking;
-            }
-
+            // CHG-v1.1.0-10：只按用户显式选择的对象 ID 过滤候选。
+            // 「未选择 ⇒ 全部对象」的隐式口径已下线（由 GenerateBill 前置校验拦截）。
             var candidates = new List<BillObjectCandidate>();
             bool hasProperty = request.PropertyIds != null && request.PropertyIds.Count > 0;
             bool hasParking = request.ParkingIds != null && request.ParkingIds.Count > 0;
+            bool hasOwner = request.OwnerIds != null && request.OwnerIds.Count > 0;
 
-            if (!hasProperty && !hasParking)
+            // CHG-v1.1.0-18：自定义缴费对象 —— 用户手工填写的名称即候选（一行一张账单，无档案关联）
+            if (request.CustomPayerNames != null)
             {
-                // "全部对象"按收费项目适用对象类型取候选（CHG-M4-09）：物业费/电梯维护费→房产，停车费→车位
-                if (chargeItemObjectType == BillObjectKind.Parking)
+                var seenNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                foreach (string name in request.CustomPayerNames)
                 {
-                    foreach (BillObjectCandidate ps in _finance.ListParkingCandidates(connection))
+                    string trimmed = name == null ? null : name.Trim();
+                    if (string.IsNullOrWhiteSpace(trimmed) || !seenNames.Add(trimmed)) { continue; }
+                    candidates.Add(new BillObjectCandidate
                     {
-                        ps.Kind = BillObjectKind.Parking;
-                        candidates.Add(ps);
-                    }
+                        Id = 0,
+                        No = trimmed,
+                        Kind = BillObjectKind.Custom
+                    });
                 }
-                else
-                {
-                    foreach (BillObjectCandidate p in _finance.ListPropertyCandidates(connection))
-                    {
-                        p.Kind = BillObjectKind.Property;
-                        candidates.Add(p);
-                    }
-                }
-                return candidates;
             }
 
             if (hasProperty)
@@ -564,7 +715,158 @@ namespace PropertyManagement.Server.Services
                     }
                 }
             }
+            if (hasOwner)
+            {
+                foreach (BillObjectCandidate o in _finance.ListOwnerCandidates(connection))
+                {
+                    if (request.OwnerIds.Contains(o.Id))
+                    {
+                        o.Kind = BillObjectKind.Owner;
+                        candidates.Add(o);
+                    }
+                }
+            }
             return candidates;
+        }
+
+        /// <summary>CHG-v1.1.0-10／11：本次生成范围摘要（事后对账 / 失败重推核对）。</summary>
+        /// <summary>
+        /// CHG-v1.1.0-16：校验本次出账的缴费对象类型与收费项目一致。
+        /// 口径：收费项目「缴费对象」＝本次允许出账的对象类型；不一致直接拒绝并提示（不再"先出草稿、发布才失败"）。
+        /// </summary>
+        private static void ValidateScopeMatchesChargeItem(ChargeItemDto chargeItem, BillGenerateRequest request)
+        {
+            bool hasProperty = request.PropertyIds != null && request.PropertyIds.Count > 0;
+            bool hasParking = request.ParkingIds != null && request.ParkingIds.Count > 0;
+            bool hasOwner = request.OwnerIds != null && request.OwnerIds.Count > 0;
+            bool hasCustom = request.CustomPayerNames != null &&
+                             request.CustomPayerNames.Any(x => !string.IsNullOrWhiteSpace(x));
+
+            // CHG-v1.1.0-18：自定义缴费对象（租户/广告商/外部单位）无基础信息档案 ——
+            // 由用户在生成账单表单中手工填写缴费对象名称后出账（不得与房产/车位/业主口径混用）。
+            if (chargeItem.ObjectType == ChargeObjectType.Custom)
+            {
+                if (hasProperty || hasParking || hasOwner)
+                {
+                    throw ApiException.ValidationFailed(
+                        "收费项目「" + chargeItem.Name + "」的缴费对象为自定义（" + ChargeObjectName(chargeItem) +
+                        "），请改为手动填写缴费对象名称后生成");
+                }
+                if (!hasCustom)
+                {
+                    throw ApiException.ValidationFailed(
+                        "收费项目「" + chargeItem.Name + "」的缴费对象为自定义（" + ChargeObjectName(chargeItem) +
+                        "），请至少填写一个缴费对象名称");
+                }
+                return;
+            }
+            if (hasCustom)
+            {
+                throw ApiException.ValidationFailed(
+                    "收费项目「" + chargeItem.Name + "」的缴费对象为「" + ChargeObjectName(chargeItem) +
+                    "」，不支持手工填写缴费对象名称，请重新选择缴费对象");
+            }
+
+            string expected = chargeItem.ObjectType == ChargeObjectType.Parking ? "车位"
+                : (chargeItem.ObjectType == ChargeObjectType.Owner ? "业主" : "房产");
+            bool matched = chargeItem.ObjectType == ChargeObjectType.Parking ? hasParking && !hasProperty && !hasOwner
+                : (chargeItem.ObjectType == ChargeObjectType.Owner ? hasOwner && !hasProperty && !hasParking
+                    : hasProperty && !hasParking && !hasOwner);
+            if (!matched)
+            {
+                throw ApiException.ValidationFailed(
+                    "收费项目「" + chargeItem.Name + "」的缴费对象为「" + expected + "」，本次选择的缴费对象类型不一致，请重新选择");
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-17：缴费对象显示名（字典名优先，缺失时按对象类型回落）。</summary>
+        internal static string ChargeObjectName(ChargeItemDto chargeItem)
+        {
+            if (chargeItem == null) { return string.Empty; }
+            if (!string.IsNullOrWhiteSpace(chargeItem.ObjectName)) { return chargeItem.ObjectName.Trim(); }
+            switch (chargeItem.ObjectType)
+            {
+                case ChargeObjectType.Parking: return "车位";
+                case ChargeObjectType.Owner: return "业主";
+                case ChargeObjectType.Custom: return "自定义";
+                default: return "房产";
+            }
+        }
+
+        private static string BuildScopeSummary(List<BillObjectCandidate> candidates)
+        {
+            int propertyCount = candidates.Count(x => x.Kind == BillObjectKind.Property);
+            int parkingCount = candidates.Count(x => x.Kind == BillObjectKind.Parking);
+            int ownerCount = candidates.Count(x => x.Kind == BillObjectKind.Owner);
+            int customCount = candidates.Count(x => x.Kind == BillObjectKind.Custom);
+            var parts = new List<string>();
+            if (propertyCount > 0) { parts.Add("房产 " + propertyCount); }
+            if (parkingCount > 0) { parts.Add("车位 " + parkingCount); }
+            if (ownerCount > 0) { parts.Add("业主 " + ownerCount); }
+            if (customCount > 0) { parts.Add("自定义缴费对象 " + customCount); }
+            return "指定缴费对象 " + candidates.Count + " 个（" + string.Join(" / ", parts) + "）";
+        }
+
+        /// <summary>CHG-v1.1.0-11：缴费人缺失的失败原因按对象类型区分（房产-业主 / 车位-业主 / 业主体）。</summary>
+        private static string DescribeNoOwnerReason(BillObjectKind kind)
+        {
+            switch (kind)
+            {
+                case BillObjectKind.Parking:
+                    return "车位不存在有效「车位-业主」关系，请先在车位维护中绑定业主后再出账（BR-INF-02）";
+                case BillObjectKind.Owner:
+                    return "业主档案不存在或已下线，请先在业主档案中确认后再出账（BR-INF-02）";
+                default:
+                    return "房产不存在有效「房产-业主」关系，请先在业主-房产关系中绑定业主后再出账（BR-INF-02）";
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-11：按面积计费缺少面积时的失败原因按对象类型区分。</summary>
+        private static string DescribeMissingAreaReason(BillObjectKind kind)
+        {
+            switch (kind)
+            {
+                case BillObjectKind.Parking:
+                    return "车位缴费对象不适用「按建筑面积」计价，请改用按车位/一次性等计价方式";
+                case BillObjectKind.Owner:
+                    return "业主缴费对象不适用「按建筑面积」计价，请改选房产或改用按户/一次性等计价方式";
+                default:
+                    return "房产缺少建筑面积，无法按建筑面积计费";
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.0-10：生成账单「缴费对象」候选查询（只读）。
+        /// 与收费项目、计费周期无耦合：仅按类型 + 关键字返回候选与隐藏数量。
+        /// </summary>
+        public BillObjectQueryResult QueryBillObjects(BillObjectQueryRequest request)
+        {
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                return _finance.QueryBillObjects(connection,
+                    request == null ? null : request.Kind,
+                    request == null ? null : request.Keyword,
+                    BillObjectQueryLimit);
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-10：草稿批次既有缴费对象（批次编辑回填）。</summary>
+        public BillObjectSelectionDto GetBatchBillObjects(int batchId)
+        {
+            if (batchId <= 0)
+            {
+                throw ApiException.BadRequest("账单批次不能为空");
+            }
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                BillObjectSelectionDto selection = _finance.GetBatchBillObjects(connection, batchId);
+                return selection ?? new BillObjectSelectionDto
+                {
+                    PropertyIds = new List<int>(),
+                    ParkingIds = new List<int>(),
+                    OwnerIds = new List<int>()
+                };
+            }
         }
 
         private static DateTime ComputeDueAt(BillingCycleDto cycle)
@@ -724,6 +1026,9 @@ namespace PropertyManagement.Server.Services
         {
             public int ChargeItemId { get; set; }
             public int CycleId { get; set; }
+            /// <summary>CHG-v1.1.0-21：最近一次重推成功户数与重推时间（重推闭环留痕）。</summary>
+            public int RetriedCount { get; set; }
+            public string RetriedAt { get; set; }
             public List<BillFailureDto> Failures { get; set; }
         }
     }

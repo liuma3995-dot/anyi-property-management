@@ -46,7 +46,6 @@
                 <Button Style="{StaticResource ButtonPrimary}" Content="新增房产" Command="{Binding NewCommand}" />
                 <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}" Margin="10,0,0,0" />
                 <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出 Excel" Command="{Binding ExportCommand}" Margin="10,0,0,0" />
-                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="打印" Command="{Binding PrintCommand}" Margin="8,0,0,0" />
             </StackPanel>
         </Grid>
 
@@ -69,7 +68,7 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="房产编号" Width="100" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="房号" Width="*" Binding="{Binding Path}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="建筑面积" Width="74" Binding="{Binding AreaText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="建筑面积" Width="86" Binding="{Binding AreaText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="业主" Width="*" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="联系电话" Width="116" Binding="{Binding OwnerPhone}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="状态" Width="72">
@@ -129,6 +128,7 @@
                 </StackPanel>
                 <TextBlock Text="· 点击行或【查看】→ 打开房产详情（含业主档案、缴费记录）；【导出 Excel】按当前筛选结果导出" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
                 <TextBlock Text="· 【新增房产】→ 弹窗录入楼栋/单元/房号/面积 → 保存校验房号唯一性" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                <TextBlock Text="· 【删除】→ 软删前校验跨模块引用：存在业主绑定关系 / 未删除账单 / 绑定车位时禁止删除并提示先处理（避免清理留痕后账单、车位失去主体）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>
         </Border>
 
@@ -221,9 +221,11 @@
                         <Button Style="{StaticResource LinkButton}" Content="取消" Command="{Binding CancelNewUnitCommand}" VerticalAlignment="Center" Margin="6,0,0,0" />
                     </StackPanel>
                     <TextBlock Text="房号" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <TextBox Text="{Binding FormRoomNo, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
-                    <TextBlock Text="建筑面积" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <TextBox Text="{Binding FormArea, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <TextBox x:Name="RoomNoBox" Text="{Binding FormRoomNo, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,12" />
+                    <TextBlock Text="建筑面积（㎡，最多 2 位小数）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <TextBox x:Name="AreaBox" Text="{Binding FormAreaText, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0"
+                             PreviewTextInput="AreaBox_PreviewTextInput" DataObject.Pasting="AreaBox_Pasting" />
+                    <TextBlock x:Name="AreaError" Text="{Binding FormAreaError}" Foreground="{StaticResource DangerBrush}" FontSize="11" Margin="0,4,0,12" />
                     <TextBlock Text="用途 / 状态" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,18">
                         <ComboBox SelectedValue="{Binding FormUsage}" SelectedValuePath="Tag" Width="150">

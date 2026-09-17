@@ -311,9 +311,45 @@
   <EmbeddedResource Include="Infrastructure\Data\migration_031.sql">
     <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_031.sql</LogicalName>
   </EmbeddedResource>
-  <EmbeddedResource Include="Infrastructure\Data\migration_032.sql">
-    <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_032.sql</LogicalName>
-  </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_032.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_032.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_033.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_033.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_034.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_034.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_035.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_035.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_036.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_036.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_037.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_037.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_038.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_038.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_039.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_039.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_040.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_040.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_041.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_041.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_042.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_042.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_043.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_043.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_044.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_044.sql</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

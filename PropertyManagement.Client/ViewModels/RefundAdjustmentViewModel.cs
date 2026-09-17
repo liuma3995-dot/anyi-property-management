@@ -89,7 +89,15 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>关联房产选项（PG-FIN-04）。</summary>
     public class RefundPropertyOption
     {
-        public int PropertyId { get; set; }
+        /// <summary>CHG-v1.1.0-13：关联对象类型 —— 0 房产／1 车位／2 业主直缴（车位与业主直缴账单也需可登记调整）。</summary>
+        public int ObjectKind { get; set; }
+
+        public int ObjectId { get; set; }
+
+        /// <summary>
+        /// CHG-v1.1.0-18：自定义缴费对象名称（ObjectKind=3 时按名称匹配账单，其余类型为空）。
+        /// </summary>
+        public string PayerName { get; set; }
 
         public string DisplayText { get; set; }
     }
@@ -160,6 +168,80 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
+        // ---------- CHG-v1.1.0-13：关联账单支持多选 + 全选（批量登记同类型调整） ----------
+
+        /// <summary>关联账单选择面板是否展开（下拉浮层）。</summary>
+        public bool IsBillPickerOpen { get { return _isBillPickerOpen; } set { SetProperty(ref _isBillPickerOpen, value); } }
+        private bool _isBillPickerOpen;
+
+        /// <summary>下拉框显示文本：未选=提示语；已选 1 张=账单摘要；多张=已选 N 张账单。</summary>
+        public string BillPickerText
+        {
+            get
+            {
+                int count = CheckedBills.Count;
+                if (count == 0) { return "请选择关联账单（可多选/全选）"; }
+                if (count == 1) { return CheckedBills[0].NoText + " · " + CheckedBills[0].Dto.ChargeItemName; }
+                return "已选 " + count + " 张账单";
+            }
+        }
+
+        /// <summary>已勾选账单（依据实缴金额筛选后的候选）。</summary>
+        private System.Collections.Generic.List<PaymentBillRow> CheckedBills
+        {
+            get { return FilteredBills.Where(x => x.IsChecked).ToList(); }
+        }
+
+        public int CheckedBillCount { get { return CheckedBills.Count; } }
+
+        /// <summary>全选：只勾选可登记调整的账单（实缴金额 > 0）。</summary>
+        public bool IsSelectAllBills
+        {
+            get { return FilteredBills.Count > 0 && FilteredBills.All(x => x.IsChecked); }
+            set
+            {
+                foreach (PaymentBillRow row in FilteredBills) { row.IsChecked = value && row.Dto.PaidAmount > 0; }
+                NotifyBillPickerChanged();
+            }
+        }
+
+        /// <summary>勾选汇总提示（每张金额口径，合计 = 每张金额 × 张数）。</summary>
+        public string CheckedBillsText
+        {
+            get
+            {
+                int count = CheckedBillCount;
+                if (count == 0) { return "未勾选账单"; }
+                return count == 1
+                    ? "已选 1 张"
+                    : ("已选 " + count + " 张 · 每张 ¥" + Amount.ToString("N2") + " · 合计 ¥" + (Amount * count).ToString("N2"));
+            }
+        }
+
+        /// <summary>是否处于批量登记模式（勾选 ≥2 张）。</summary>
+        public bool IsBatchRefund { get { return CheckedBillCount >= 2; } }
+
+        private void OnBillRowChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(PaymentBillRow.IsChecked)) { NotifyBillPickerChanged(); }
+        }
+
+        private void NotifyBillPickerChanged()
+        {
+            OnPropertyChanged(nameof(BillPickerText));
+            OnPropertyChanged(nameof(CheckedBillCount));
+            OnPropertyChanged(nameof(IsSelectAllBills));
+            OnPropertyChanged(nameof(CheckedBillsText));
+            OnPropertyChanged(nameof(IsBatchRefund));
+            OnPropertyChanged(nameof(AmountLabelFull));
+        }
+
+        /// <summary>金额标签（批量时标注为「每张金额」）。</summary>
+        public string AmountLabelFull
+        {
+            get { return IsBatchRefund ? (AmountLabel + "（每张）") : AmountLabel; }
+        }
+
         public int RefundType
         {
             get { return _refundType; }
@@ -193,6 +275,7 @@ namespace PropertyManagement.Client.ViewModels
                 if (SetProperty(ref _amount, value))
                 {
                     RefreshLargeHint();
+                    OnPropertyChanged(nameof(CheckedBillsText));
                 }
             }
         }
@@ -228,13 +311,36 @@ namespace PropertyManagement.Client.ViewModels
                 Properties.Clear();
                 var page = await Api.QueryBillsAsync(new BillQueryRequest { PageSize = 200 });
                 var paid = page.Items.Where(x => x.PaidAmount > 0).ToList();
-                foreach (var g in paid.Where(x => x.PropertyId.HasValue).GroupBy(x => x.PropertyId.Value).OrderBy(g => g.First().PropertyNo))
+                // CHG-v1.1.0-13：关联对象覆盖 房产 / 车位 / 业主直缴，保证各类已缴账单都能登记退款/减免/调整
+                // CHG-v1.1.0-18：新增「自定义缴费对象」——按手工填写的缴费人名称聚合
+                //（此前会命中 PropertyId.Value 抛「可为空的对象必须具有一个值」导致整页加载失败）
+                var objectGroups = paid.GroupBy(x => x.OwnerId.HasValue && !x.PropertyId.HasValue && !x.ParkingId.HasValue
+                        ? "owner:" + x.OwnerId.Value
+                        : (x.ParkingId.HasValue ? "parking:" + x.ParkingId.Value
+                            : (!string.IsNullOrWhiteSpace(x.PayerName) ? "name:" + x.PayerName.Trim()
+                                : "property:" + x.PropertyId.Value)))
+                    .OrderBy(g => g.First().OwnerName).ThenBy(g => g.Key);
+                foreach (var g in objectGroups)
                 {
                     var first = g.First();
+                    string payerName = string.IsNullOrWhiteSpace(first.PayerName) ? null : first.PayerName.Trim();
+                    var kind = payerName != null
+                        ? 3
+                        : (first.OwnerId.HasValue && !first.PropertyId.HasValue && !first.ParkingId.HasValue
+                            ? 2
+                            : (first.ParkingId.HasValue ? 1 : 0));
+                    string scope = kind == 2 ? "业主直缴"
+                        : kind == 3 ? "自定义缴费对象"
+                        : kind == 1 ? ("车位 " + (string.IsNullOrEmpty(first.SpaceNo) ? "—" : first.SpaceNo))
+                            : ((string.IsNullOrEmpty(first.BuildingNo) ? "" : first.BuildingNo + " ") +
+                               (string.IsNullOrEmpty(first.RoomNo) ? (first.PropertyNo ?? "—") : first.RoomNo)).Trim();
                     Properties.Add(new RefundPropertyOption
                     {
-                        PropertyId = g.Key,
-                        DisplayText = (first.PropertyNo ?? ("房产-" + g.Key)) + " · " + (first.OwnerName ?? "")
+                        ObjectKind = kind,
+                        ObjectId = kind == 3 ? 0 : (first.OwnerId ?? first.ParkingId ?? first.PropertyId ?? 0),
+                        PayerName = payerName,
+                        // CHG-v1.1.0-17：关联对象下拉条目改用「·」分隔（原「→」观感生硬，与收款登记口径统一）
+                        DisplayText = (kind == 3 ? payerName : (first.OwnerName ?? "（未绑定业主）")) + " · " + scope
                     });
                 }
                 foreach (var dto in paid.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
@@ -255,17 +361,35 @@ namespace PropertyManagement.Client.ViewModels
 
         private void FilterBills()
         {
+            foreach (PaymentBillRow row in FilteredBills) { row.PropertyChanged -= OnBillRowChanged; }
             FilteredBills.Clear();
-            var filtered = Bills.Where(x => _selectedProperty == null || x.Dto.PropertyId == _selectedProperty.PropertyId)
+            var filtered = Bills.Where(x => _selectedProperty == null || IsSameObject(x.Dto, _selectedProperty))
                 .OrderBy(x => x.Dto.DueAt).ThenBy(x => x.Dto.Id).ToList();
             foreach (var item in filtered)
             {
+                item.IsChecked = false;
+                item.PropertyChanged += OnBillRowChanged;
                 FilteredBills.Add(item);
             }
             SelectedBill = FilteredBills.FirstOrDefault();
             if (SelectedBill == null)
             {
                 Amount = 0m;
+            }
+            NotifyBillPickerChanged();
+        }
+
+        /// <summary>账单是否属于所选关联对象（房产/车位/业主直缴/自定义缴费对象）。</summary>
+        private static bool IsSameObject(BillListItemDto bill, RefundPropertyOption option)
+        {
+            if (bill == null || option == null) { return false; }
+            switch (option.ObjectKind)
+            {
+                case 3: return string.Equals((bill.PayerName ?? string.Empty).Trim(), option.PayerName ?? string.Empty,
+                            StringComparison.OrdinalIgnoreCase);
+                case 2: return bill.OwnerId == option.ObjectId;
+                case 1: return bill.ParkingId == option.ObjectId;
+                default: return bill.PropertyId == option.ObjectId;
             }
         }
 
@@ -344,9 +468,10 @@ namespace PropertyManagement.Client.ViewModels
 
         private async Task SubmitAsync()
         {
-            if (_selectedBill == null)
+            var checkedBills = CheckedBills;
+            if (checkedBills.Count == 0)
             {
-                ErrorText = "请选择已缴账单";
+                ErrorText = "请勾选关联账单（可多选/全选）";
                 return;
             }
             if (Amount <= 0)
@@ -359,30 +484,39 @@ namespace PropertyManagement.Client.ViewModels
                 ErrorText = "原因必填（UC-FIN-004）";
                 return;
             }
-            if (!HasAttachment)
-            {
-                ErrorText = "附件必传（≤5MB，PG-FIN-04）";
-                return;
-            }
+            // CHG-v1.1.0-14：附件改为可选项（原先必传），不再阻断提交
             if (Amount > 1000m && !Confirmed)
             {
                 ErrorText = "大额退款/调整需勾选负责人确认（BR-FIN-10）";
                 return;
             }
 
+            bool batchMode = checkedBills.Count >= 2;
             await RunAsync(async () =>
             {
-                var dto = await Api.CreateRefundAsync(new RefundAdjustmentRequest
+                var request = new RefundAdjustmentRequest
                 {
-                    BillId = _selectedBill.Dto.Id,
+                    BillId = checkedBills[0].Dto.Id,
+                    BillIds = checkedBills.Select(x => x.Dto.Id).ToList(),
                     RefundType = (RefundType)RefundType,
                     Amount = Amount,
                     Reason = Reason.Trim(),
                     ConfirmedByManager = Confirmed,
                     AttachmentName = AttachmentName,
                     AttachmentPath = AttachmentPath
-                });
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已提交：" + dto.RefNo + "（冲正留痕）";
+                };
+                if (batchMode)
+                {
+                    // CHG-v1.1.0-13：批量 —— 每张账单各登记一条（金额＝每张金额），各保留账单号与申请编号
+                    RefundBatchResultDto batch = await Api.CreateRefundBatchAsync(request);
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已批量提交：" + batch.Count + " 张账单，每张 ¥" +
+                        Amount.ToString("N2") + "，合计 ¥" + batch.TotalAmount.ToString("N2") + "（各账单号保持引用）";
+                }
+                else
+                {
+                    RefundAdjustmentDto dto = await Api.CreateRefundAsync(request);
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已提交：" + dto.RefNo + "（冲正留痕）";
+                }
                 await LoadAsync();
             }, null);
         }

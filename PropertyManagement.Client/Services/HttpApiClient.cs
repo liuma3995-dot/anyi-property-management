@@ -138,9 +138,29 @@ namespace PropertyManagement.Client.Services
             return GetAsync<List<BillingCycleDto>>("billing/cycles");
         }
 
+        public Task DeleteCycleAsync(int id)
+        {
+            return DeleteAsync<object>("billing/cycles/" + id);
+        }
+
         public Task<BillGenerateLogDto> GenerateBillsAsync(BillGenerateRequest request)
         {
             return PostAsync<BillGenerateRequest, BillGenerateLogDto>("billing/bills/generate", request);
+        }
+
+        public Task<BillObjectQueryResult> QueryBillObjectsAsync(BillObjectQueryRequest request)
+        {
+            // CHG-v1.1.0-10：缴费对象候选查询（kind=property|parking & keyword）
+            return GetAsync<BillObjectQueryResult>("billing/bill-objects" + Query(new
+            {
+                kind = request == null ? null : request.Kind,
+                keyword = request == null ? null : request.Keyword
+            }));
+        }
+
+        public Task<BillObjectSelectionDto> GetBatchBillObjectsAsync(int batchId)
+        {
+            return GetAsync<BillObjectSelectionDto>("billing/bills/generate-logs/" + batchId + "/objects");
         }
 
         public Task<BillGenerateLogDto> PublishBillsAsync(BillPublishRequest request)
@@ -199,21 +219,18 @@ namespace PropertyManagement.Client.Services
             return PostAsync<PaymentCreateRequest, PaymentDto>("payments", request);
         }
 
+        /// <summary>CHG-v1.1.0-12：统一收款（多账单一次收款）。</summary>
+        public Task<PaymentBatchResultDto> CreateBatchPaymentAsync(PaymentBatchCreateRequest request)
+        {
+            return PostAsync<PaymentBatchCreateRequest, PaymentBatchResultDto>("payments/batch", request);
+        }
+
         public Task<PaymentDto> GetPaymentAsync(int id)
         {
             return GetAsync<PaymentDto>("payments/" + id);
         }
 
-        public Task<ReceiptDto> GetReceiptByPaymentAsync(int paymentId)
-        {
-            return GetAsync<ReceiptDto>("payments/receipts/" + paymentId);
-        }
-
-        public Task<ReceiptDto> PrintReceiptAsync(int receiptId)
-        {
-            return PostAsync<ReceiptPrintRequest, ReceiptDto>(
-                "payments/receipts/" + receiptId + "/print", new ReceiptPrintRequest { ReceiptId = receiptId });
-        }
+        // CHG-v1.1.0-15：收据号前后端下线（原收据查询/打印接口已移除）
 
         public Task<PreDepositDto> GetPreDepositAsync(int ownerId)
         {
@@ -225,6 +242,12 @@ namespace PropertyManagement.Client.Services
             return PostAsync<RefundAdjustmentRequest, RefundAdjustmentDto>("payments/refunds", request);
         }
 
+        /// <summary>CHG-v1.1.0-13：批量退款/减免/调整。</summary>
+        public Task<RefundBatchResultDto> CreateRefundBatchAsync(RefundAdjustmentRequest request)
+        {
+            return PostAsync<RefundAdjustmentRequest, RefundBatchResultDto>("payments/refunds/batch", request);
+        }
+
         public Task<PageResult<RefundAdjustmentDto>> QueryRefundsAsync(PageRequest request)
         {
             return GetAsync<PageResult<RefundAdjustmentDto>>("payments/refunds" + Query(request));
@@ -233,6 +256,16 @@ namespace PropertyManagement.Client.Services
         public Task<List<ExpenseCategoryDto>> GetExpenseCategoriesAsync()
         {
             return GetAsync<List<ExpenseCategoryDto>>("expenses/categories");
+        }
+
+        public Task<ExpenseCategoryDto> CreateExpenseCategoryAsync(ExpenseCategoryRequest request)
+        {
+            return PostAsync<ExpenseCategoryRequest, ExpenseCategoryDto>("expenses/categories", request);
+        }
+
+        public Task DeleteExpenseCategoryAsync(int id)
+        {
+            return DeleteAsync<object>("expenses/categories/" + id);
         }
 
         public Task<ExpenseDto> CreateExpenseAsync(ExpenseCreateRequest request)
@@ -250,6 +283,12 @@ namespace PropertyManagement.Client.Services
             return DeleteAsync<object>("expenses/" + id);
         }
 
+        public Task<RecordBatchDeleteResultDto> BatchDeleteExpensesAsync(RecordBatchDeleteRequest request)
+        {
+            return PostAsync<RecordBatchDeleteRequest, RecordBatchDeleteResultDto>(
+                "expenses/batch-delete", request ?? new RecordBatchDeleteRequest());
+        }
+
         public Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request)
         {
             return GetAsync<PageResult<LedgerEntryDto>>("reports/ledger" + Query(request));
@@ -263,6 +302,12 @@ namespace PropertyManagement.Client.Services
         public Task<ReportLogDto> ExportReportAsync(ReportExportRequest request)
         {
             return PostAsync<ReportExportRequest, ReportLogDto>("reports/export", request);
+        }
+
+        /// <summary>CHG-v1.1.0-14：导出收据打印模板。</summary>
+        public Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request)
+        {
+            return PostAsync<ReceiptTemplateRequest, ReportLogDto>("reports/receipt-template", request);
         }
 
         // ==================== M5 基础信息与导入 ====================
@@ -411,6 +456,12 @@ namespace PropertyManagement.Client.Services
         public Task<List<ImportLogDto>> GetImportLogsAsync()
         {
             return GetAsync<List<ImportLogDto>>("baseinfo/imports");
+        }
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteImportLogsAsync(RecordBatchDeleteRequest request)
+        {
+            return PostAsync<RecordBatchDeleteRequest, RecordBatchDeleteResultDto>(
+                "baseinfo/imports/batch-delete", request ?? new RecordBatchDeleteRequest());
         }
 
         public Task<byte[]> DownloadImportErrorsAsync(int id)
@@ -1443,7 +1494,8 @@ namespace PropertyManagement.Client.Services
             }
 
             SessionManager.Instance.NotifyExpired(
-                string.IsNullOrWhiteSpace(message) ? "登录状态已失效，请重新登录" : ("登录状态已失效：" + message));
+                // 说明：结尾统一由 MainWindow 追加「，请重新登录。」，此处不重复拼接（避免「…请重新登录，请重新登录。」）
+                string.IsNullOrWhiteSpace(message) ? "登录状态已失效" : ("登录状态已失效：" + message));
         }
     }
 }

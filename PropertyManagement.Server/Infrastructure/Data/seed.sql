@@ -99,4 +99,19 @@ INSERT OR IGNORE INTO t_param (param_key, param_value, remark) VALUES
  ('emergency.no-match.policy',       'non-blocking-initiator-first', 'P-07 应急无人匹配不阻塞，发起人默认第一处置人'),
  ('dispute.close.types',             'mediated,settled,transferred', 'P-08 纠纷结案类型：调解成功/自行和解/转办'),
  ('backup.retain.count',             '30',     'P-09 备份保留份数'),
- ('backup.auto.daily',               'true',   'P-09 每日自动备份开关');
+ ('backup.auto.daily',               'true',   'P-09 每日自动备份开关'),
+ ('finance.budget.monthly',          '0',      '月度支出预算（元，0=未设置；支出登记页卡片内可设置）');
+
+-- ------------------------------------------------------------
+-- 支出分类默认值（支出登记必选分类；存在性检查幂等）
+-- ------------------------------------------------------------
+INSERT INTO t_expense_category (name, category_type, status)
+SELECT '工资', 'salary', 0 WHERE NOT EXISTS (SELECT 1 FROM t_expense_category WHERE name = '工资');
+INSERT INTO t_expense_category (name, category_type, status)
+SELECT '维修维护', 'maintenance', 0 WHERE NOT EXISTS (SELECT 1 FROM t_expense_category WHERE name = '维修维护');
+INSERT INTO t_expense_category (name, category_type, status)
+SELECT '水电', 'utilities', 0 WHERE NOT EXISTS (SELECT 1 FROM t_expense_category WHERE name = '水电');
+INSERT INTO t_expense_category (name, category_type, status)
+SELECT '外包', 'outsourcing', 0 WHERE NOT EXISTS (SELECT 1 FROM t_expense_category WHERE name = '外包');
+INSERT INTO t_expense_category (name, category_type, status)
+SELECT '其他', 'other', 0 WHERE NOT EXISTS (SELECT 1 FROM t_expense_category WHERE name = '其他');

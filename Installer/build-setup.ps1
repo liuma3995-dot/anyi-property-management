@@ -182,7 +182,8 @@ function New-WizardImages {
             # 小字在米白底上需提高对比度才不显“糊”：版本串用主色，标语用中性墨绿灰
             $b3 = New-Object System.Drawing.SolidBrush ([System.Drawing.ColorTranslator]::FromHtml('#5C6B66'))
             $g.DrawString('安怡物业管理系统', $f1, $b1, (14 * $scale), (172 * $scale))
-            $g.DrawString('ANYI  V1.0.0', $f2, $b1, (15 * $scale), (197 * $scale))
+            # 版本串随 -Version 参数走，避免安装包向导图仍显示旧版本号
+            $g.DrawString(('ANYI  V' + $Version), $f2, $b1, (15 * $scale), (197 * $scale))
             $g.DrawString('社区运营 · 财务收费 · 应急协同', $f3, $b3, (15 * $scale), (219 * $scale))
             $f1.Dispose(); $f2.Dispose(); $f3.Dispose(); $b1.Dispose(); $b2.Dispose(); $b3.Dispose()
         }

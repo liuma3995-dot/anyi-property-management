@@ -18,6 +18,8 @@ namespace PropertyManagement.Client.Views
         private System.Windows.Point _dragStart;
         private bool _returningToLogin;
         private bool _mustChangeHandled;
+        /// <summary>窗口是否已关闭：关闭后不得再作为 Owner 挂载子对话框（否则抛「无法将 Owner 属性设置为已关闭的 Window」）。</summary>
+        private bool _isClosed;
 
         public MainWindow()
         {
@@ -55,6 +57,12 @@ namespace PropertyManagement.Client.Views
             _source?.AddHook(WindowProc);
         }
 
+        protected override void OnClosed(EventArgs e)
+        {
+            _isClosed = true;
+            base.OnClosed(e);
+        }
+
         // 无边框窗口最大化时按显示器工作区约束尺寸（修复 HandyControl 仅在任务栏自动隐藏时才约束的问题）
         private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
@@ -76,9 +84,18 @@ namespace PropertyManagement.Client.Views
         /// </summary>
         private void OnSessionExpired(string message)
         {
-            ReturnToLogin(string.IsNullOrWhiteSpace(message)
-                ? "登录状态已失效，请重新登录。"
-                : (message + "，请重新登录。"));
+            // 统一提示口径：基础文案已含原因（如「登录状态已失效：token 无效或过期」），
+            // 仅在尚未包含「请重新登录」时追加一次，避免出现「…请重新登录，请重新登录。」。
+            string notice = string.IsNullOrWhiteSpace(message) ? "登录状态已失效" : message.Trim();
+            if (notice.IndexOf("请重新登录", StringComparison.Ordinal) < 0)
+            {
+                notice += "，请重新登录。";
+            }
+            else if (!notice.EndsWith("。", StringComparison.Ordinal))
+            {
+                notice += "。";
+            }
+            ReturnToLogin(notice);
         }
 
         private void ReturnToLogin(string notice)
@@ -98,10 +115,8 @@ namespace PropertyManagement.Client.Views
 
         private void OnChangePasswordRequested()
         {
-            var dialog = new ChangePasswordWindow(_vm.Api, _vm.MustChangePassword)
-            {
-                Owner = this
-            };
+            var dialog = new ChangePasswordWindow(_vm.Api, _vm.MustChangePassword);
+            if (!_isClosed) { dialog.Owner = this; }
             dialog.ShowDialog();
             // UC-COM-002：强制改密流程未完成即关闭对话框 → 强制退出到登录页（不可跳过）
             if (_vm.MustChangePassword && !dialog.Changed)
@@ -123,10 +138,8 @@ namespace PropertyManagement.Client.Views
         /// <summary>R17：顶栏下拉 → 个人信息设置（小表单就地填写，不新增页面）。</summary>
         private void OnProfileRequested()
         {
-            var dialog = new ProfileWindow(_vm.Api)
-            {
-                Owner = this
-            };
+            var dialog = new ProfileWindow(_vm.Api);
+            if (!_isClosed) { dialog.Owner = this; }
             dialog.ProfileSaved += profile => _vm.ApplyProfile(profile);
             dialog.ShowDialog();
         }

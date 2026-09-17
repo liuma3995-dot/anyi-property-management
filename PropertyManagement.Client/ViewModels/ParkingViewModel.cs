@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
+using System.Windows.Data;
 using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -46,6 +48,23 @@ namespace PropertyManagement.Client.ViewModels
         public string RentPeriodText { get { return RentText + " / " + RentTo; } }
     }
 
+    /// <summary>
+    /// 车位表单「绑定业主」候选项（CHG-v1.1.0-11）。
+    /// 说明：可编辑下拉框的显示文本必须与回写文本**完全一致**，否则 WPF 会在
+    /// 「选中项 → 回写 Text → 重新同步显示文本」之间来回触发，实测导致栈溢出崩溃。
+    /// 因此这里用 DisplayText 作为唯一显示口径，SelectedOwner 回写同一字符串。
+    /// </summary>
+    public class OwnerPickItem
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Phone { get; set; }
+        public string DisplayText
+        {
+            get { return string.IsNullOrEmpty(Phone) ? (Name ?? string.Empty) : (Name ?? string.Empty) + "（" + Phone + "）"; }
+        }
+    }
+
     /// <summary>车位维护页（PG-INF-04，UC-INF-005，BR-INF-03）。</summary>
     public class ParkingViewModel : BaseInfoPageViewModel
     {
@@ -58,16 +77,18 @@ namespace PropertyManagement.Client.ViewModels
         private ParkingSpaceType _formType = ParkingSpaceType.PropertyRight;
         private ParkingSpaceStatus _formStatus = ParkingSpaceStatus.Vacant;
         private RentMode _formRentMode = RentMode.Monthly;
-        private int? _formPropertyId;
         private decimal? _formRent;
         private DateTime? _formRentTo;
-        private string _propertySearchText = string.Empty;
+        // CHG-v1.1.0-11：绑定业主（车位维护表单内直接维护，替代已下线的租金/租期至）
+        private int? _formOwnerId;
+        private string _ownerSearchText = string.Empty;
+        private OwnerPickItem _selectedOwner;
         private string _cardUnderNote = "地下 B1/B2 两层";
         private int _total;
         private int _ownedCount;
         private int _rentedCount;
         private int _vacantCount;
-        private decimal _globalRentIncome;
+        private int _globalRentedOwnerCount;
         private int _globalVacantDefense;
         private ParkingRow _viewRow;
         private ParkingRow _deleteRow;
@@ -105,8 +126,7 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         public ObservableCollection<ParkingRow> Items { get; } = new ObservableCollection<ParkingRow>();
-        public ObservableCollection<PropertyDto> Properties { get; } = new ObservableCollection<PropertyDto>();
-        public ObservableCollection<PropertyDto> FilteredProperties { get; } = new ObservableCollection<PropertyDto>();
+        public ObservableCollection<OwnerPickItem> Owners { get; } = new ObservableCollection<OwnerPickItem>();
 
         public string SpaceNoKeyword
         {
@@ -120,7 +140,10 @@ namespace PropertyManagement.Client.ViewModels
         public int RentedCount { get { return _rentedCount; } private set { SetProperty(ref _rentedCount, value); } }
         public int VacantCount { get { return _vacantCount; } private set { SetProperty(ref _vacantCount, value); } }
         public string SoldRatioText { get { return _total == 0 ? "占比 0%" : ("占比 " + Math.Round((double)_ownedCount / _total * 100, 1) + "%"); } }
-        public string RentIncomeText { get { return "月租金收入 ¥" + Math.Round(_globalRentIncome / 10000m, 2).ToString("0.00") + " 万"; } }
+        /// <summary>
+        /// CHG-v1.1.0-12：租金已下线（定价统一归收费项目），「已出租」卡片副文案由「月租金收入」改为「含绑定业主 N 户」。
+        /// </summary>
+        public string RentedOwnerHintText { get { return "含绑定业主 " + _globalRentedOwnerCount + " 户"; } }
         public string VacantHintText { get { return "含人防车位 " + _globalVacantDefense + " 个"; } }
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
         public bool IsEdit { get { return _editingId > 0; } }
@@ -148,10 +171,8 @@ namespace PropertyManagement.Client.ViewModels
         public ParkingSpaceType FormType { get { return _formType; } set { SetProperty(ref _formType, value); } }
         public ParkingSpaceStatus FormStatus { get { return _formStatus; } set { SetProperty(ref _formStatus, value); } }
         public RentMode FormRentMode { get { return _formRentMode; } set { SetProperty(ref _formRentMode, value); } }
-        public int? FormPropertyId { get { return _formPropertyId; } set { SetProperty(ref _formPropertyId, value); } }
         public decimal? FormRent { get { return _formRent; } set { SetProperty(ref _formRent, value); } }
         public DateTime? FormRentTo { get { return _formRentTo; } set { SetProperty(ref _formRentTo, value); } }
-        public string PropertySearchText { get { return _propertySearchText; } set { if (SetProperty(ref _propertySearchText, value)) { ApplyPropertyFilter(); } } }
         public string CardUnderNote { get { return _cardUnderNote; } set { SetProperty(ref _cardUnderNote, value); } }
 
         public IAsyncRelayCommand QueryCommand { get; }
@@ -190,10 +211,11 @@ namespace PropertyManagement.Client.ViewModels
                 OwnedCount = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Owned);
                 RentedCount = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Rented);
                 VacantCount = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Vacant);
-                _globalRentIncome = stats.Items.Where(x => x.Status == ParkingSpaceStatus.Rented).Sum(x => x.MonthlyRent ?? 0);
+                // CHG-v1.1.0-12：租金口径下线 → 已出租卡片改为统计「已出租且已绑定业主」的车位数
+                _globalRentedOwnerCount = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Rented && x.OwnerId.HasValue);
                 _globalVacantDefense = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Vacant && x.SpaceType == ParkingSpaceType.CivilDefense);
                 OnPropertyChanged(nameof(SoldRatioText));
-                OnPropertyChanged(nameof(RentIncomeText));
+                OnPropertyChanged(nameof(RentedOwnerHintText));
                 OnPropertyChanged(nameof(VacantHintText));
                 var note = await Api.GetParamAsync("parking_card_under_note");
                 if (!string.IsNullOrWhiteSpace(note)) CardUnderNote = note;
@@ -204,12 +226,8 @@ namespace PropertyManagement.Client.ViewModels
         {
             await RunAsync(async () =>
             {
-                var props = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
-                Properties.Clear();
-                FilteredProperties.Clear();
-                foreach (var p in props.Items) Properties.Add(p);
-                ApplyPropertyFilter();
-                PropertySearchText = string.Empty;
+                await LoadOwnersAsync();
+                OwnerSearchText = string.Empty;
                 _editingId = 0;
                 OnPropertyChanged(nameof(FormTitle));
                 OnPropertyChanged(nameof(IsEdit));
@@ -218,7 +236,10 @@ namespace PropertyManagement.Client.ViewModels
                 FormType = ParkingSpaceType.PropertyRight;
                 FormStatus = ParkingSpaceStatus.Vacant;
                 FormRentMode = RentMode.Monthly;
-                FormPropertyId = null;
+                // CHG-v1.1.0-12：绑定房产下线（保存时由服务端按「绑定业主」自动引用）
+                FormOwnerId = null;
+                _selectedOwner = null;
+                OnPropertyChanged(nameof(SelectedOwner));
                 FormRent = null;
                 FormRentTo = null;
                 IsFormVisible = true;
@@ -230,12 +251,8 @@ namespace PropertyManagement.Client.ViewModels
             if (row == null) return;
             await RunAsync(async () =>
             {
-                var props = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
-                Properties.Clear();
-                FilteredProperties.Clear();
-                foreach (var p in props.Items) Properties.Add(p);
-                ApplyPropertyFilter();
-                PropertySearchText = string.Empty;
+                await LoadOwnersAsync();
+                OwnerSearchText = string.Empty;
                 _editingId = row.Id;
                 OnPropertyChanged(nameof(FormTitle));
                 OnPropertyChanged(nameof(IsEdit));
@@ -244,26 +261,72 @@ namespace PropertyManagement.Client.ViewModels
                 FormType = row.Dto.SpaceType;
                 FormStatus = row.Dto.Status;
                 FormRentMode = row.Dto.RentMode;
-                FormPropertyId = row.Dto.PropertyId;
+                FormOwnerId = row.Dto.OwnerId;
+                _selectedOwner = Owners.FirstOrDefault(o => o.Id == row.Dto.OwnerId);
+                OnPropertyChanged(nameof(SelectedOwner));
+                OwnerSearchText = _selectedOwner == null ? string.Empty : _selectedOwner.DisplayText;
                 FormRent = row.Dto.MonthlyRent;
                 FormRentTo = row.Dto.RentTo;
                 IsFormVisible = true;
             }, "正在加载车位信息…");
         }
 
-        private void ApplyPropertyFilter()
+        /// <summary>CHG-v1.1.0-11：加载绑定业主候选（一次性拉取，前端按姓名/手机过滤）。</summary>
+        private async Task LoadOwnersAsync()
         {
-            string q = string.IsNullOrWhiteSpace(_propertySearchText) ? string.Empty : _propertySearchText.Trim();
-            FilteredProperties.Clear();
-            foreach (var p in Properties)
+            var owners = await Api.QueryOwnersAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 200 });
+            Owners.Clear();
+            foreach (var o in owners.Items)
             {
-                if (q.Length == 0
-                    || (p.UnitPath ?? string.Empty).Contains(q)
-                    || (p.RoomNo ?? string.Empty).Contains(q)
-                    || (p.OwnerName ?? string.Empty).Contains(q))
-                    FilteredProperties.Add(p);
+                Owners.Add(new OwnerPickItem { Id = o.Id, Name = o.Name, Phone = o.Phone });
+            }
+            OwnersView.Refresh();
+        }
+
+        /// <summary>CHG-v1.1.0-11：绑定业主候选视图（对齐「绑定房产」单框内检索：输入姓名/手机筛选）。</summary>
+        public ICollectionView OwnersView
+        {
+            get { return _ownersView ?? (_ownersView = BuildOwnersView()); }
+        }
+        private ICollectionView _ownersView;
+
+        private ICollectionView BuildOwnersView()
+        {
+            var view = CollectionViewSource.GetDefaultView(Owners);
+            view.Filter = o =>
+            {
+                var owner = o as OwnerPickItem;
+                if (owner == null) return true;
+                if (_formOwnerId.HasValue && owner.Id == _formOwnerId.Value) return true;   // 已选中项恒保留
+                string q = (_ownerSearchText ?? string.Empty).Trim();
+                if (q.Length == 0) return true;
+                return (owner.Name ?? string.Empty).Contains(q)
+                    || (owner.Phone ?? string.Empty).Contains(q);
+            };
+            return view;
+        }
+
+        /// <summary>绑定业主输入框文本（输入检索关键字）。</summary>
+        public string OwnerSearchText
+        {
+            get { return _ownerSearchText; }
+            set { if (SetProperty(ref _ownerSearchText, value)) OwnersView.Refresh(); }
+        }
+
+        /// <summary>绑定业主选中项（保存口径为 FormOwnerId；输入过程中的瞬时 null 忽略）。</summary>
+        public OwnerPickItem SelectedOwner
+        {
+            get { return _selectedOwner; }
+            set
+            {
+                if (value == null) return;
+                if (SetProperty(ref _selectedOwner, value)) FormOwnerId = value.Id;
+                string display = value.DisplayText;   // 与 DisplayMemberPath 完全一致，避免 Text 回写震荡
+                if (!string.Equals(_ownerSearchText, display, StringComparison.Ordinal)) OwnerSearchText = display;
             }
         }
+
+        public int? FormOwnerId { get { return _formOwnerId; } set { SetProperty(ref _formOwnerId, value); } }
 
         private async Task SaveUnderNoteAsync()
         {
@@ -279,14 +342,20 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (string.IsNullOrWhiteSpace(FormSpaceNo)) { ErrorText = "车位编号不能为空"; return; }
             if (FormType == ParkingSpaceType.CivilDefense && FormStatus == ParkingSpaceStatus.Owned) { ErrorText = "人防车位不可标为出售（BR-INF-03）"; return; }
-            if (FormType == ParkingSpaceType.PropertyRight && FormStatus == ParkingSpaceStatus.Owned && !FormPropertyId.HasValue) { ErrorText = "产权车位标记为已售需绑定房产"; return; }
+            // CHG-v1.1.0-12：产权车位售出改为校验「绑定业主」（房产权属由服务端按业主自动引用）
+            if (FormType == ParkingSpaceType.PropertyRight && FormStatus == ParkingSpaceStatus.Owned && !FormOwnerId.HasValue)
+            { ErrorText = "产权车位标记为已售需绑定业主（房产权属将按其名下房产自动引用）"; return; }
             var request = new ParkingSpaceRequest
             {
                 SpaceNo = FormSpaceNo.Trim(),
                 Area = FormArea,
                 SpaceType = FormType,
                 Status = FormStatus,
-                PropertyId = FormPropertyId,
+                // CHG-v1.1.0-12：PropertyId 不再由表单提交，服务端按绑定业主自动引用房产
+                PropertyId = null,
+                // CHG-v1.1.0-11：表单内直接维护绑定业主；租金/租期至已从界面下线，
+                // 但编辑时仍原样带回既有值，避免覆盖历史数据（存量值保留在库，不再作为计费依据）。
+                OwnerId = FormOwnerId,
                 MonthlyRent = FormRent,
                 RentMode = FormRentMode,
                 RentTo = FormRentTo

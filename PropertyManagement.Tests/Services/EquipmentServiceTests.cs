@@ -502,5 +502,92 @@ namespace PropertyManagement.Tests.Services
             Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
             Assert.Contains("提醒已处理", ex.Message);
         }
+
+        // ===================== v1.1.0 R1 设备删除跨模块引用校验（闭环） =====================
+
+        [Fact]
+        public void DeleteDevice_存在保养记录_抛Conflict且设备仍在册()
+        {
+            int typeId = TestData.DeviceType("电梯R1", 30);
+            int deviceId = TestData.Device(typeId, "R1-客梯");
+            _service.AddMaintenance(new MaintenanceRecordRequest
+            {
+                DeviceId = deviceId, MDate = DateTime.Today, RecordType = "保养",
+                Content = "R1 用例保养", Result = "合格", Cost = 100m
+            });
+
+            var ex = Assert.Throws<ApiException>(() => _service.DeleteDevice(deviceId));
+
+            Assert.Equal(ErrorCode.Conflict, ex.Code);
+            Assert.Contains("不能删除", ex.Message);
+            Assert.Contains("报废", ex.Message);
+            Assert.Equal(0, ScalarInt("SELECT del_flag FROM t_device WHERE id = @id", new { id = deviceId }));
+        }
+
+        [Fact]
+        public void DeleteDevice_存在状态变更与到期提醒_级联软删且设备删除成功()
+        {
+            int typeId = TestData.DeviceType("水泵R1", 30);
+            int deviceId = TestData.Device(typeId, "R1-水泵");
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_device_status_log WHERE device_id = @id AND del_flag = 0", new { id = deviceId }));
+
+            _service.DeleteDevice(deviceId);
+
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_device WHERE id = @id", new { id = deviceId }));
+            // 状态变更日志（含登记行）随设备一并软删留痕
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_device_status_log WHERE device_id = @id AND del_flag = 0", new { id = deviceId }));
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'EQP_DEVICE_REMINDER_CASCADE'"));
+        }
+
+        [Fact]
+        public void DeleteDevice_仅状态变更无业务记录_可删除且日志随设备留痕并被清理()
+        {
+            int typeId = TestData.DeviceType("阀门R1", 30);
+            int deviceId = TestData.Device(typeId, "R1-阀门");
+            _service.ChangeDeviceStatus(deviceId, new DeviceStatusRequest
+            {
+                Status = DeviceStatus.Disabled, Reason = "R1 用例停用"
+            });
+            Assert.Equal(2, _service.ListDeviceStatusLogs(deviceId).Count);
+
+            _service.DeleteDevice(deviceId);
+
+            // 设备删除成功；状态日志（含登记行）软删留痕，页面不再展示
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_device WHERE id = @id", new { id = deviceId }));
+            Assert.Empty(_service.ListDeviceStatusLogs(deviceId));
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_device_status_log WHERE device_id = @id AND del_flag = 0", new { id = deviceId }));
+            Assert.Equal(2, ScalarInt("SELECT COUNT(1) FROM t_device_status_log WHERE device_id = @id AND del_flag = 1", new { id = deviceId }));
+
+            // 一键清理后不残留孤儿状态日志（R1 闭环）
+            new CommonService().PurgeSoftDeleted("admin");
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_device_status_log WHERE device_id NOT IN (SELECT id FROM t_device)"));
+        }
+
+        [Fact]
+        public void DeleteDevice_仅有到期提醒_级联软删提醒且设备删除成功()
+        {
+            int typeId = TestData.DeviceType("风机R1", 30);
+            int deviceId = TestData.Device(typeId, "R1-风机", DateTime.Today.AddDays(-25));
+            Assert.Single(_service.QueryReminders(30, "maintenance", 0)); // 物化到期提醒
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_reminder WHERE target_id = @id AND del_flag = 0", new { id = deviceId }));
+
+            _service.DeleteDevice(deviceId);
+
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_device WHERE id = @id", new { id = deviceId }));
+            // 派生提醒随设备一并软删留痕（避免一键清理后残留孤儿提醒）
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_reminder WHERE target_id = @id AND del_flag = 0", new { id = deviceId }));
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'EQP_DEVICE_REMINDER_CASCADE'"));
+        }
+
+        [Fact]
+        public void DeleteDevice_无任何引用_软删成功()
+        {
+            int typeId = TestData.DeviceType("监控R1", 30);
+            int deviceId = TestData.Device(typeId, "R1-摄像头", DateTime.Today.AddDays(300)); // 到期日在窗口外 → 不物化提醒
+
+            _service.DeleteDevice(deviceId);
+
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_device WHERE id = @id", new { id = deviceId }));
+        }
     }
 }

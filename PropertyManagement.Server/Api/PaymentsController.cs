@@ -25,6 +25,14 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<PaymentDto>.Ok(_payments.CreatePayment(request, GetUsername(), GetIp()));
         }
 
+        /// <summary>统一收款（CHG-v1.1.0-12）：对同一缴费对象下的多张账单一次性收款，共享收款流水号。</summary>
+        [HttpPost]
+        [Route("batch")]
+        public ApiResponse<PaymentBatchResultDto> CreateBatchPayment(PaymentBatchCreateRequest request)
+        {
+            return ApiResponse<PaymentBatchResultDto>.Ok(_payments.CreateBatchPayment(request, GetUsername(), GetIp()));
+        }
+
         [HttpGet]
         [Route("")]
         public ApiResponse<PageResult<PaymentDto>> QueryPayments([FromUri] PageRequest request)
@@ -53,6 +61,14 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<RefundAdjustmentDto>.Ok(_payments.CreateRefund(request, GetUsername(), GetIp()));
         }
 
+        /// <summary>批量退款/减免/调整（CHG-v1.1.0-13）：多张账单各登记一条记录（每张金额口径）。</summary>
+        [HttpPost]
+        [Route("refunds/batch")]
+        public ApiResponse<RefundBatchResultDto> CreateRefundBatch(RefundAdjustmentRequest request)
+        {
+            return ApiResponse<RefundBatchResultDto>.Ok(_payments.CreateRefundBatch(request, GetUsername(), GetIp()));
+        }
+
         [HttpGet]
         [Route("refunds")]
         public ApiResponse<PageResult<RefundAdjustmentDto>> QueryRefunds([FromUri] PageRequest request)
@@ -67,20 +83,8 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<PaymentDto>.Ok(_payments.GetPayment(id));
         }
 
-        [HttpGet]
-        [Route("receipts/{id:int}")]
-        public ApiResponse<ReceiptDto> GetReceipt(int id)
-        {
-            return ApiResponse<ReceiptDto>.Ok(_payments.GetReceipt(id));
-        }
-
-        [HttpPost]
-        [Route("receipts/{id:int}/print")]
-        public ApiResponse<ReceiptDto> PrintReceipt(int id, ReceiptPrintRequest request)
-        {
-            return ApiResponse<ReceiptDto>.Ok(
-                _payments.PrintReceipt(new ReceiptPrintRequest { ReceiptId = id }, GetUsername(), GetIp()));
-        }
+        // CHG-v1.1.0-15：收据号前后端下线 —— 原「收据查询 / 收据打印·补打」端点已移除，
+        // 收款凭据统一由「导出打印收据预览模板」（/reports/receipt-template）承载。
 
         /// <summary>操作人（BR-ORG-01 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
         private string GetUsername()

@@ -35,5 +35,15 @@ namespace PropertyManagement.Client.Views
             MessageBox.Show("导出功能随报表模块统一提供（M4-D4-6，Excel/PDF）。", "提示",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
+
+        /// <summary>行勾选写回（v1.1.0-⑤）：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，点击时显式同步。</summary>
+        private void ExpenseCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox box && box.DataContext is ExpenseRow row)
+            {
+                row.IsSelected = box.IsChecked == true;
+            }
+            if (DataContext is ExpenseViewModel vm) { vm.RefreshSelectAllState(); }
+        }
     }
 }

@@ -11,7 +11,16 @@ namespace PropertyManagement.Contract.Finance
         public ChargePayMode PayMode { get; set; }
         public decimal UnitPrice { get; set; }
         public BillingCycleType CycleType { get; set; }
-        public ChargeObjectType ObjectType { get; set; } // CHG-M4-09：适用对象（房产/车位），服务端按计价方式派生
+        /// <summary>
+        /// 缴费对象（房产/车位/业主）。CHG-v1.1.0-16：由表单显式选择（null 时服务端按计价方式派生默认值）。
+        /// 生成账单时按该字段校验缴费对象类型，避免「项目与对象不匹配却出账成功」。
+        /// </summary>
+        public ChargeObjectType? ObjectType { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-17：缴费对象字典项编码（charge_object）。提供时以字典为准：
+        /// property/parking/owner → 系统固定三项；其余 → 自定义缴费对象（ChargeObjectType.Custom）。
+        /// </summary>
+        public string ObjectCode { get; set; }
         public int? Status { get; set; } // 停用不影响已出账单（UC-FIN-001）
 
         // T4F-1-5（CHG-M4-11）：类别/计价方式/单价单位/自定义周期
@@ -36,13 +45,35 @@ namespace PropertyManagement.Contract.Finance
         public DateTime EndDate { get; set; }
     }
 
-    /// <summary>账单生成请求（UC-FIN-002：按收费项目 + 周期 + 对象范围）。</summary>
+    /// <summary>
+    /// 账单生成请求（UC-FIN-002：按收费项目 + 周期 + 对象范围）。
+    /// CHG-v1.1.0-10：缴费对象由用户显式选择，**空集合＝校验失败**，不再表示「全部对象」。
+    /// CHG-v1.1.0-11：缴费对象增加「业主」维度（OwnerIds），用于办卡费/清理费/维修费等面向业主本人的收费项目。
+    /// </summary>
     public class BillGenerateRequest
     {
         public int ChargeItemId { get; set; }
         public int CycleId { get; set; }
         public List<int> PropertyIds { get; set; }
         public List<int> ParkingIds { get; set; }
+        public List<int> OwnerIds { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-18：自定义缴费对象（租户/广告商/外部单位等无档案对象）手工填写的缴费人名称列表。
+        /// 仅当收费项目的缴费对象为自定义时使用：一行名称生成一张账单，property/parking/owner 三类 ID 全为空。
+        /// </summary>
+        public List<string> CustomPayerNames { get; set; }
+    }
+
+    /// <summary>
+    /// 缴费对象候选查询（CHG-v1.1.0-10：生成账单弹窗选择器，只读）。
+    /// </summary>
+    public class BillObjectQueryRequest
+    {
+        /// <summary>候选类型："property"（房产，默认）｜"parking"（车位）｜"owner"（业主）。</summary>
+        public string Kind { get; set; }
+
+        /// <summary>关键字（楼栋／单元／房号／车位编号／业主姓名／手机号；可空）。</summary>
+        public string Keyword { get; set; }
     }
 
     /// <summary>账单发布请求（草稿→发布，失败清单重推）。</summary>
@@ -61,6 +92,17 @@ namespace PropertyManagement.Contract.Finance
     {
         public BillStatus? Status { get; set; }
         public int? PropertyId { get; set; }
+        /// <summary>CHG-v1.1.0-11：按业主直缴账单过滤（收款侧按缴费对象取账单）。</summary>
+        public int? OwnerId { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-13：按缴费人（业主）过滤 —— 覆盖其名下房产、车位与业主直缴的全部账单，
+        /// 收款登记「一个业主一行」即用该口径取应缴明细。
+        /// </summary>
+        public int? PayerOwnerId { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-18：按自定义缴费对象名称过滤（收款登记「一个自定义缴费对象一行」的应缴明细口径）。
+        /// </summary>
+        public string PayerName { get; set; }
         public int? ChargeItemId { get; set; }
         public DateTime? DueFrom { get; set; }
         public DateTime? DueTo { get; set; }
@@ -79,6 +121,57 @@ namespace PropertyManagement.Contract.Finance
         public string Remark { get; set; }
     }
 
+    /// <summary>
+    /// 统一收款请求（CHG-v1.1.0-12）：一次对同一缴费对象下的多个账单收款。
+    /// 每条明细仍按账单逐条落库（账单号/收据号不变），共享同一收款流水号 BatchNo。
+    /// </summary>
+    public class PaymentBatchCreateRequest
+    {
+        public List<PaymentBatchItemRequest> Items { get; set; }
+        public PayMethod PayMethod { get; set; }
+        public bool PrintReceipt { get; set; }
+        public string Remark { get; set; }
+    }
+
+    /// <summary>统一收款明细行（账单 + 本次收款金额）。</summary>
+    public class PaymentBatchItemRequest
+    {
+        public int BillId { get; set; }
+        public decimal Amount { get; set; }
+    }
+
+    /// <summary>
+    /// 收据打印模板导出请求（CHG-v1.1.0-14）。
+    /// 说明：收据号已在界面下线，导出模板以「收款流水号 + 逐项明细」为口径，
+    /// 统一收款时把同批每张账单的项目/期间/账单号逐行写清。
+    /// </summary>
+    public class ReceiptTemplateRequest
+    {
+        public string PayeeName { get; set; }
+        public string HandlerName { get; set; }
+        public string PayMethod { get; set; }
+        public DateTime PaidAt { get; set; }
+        public string Remark { get; set; }
+        /// <summary>统一收款流水号（单张收款可空）。</summary>
+        public string BatchNo { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-19：隐藏「缴费对象」列 —— 自定义缴费对象场景下缴款人与缴费对象为同一名称，
+        /// 同名列会重复展示产生歧义（服务端仍会按「全部明细与缴款人同名」二次确认后隐藏）。
+        /// </summary>
+        public bool HideObjectColumn { get; set; }
+        public List<ReceiptTemplateItemRequest> Items { get; set; }
+    }
+
+    /// <summary>收据模板明细行（一张账单一行）。</summary>
+    public class ReceiptTemplateItemRequest
+    {
+        public string BillNo { get; set; }
+        public string ObjectText { get; set; }
+        public string ChargeItemName { get; set; }
+        public string CyclePeriod { get; set; }
+        public decimal Amount { get; set; }
+    }
+
     /// <summary>收据打印请求（UC-FIN-011：补打保留原号 BR-FIN-08）。</summary>
     public class ReceiptPrintRequest
     {
@@ -89,6 +182,12 @@ namespace PropertyManagement.Contract.Finance
     public class RefundAdjustmentRequest
     {
         public int BillId { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-13：关联账单多选（退款/减免/调整支持一次登记多张账单）。
+        /// 口径：对每张账单各登记一条记录，金额取本请求的 <see cref="Amount"/>（即「每张金额」），
+        /// 各记录保留各自账单号与申请编号，便于逐张追溯。
+        /// </summary>
+        public List<int> BillIds { get; set; }
         public RefundType RefundType { get; set; }
         public decimal Amount { get; set; }
         public string Reason { get; set; }

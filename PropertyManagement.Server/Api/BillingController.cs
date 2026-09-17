@@ -102,7 +102,7 @@ namespace PropertyManagement.Server.Api
         {
             request = request ?? new BillRetryRequest { BatchId = id };
             request.BatchId = id;
-            return ApiResponse<BillGenerateLogDto>.Ok(_billing.RetryFailures(request));
+            return ApiResponse<BillGenerateLogDto>.Ok(_billing.RetryFailures(request, GetUsername(), GetIp()));
         }
 
         [HttpGet]
@@ -150,6 +150,25 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<List<BillListItemDto>> ListPublished(int id)
         {
             return ApiResponse<List<BillListItemDto>>.Ok(_billing.ListPublished(id));
+        }
+
+        /// <summary>
+        /// CHG-v1.1.0-10：生成账单「缴费对象」候选查询（kind=property|parking，keyword 可空）。
+        /// 只读接口：房产口径隐藏未绑定有效业主的房产并回传隐藏数量；车位口径全部返回。
+        /// </summary>
+        [HttpGet]
+        [Route("bill-objects")]
+        public ApiResponse<BillObjectQueryResult> QueryBillObjects([FromUri] BillObjectQueryRequest request)
+        {
+            return ApiResponse<BillObjectQueryResult>.Ok(_billing.QueryBillObjects(request));
+        }
+
+        /// <summary>CHG-v1.1.0-10：草稿批次既有缴费对象（批次编辑回填）。</summary>
+        [HttpGet]
+        [Route("bills/generate-logs/{id:int}/objects")]
+        public ApiResponse<BillObjectSelectionDto> GetBatchObjects(int id)
+        {
+            return ApiResponse<BillObjectSelectionDto>.Ok(_billing.GetBatchBillObjects(id));
         }
 
         // ---------- 账单列表/统计/欠费 ----------

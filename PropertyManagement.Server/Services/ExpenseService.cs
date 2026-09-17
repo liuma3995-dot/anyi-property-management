@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
@@ -12,7 +13,7 @@ namespace PropertyManagement.Server.Services
 {
     /// <summary>
     /// 支出服务（D4-4，UC-FIN-005/006，BR-FIN-04/05/10）：
-    /// 支出分类维护（被引用禁删可停用）；支出登记/修改/软删除，关联对象可空（M4 简单版）。
+    /// 支出分类维护（被引用禁删可停用）；支出登记/修改/软删除；关联对象字段保留在契约中（登记表单已不再采集，表格列已下线）。
     /// </summary>
     public class ExpenseService
     {
@@ -231,6 +232,40 @@ namespace PropertyManagement.Server.Services
                     "删除支出：" + existing.Amount.ToString("0.00") + " 元（软删除 BR-FIN-10）",
                     userName: operatorName, ip: ip, result: "成功");
             }
+        }
+
+        /// <summary>
+        /// 支出记录批量删除（v1.1.0-⑤）：软删留痕（BR-FIN-10，del_flag=1），记录不再出现在列表与流水账，
+        /// 历史记录保留；物理清理由「系统设置 / 备份与恢复 → 一键清理残余数据」统一执行。
+        /// 已删除记录自动跳过（不重复计数），未选中任何记录时拒绝。
+        /// </summary>
+        public RecordBatchDeleteResultDto BatchDeleteExpenses(RecordBatchDeleteRequest request,
+            string operatorName = null, string ip = null)
+        {
+            var ids = (request == null || request.Ids == null ? new List<int>() : request.Ids)
+                .Distinct().Where(x => x > 0).ToList();
+            if (ids.Count == 0)
+            {
+                throw ApiException.ValidationFailed("请选择要删除的支出记录");
+            }
+
+            int affected;
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                affected = _finance.SoftDeleteExpenses(connection, transaction, ids);
+                transaction.Commit();
+            }
+
+            if (affected == 0)
+            {
+                throw ApiException.NotFound("所选支出记录不存在或已删除");
+            }
+
+            _audit.Write("EXPENSE_BATCH_DELETE", "expense", string.Join(",", ids),
+                "支出记录批量删除（软删，" + affected + " 条，BR-FIN-10；可在「备份与恢复」页一键清理留痕）",
+                userName: operatorName, ip: ip, result: "成功");
+            return new RecordBatchDeleteResultDto { Deleted = affected };
         }
 
         public PageResult<ExpenseDto> QueryExpenses(PageRequest query)

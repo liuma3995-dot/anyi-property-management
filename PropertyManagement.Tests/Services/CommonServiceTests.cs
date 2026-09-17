@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
+using PropertyManagement.Contract.Finance;
 using PropertyManagement.Server.Services;
 using PropertyManagement.Tests.Infrastructure;
 using Xunit;
@@ -151,6 +152,131 @@ namespace PropertyManagement.Tests.Services
             Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_dict_item WHERE del_flag = 1"));
             Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_dict_item WHERE id = @id AND del_flag = 0", new { id = keepItem.Id }));
             Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'SYSTEM_PURGE_SOFT_DELETED'"));
+        }
+
+        // ---------- v1.1.0-⑤：全库软删痕迹「清零」验证（覆盖多表 + 孤儿子记录） ----------
+
+        [Fact]
+        public void PurgeSoftDeleted_全库各表软删留痕_清理后残留为0()
+        {
+            // 制造多表软删留痕：字典项 / 备份记录 / 审计日志 / 导入批次（v1.1.0-⑤ 新纳入）
+            var dict = new DictService();
+            var type = dict.CreateType(new DictTypeRequest { TypeCode = "purge_all", TypeName = "全库清理探针" });
+            var item = dict.CreateItem(type.TypeCode, new DictItemRequest { ItemName = "待清理项" });
+            dict.SetItemStatus(item.Id, DictItemStatus.Disabled);
+            dict.BatchDeleteItems(new DictItemBatchDeleteRequest { Ids = new List<int> { item.Id } });
+
+            var backup = _service.RunBackup("全库清理探针备份", "admin", null, "manual",
+                Path.Combine(TestDb.RunDirectory, "purge-all.db"));
+            _service.BatchDeleteBackupRecords(new RecordBatchDeleteRequest { Ids = new List<int> { backup.Id } }, "admin");
+
+            new AuditService().Write("PURGE_PROBE", "device", "1", "待清理审计留痕");
+            int auditId = ScalarInt("SELECT MAX(id) FROM t_audit_log");
+            _service.BatchDeleteAuditLogs(new RecordBatchDeleteRequest { Ids = new List<int> { auditId } }, "admin");
+
+            // 导入批次（含错误行明细：子表无 del_flag，须随父行一并清理）
+            Execute("INSERT INTO t_import_log (module, file_name, total, success, fail, status, created_by) " +
+                    "VALUES (0, '全库清理.xlsx', 2, 1, 1, 2, 'admin')");
+            int importId = ScalarInt("SELECT MAX(id) FROM t_import_log");
+            Execute("INSERT INTO t_import_error (import_id, row_no, field, content, reason, suggestion) " +
+                    "VALUES (@importId, 3, '房号', '404', '房号不存在', '先导入房产')", new { importId });
+            new BaseInfoService().BatchDeleteImportLogs(
+                new RecordBatchDeleteRequest { Ids = new List<int> { importId } }, "admin");
+
+            // 执行前：确认留痕已存在
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_import_log WHERE del_flag = 1"));
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_import_error WHERE import_id = @importId", new { importId }));
+
+            PurgeSoftDeletedResultDto result = _service.PurgeSoftDeleted("admin", "127.0.0.1");
+
+            Assert.True(result.TotalPurged > 0);
+            // 逐表核对：全库任何表都不再残留 del_flag=1 的软删留痕
+            Assert.Equal(0, CountAllSoftDeletedRows());
+            // 孤儿子记录（无 del_flag 列）已随父行清理，不留残余
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_import_error WHERE import_id = @importId", new { importId }));
+            Assert.Equal(0, CountOrphanImportErrors());
+            Assert.Equal(0, CountOrphanExpenseObjectRels());
+            // 结果明细里能直接看到导入批次留痕被清理（负责人可核对口径）
+            Assert.Contains(result.Items, x => x.TableName == "t_import_log" && x.Count == 1);
+        }
+
+        [Fact]
+        public void PurgeSoftDeleted_软删支出与设备_业务历史行保留不误删()
+        {
+            int categoryId = TestData.ExpenseCategory("清理口径分类");
+            int expenseId = TestData.Expense(categoryId, 100m,
+                TestData.Rel(ExpenseObjectType.Device, TestData.Device(TestData.DeviceType("清理探针设备"))));
+            new ExpenseService().BatchDeleteExpenses(
+                new RecordBatchDeleteRequest { Ids = new List<int> { expenseId } }, "admin");
+
+            _service.PurgeSoftDeleted("admin");
+
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_expense WHERE id = @id", new { id = expenseId }));
+            // 设备台账仍在用数据，不受影响
+            Assert.True(ScalarInt("SELECT COUNT(1) FROM t_device WHERE del_flag = 0") > 0);
+            Assert.Equal(0, CountOrphanExpenseObjectRels());
+        }
+
+        /// <summary>扫描全库：统计仍带 del_flag=1 的软删留痕行总数（期望 0）。</summary>
+        private static int CountAllSoftDeletedRows()
+        {
+            int total = 0;
+            List<string> tables = QueryList<string>(
+                "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name");
+            foreach (string table in tables)
+            {
+                bool hasDelFlag = QueryList<string>(
+                    "SELECT name FROM pragma_table_info(@table)", new { table })
+                    .Any(x => string.Equals(x, "del_flag", StringComparison.OrdinalIgnoreCase));
+                if (!hasDelFlag) { continue; }
+                total += ScalarInt("SELECT COUNT(1) FROM " + table + " WHERE del_flag = 1");
+            }
+            return total;
+        }
+
+        private static int CountOrphanImportErrors()
+        {
+            return ScalarInt("SELECT COUNT(1) FROM t_import_error " +
+                             "WHERE import_id NOT IN (SELECT id FROM t_import_log)");
+        }
+
+        private static int CountOrphanExpenseObjectRels()
+        {
+            return ScalarInt("SELECT COUNT(1) FROM t_expense_object_rel " +
+                             "WHERE expense_id NOT IN (SELECT id FROM t_expense)");
+        }
+
+        // ---------- v1.1.0 R1：删除入口校验的清理闭环 ----------
+
+        [Fact]
+        public void 删除入口校验_拦截后清理_不产生无主体账单()
+        {
+            // R1 闭环验证：房产带账单时删除被拒 → 即便执行一键清理，也不会出现「无主体账单」
+            int community = TestData.Community("R1闭环小区");
+            int building = TestData.Building(community, "1");
+            int property = TestData.Property(building, "101");
+            int owner = TestData.Owner("R1闭环业主", "13800001111");
+            int relation = TestData.Relation(property, owner);
+            new BillingService().GenerateBill(new BillGenerateRequest
+            {
+                ChargeItemId = TestData.ChargeItem("R1闭环物业费", 1m),
+                CycleId = TestData.Cycle(),
+                PropertyIds = new List<int> { property },
+                ParkingIds = new List<int>()
+            });
+            // 解除关系后仍被账单引用 → 删除必须被拒（R1：财务记录需保留）
+            new BaseInfoService().ReleaseRelation(relation, "R1 闭环用例");
+
+            var ex = Assert.Throws<ApiException>(() => new BaseInfoService().DeleteProperty(property));
+            Assert.Equal(ErrorCode.Conflict, ex.Code);
+            Assert.Contains("未删除账单", ex.Message);
+
+            _service.PurgeSoftDeleted("admin");
+
+            // 清理后：房产仍在、账单仍指向存在的房产（库级判定，不依赖任何体检/报告接口）
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE property_id NOT IN (SELECT id FROM t_property)"));
+            Assert.Equal(0, ScalarInt("SELECT del_flag FROM t_property WHERE id = @id", new { id = property }));
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE property_id = @id AND del_flag = 0", new { id = property }));
         }
 
         // ===================== BR-COM-01 敏感操作写审计 =====================

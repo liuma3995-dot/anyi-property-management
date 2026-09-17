@@ -66,7 +66,15 @@ namespace PropertyManagement.Client.Services
         Task DeleteChargeItemAsync(int id);
         Task<List<BillingCycleDto>> GetCyclesAsync();
         Task<BillingCycleDto> CreateCycleAsync(BillingCycleRequest request);
+        /// <summary>CHG-v1.1.0-17：删除自定义计费周期（内置周期或被账单引用的周期由服务端拦截）。</summary>
+        Task DeleteCycleAsync(int id);
         Task<BillGenerateLogDto> GenerateBillsAsync(BillGenerateRequest request);
+
+        /// <summary>CHG-v1.1.0-10：生成账单「缴费对象」候选查询（只读，供选择器使用）。</summary>
+        Task<BillObjectQueryResult> QueryBillObjectsAsync(BillObjectQueryRequest request);
+
+        /// <summary>CHG-v1.1.0-10：草稿批次既有缴费对象（批次编辑回填）。</summary>
+        Task<BillObjectSelectionDto> GetBatchBillObjectsAsync(int batchId);
         Task<BillGenerateLogDto> PublishBillsAsync(BillPublishRequest request);
         Task<BillGenerateLogDto> RetryFailuresAsync(int batchId);
         Task<List<BillBatchDto>> GetGenerateLogsAsync();
@@ -78,19 +86,37 @@ namespace PropertyManagement.Client.Services
         Task DeleteArrearAsync(int billId);
         Task<PaymentStatisticsDto> GetPaymentStatisticsAsync();
         Task<PaymentDto> CreatePaymentAsync(PaymentCreateRequest request);
+
+        /// <summary>CHG-v1.1.0-12：统一收款（多账单一次收款，共享流水号）。</summary>
+        Task<PaymentBatchResultDto> CreateBatchPaymentAsync(PaymentBatchCreateRequest request);
         Task<PaymentDto> GetPaymentAsync(int id);
-        Task<ReceiptDto> GetReceiptByPaymentAsync(int paymentId);
-        Task<ReceiptDto> PrintReceiptAsync(int receiptId);
+        // CHG-v1.1.0-15：收据号前后端下线 —— 原「收据查询 / 收据打印」客户端接口一并移除，
+        // 收款凭据改由 ExportReceiptTemplateAsync（收据打印模板）承载。
         Task<PreDepositDto> GetPreDepositAsync(int ownerId);
         Task<RefundAdjustmentDto> CreateRefundAsync(RefundAdjustmentRequest request);
+
+        /// <summary>CHG-v1.1.0-13：批量退款/减免/调整（多张账单各登记一条记录）。</summary>
+        Task<RefundBatchResultDto> CreateRefundBatchAsync(RefundAdjustmentRequest request);
         Task<PageResult<RefundAdjustmentDto>> QueryRefundsAsync(PageRequest request);
         Task<List<ExpenseCategoryDto>> GetExpenseCategoriesAsync();
+
+        /// <summary>新增支出分类（登记支出表单内「＋新增分类」）。</summary>
+        Task<ExpenseCategoryDto> CreateExpenseCategoryAsync(ExpenseCategoryRequest request);
+
+        /// <summary>删除支出分类（被支出记录引用时服务端拒绝并提示改用停用）。</summary>
+        Task DeleteExpenseCategoryAsync(int id);
         Task<ExpenseDto> CreateExpenseAsync(ExpenseCreateRequest request);
         Task<PageResult<ExpenseDto>> QueryExpensesAsync(PageRequest request);
         Task DeleteExpenseAsync(int id);
+
+        /// <summary>支出记录批量删除（v1.1.0-⑤）：软删留痕（BR-FIN-10）。</summary>
+        Task<RecordBatchDeleteResultDto> BatchDeleteExpensesAsync(RecordBatchDeleteRequest request);
         Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request);
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);
+
+        /// <summary>CHG-v1.1.0-14：导出收据打印模板（含逐项收款明细）。</summary>
+        Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request);
 
         // ==================== M5 基础信息与导入（PG-INF-01~05） ====================
         Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null);
@@ -122,6 +148,9 @@ namespace PropertyManagement.Client.Services
         Task<byte[]> DownloadBaseInfoTemplateAsync(ImportModule module);
         Task<ImportResultDto> ImportAsync(ImportRequest request);
         Task<List<ImportLogDto>> GetImportLogsAsync();
+
+        /// <summary>导入批次记录批量删除（v1.1.0-⑤）：软删留痕。</summary>
+        Task<RecordBatchDeleteResultDto> BatchDeleteImportLogsAsync(RecordBatchDeleteRequest request);
         Task<byte[]> DownloadImportErrorsAsync(int id);
         Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request);
         Task DownloadExportFileAsync(int id, string savePath);
@@ -298,6 +327,7 @@ namespace PropertyManagement.Client.Services
         Task<RecordBatchDeleteResultDto> BatchDeleteBackupRecordsAsync(RecordBatchDeleteRequest request);
         /// <summary>R13：一键清理残余数据（物理删除全库软删留痕行）。</summary>
         Task<PurgeSoftDeletedResultDto> PurgeSoftDeletedAsync();
+
         Task<List<ParamDto>> GetSystemParamsAsync();
         Task SetSystemParamAsync(string key, string value);
         Task<List<BackupDto>> GetSystemBackupsAsync();

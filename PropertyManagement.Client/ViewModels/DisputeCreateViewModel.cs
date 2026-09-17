@@ -206,6 +206,9 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (value == null) return;
                 if (SetProperty(ref _selectedPropertyOption, value)) FormPropertyId = value.PropertyId;
+                // 选中后回填展示文本，避免输入框残留检索关键字（与业主-房产关系/车位维护同口径）
+                string display = value.Display ?? string.Empty;
+                if (!string.Equals(_propertySearch, display, StringComparison.Ordinal)) PropertySearch = display;
             }
         }
 
@@ -217,6 +220,8 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (value == null) return;
                 if (SetProperty(ref _selectedOwnerAOption, value)) PartyAOwnerId = value.OwnerId;
+                string display = value.Display ?? string.Empty;
+                if (!string.Equals(_partyASearch, display, StringComparison.Ordinal)) PartyASearch = display;
             }
         }
 
@@ -228,6 +233,8 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (value == null) return;
                 if (SetProperty(ref _selectedOwnerBOption, value)) PartyBOwnerId = value.OwnerId;
+                string display = value.Display ?? string.Empty;
+                if (!string.Equals(_partyBSearch, display, StringComparison.Ordinal)) PartyBSearch = display;
             }
         }
 
@@ -316,6 +323,8 @@ namespace PropertyManagement.Client.ViewModels
                 var opt = o as DisputePropertyOption;
                 if (opt == null) return false;
                 if (!opt.PropertyId.HasValue) return true;
+                // T5 同类加固：已选中项恒定保留，避免过滤刷新把当前选中项挤出下拉
+                if (ReferenceEquals(opt, _selectedPropertyOption)) return true;
                 return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
             };
             _propertyView.Refresh();
@@ -331,6 +340,7 @@ namespace PropertyManagement.Client.ViewModels
                 var opt = o as DisputeOwnerOption;
                 if (opt == null) return false;
                 if (!opt.OwnerId.HasValue) return true;
+                if (ReferenceEquals(opt, _selectedOwnerAOption)) return true;
                 return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
             };
             _ownerAView.Refresh();
@@ -346,6 +356,7 @@ namespace PropertyManagement.Client.ViewModels
                 var opt = o as DisputeOwnerOption;
                 if (opt == null) return false;
                 if (!opt.OwnerId.HasValue) return true;
+                if (ReferenceEquals(opt, _selectedOwnerBOption)) return true;
                 return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
             };
             _ownerBView.Refresh();

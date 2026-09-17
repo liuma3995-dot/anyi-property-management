@@ -448,6 +448,8 @@ namespace PropertyManagement.Server.Services
         /// <summary>
         /// 一键清理残余数据（R13）：物理删除全库所有 del_flag=1 的软删留痕行（不触碰任何在用数据）。
         /// 逐表统计并写审计 SYSTEM_PURGE_SOFT_DELETED；执行期间关闭外键约束，避免留痕父行被清理时阻塞。
+        /// v1.1.0-⑤ 补充：同时清理「随父行留痕一并作废、但自身没有 del_flag 列」的纯子记录
+        /// （导入错误行、支出关联对象），否则父行物理删除后会残留孤儿残余数据。
         /// </summary>
         public PurgeSoftDeletedResultDto PurgeSoftDeleted(string operatorName = null, string ip = null)
         {
@@ -468,6 +470,19 @@ namespace PropertyManagement.Server.Services
                         total += purged;
                     }
                 }
+
+                foreach (var orphan in OrphanChildCleanups)
+                {
+                    // 存量库升级路径下子表可能尚未建立 → 缺失即跳过（不影响主流程）
+                    if (!tables.Contains(orphan.Key, StringComparer.OrdinalIgnoreCase)) { continue; }
+                    int cleaned = c.Execute(orphan.Value);
+                    if (cleaned > 0)
+                    {
+                        items.Add(new PurgeTableCountDto { TableName = orphan.Key + "（孤儿子记录）", Count = cleaned });
+                        total += cleaned;
+                    }
+                }
+
                 c.Execute("PRAGMA foreign_keys = ON;");
             }
 
@@ -479,6 +494,20 @@ namespace PropertyManagement.Server.Services
 
             return new PurgeSoftDeletedResultDto { TotalPurged = total, Items = items };
         }
+
+        /// <summary>
+        /// 纯子记录清理清单（v1.1.0-⑤）：这些子表没有 del_flag 列，行本身没有独立业务含义，
+        /// 只随父行存在；父行留痕被物理清理后必须一并清理，否则成为孤儿残余数据。
+        /// 注意：业务历史表（如 t_bill / t_payment / t_maintenance_record 等）不在此列——
+        /// 它们的行是独立的业务历史，即使父行被清理也一律保留（不在用数据不清理的口径之内）。
+        /// </summary>
+        private static readonly Dictionary<string, string> OrphanChildCleanups = new Dictionary<string, string>
+        {
+            // 导入批次错误清单：父行 t_import_log 已不存在则错误行无意义
+            { "t_import_error", "DELETE FROM t_import_error WHERE import_id NOT IN (SELECT id FROM t_import_log)" },
+            // 支出关联对象：父行 t_expense 已不存在则关联行无意义
+            { "t_expense_object_rel", "DELETE FROM t_expense_object_rel WHERE expense_id NOT IN (SELECT id FROM t_expense)" }
+        };
 
         /// <summary>清理单表软删留痕（表无 del_flag 列时返回 0）。</summary>
         private static int PurgeTableSoftDeleted(IDbConnection connection, string table)

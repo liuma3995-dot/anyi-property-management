@@ -208,7 +208,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.Query<DeviceStatusLogDto>(
                 "SELECT id, device_id AS DeviceId, old_status AS OldStatus, new_status AS NewStatus, reason, changed_at AS ChangedAt " +
-                "FROM t_device_status_log WHERE device_id = @deviceId ORDER BY id DESC", new { deviceId }).ToList();
+                "FROM t_device_status_log WHERE device_id = @deviceId AND del_flag = 0 ORDER BY id DESC", new { deviceId }).ToList();
         }
 
         public DeviceSummaryDto GetDeviceSummary(IDbConnection connection)
@@ -378,6 +378,47 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "(SELECT COUNT(1) FROM t_expense_object_rel r JOIN t_expense e ON e.id = r.expense_id " +
                 "  WHERE r.object_type = 2 AND r.object_id = @vendorId AND e.del_flag = 0)",
                 new { vendorId });
+        }
+
+        /// <summary>
+        /// 设备删除引用校验（v1.1.0 R1）：保养/年检/故障/自定义记录（在用）+ 支出引用（在用支出）。
+        /// 口径同 <see cref="CountVendorReferences"/>：软删的支出不计引用，历史业务记录计入引用。
+        /// 说明：状态变更日志**不计入**阻塞项（设备登记时自动写入 1 行，正常设备必有），
+        /// 改为随设备删除由 <see cref="SoftDeleteDeviceStatusLogs"/> 级联软删留痕。
+        /// </summary>
+        public int CountDeviceReferences(IDbConnection connection, int deviceId)
+        {
+            return connection.ExecuteScalar<int>(
+                "SELECT " +
+                "(SELECT COUNT(1) FROM t_maintenance_record WHERE device_id = @deviceId) + " +
+                "(SELECT COUNT(1) FROM t_inspection_record  WHERE device_id = @deviceId) + " +
+                "(SELECT COUNT(1) FROM t_fault_record       WHERE device_id = @deviceId) + " +
+                "(SELECT COUNT(1) FROM t_device_custom_record WHERE device_id = @deviceId AND del_flag = 0) + " +
+                "(SELECT COUNT(1) FROM t_expense_object_rel r JOIN t_expense e ON e.id = r.expense_id " +
+                "  WHERE r.object_type = 1 AND r.object_id = @deviceId AND e.del_flag = 0)",
+                new { deviceId });
+        }
+
+        /// <summary>
+        /// 设备删除级联（v1.1.0 R1）：软删该设备的四类到期提醒 + 其催办/处置流水
+        /// （流水 type='urge'/'handled' 且 target_id = 提醒 id）。返回软删行数。
+        /// </summary>
+        public int SoftDeleteDeviceReminders(IDbConnection connection, IDbTransaction transaction, int deviceId)
+        {
+            return connection.Execute(
+                "UPDATE t_reminder SET del_flag = 1 WHERE del_flag = 0 AND (" +
+                "  (type IN (" + ReminderTypes + ") AND target_id = @deviceId) OR " +
+                "  (type IN ('urge','handled') AND target_id IN " +
+                "     (SELECT id FROM t_reminder WHERE type IN (" + ReminderTypes + ") AND target_id = @deviceId)))",
+                new { deviceId }, transaction);
+        }
+
+        /// <summary>设备删除级联（v1.1.0 R1 / migration_036）：软删该设备的状态变更日志。返回软删行数。</summary>
+        public int SoftDeleteDeviceStatusLogs(IDbConnection connection, IDbTransaction transaction, int deviceId)
+        {
+            return connection.Execute(
+                "UPDATE t_device_status_log SET del_flag = 1 WHERE device_id = @deviceId AND del_flag = 0",
+                new { deviceId }, transaction);
         }
 
         // ===================== 到期提醒（PG-EQP-04，t_reminder 物化） =====================

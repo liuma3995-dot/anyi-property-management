@@ -5,6 +5,10 @@
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- CHG-v1.1.0-24：账单期间紧凑显示 + 悬停查看完整期间（应缴明细列宽有限，原日期被裁切） -->
+        <Style x:Key="GridCellTextWithTip" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+            <Setter Property="ToolTip" Value="{Binding CyclePeriodFull}" />
+        </Style>
         <Style x:Key="GridStyle" TargetType="DataGrid">
             <Setter Property="AutoGenerateColumns" Value="False" />
             <Setter Property="HeadersVisibility" Value="Column" />
@@ -102,10 +106,18 @@
 
             <!-- 左：收款登记表单 -->
             <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16">
+                <!-- CHG-v1.1.0-13：内容区可滚动 + 底部按钮行固定，修复「确认收款」被内容顶出可视区（被遮挡） -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0" VerticalScrollBarVisibility="Auto" Padding="0,0,6,0">
                 <StackPanel>
                     <TextBlock Text="收款登记" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
 
-                    <TextBlock Text="缴费房产" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,14,0,4" />
+                    <!-- CHG-v1.1.0-12：缴费对象（房产/车位/业主），下拉格式「姓名 → 楼栋 → 房号 → 欠费 N 笔」 -->
+                    <TextBlock Text="缴费对象" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,14,0,4" />
                     <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6" Margin="0,0,0,8">
                         <Grid>
@@ -118,11 +130,11 @@
                                   VerticalAlignment="Center" />
                             <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
                                      Text="{Binding PropertySearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                     hc:InfoElement.Placeholder="快捷搜索：房号 / 业主名（如 101 或 张三）"
+                                     hc:InfoElement.Placeholder="快捷搜索：姓名 / 楼栋 / 房号（如 张伟 或 101）"
                                      Margin="8,0,0,0" />
                         </Grid>
                     </Border>
-                    <ComboBox Height="34" FontSize="12" VerticalContentAlignment="Center"
+                    <ComboBox x:Name="PaymentObjectCombo" Height="34" FontSize="12" VerticalContentAlignment="Center"
                               ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}"
                               DisplayMemberPath="DisplayText" />
 
@@ -167,6 +179,9 @@
                                      Margin="6,0,14,0" />
                         </Grid>
                     </Border>
+                    <!-- CHG-v1.1.0-12：金额口径提示（单张可改 / 多张按勾选合计锁定） -->
+                    <TextBlock Text="{Binding PayAmountHintText}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                               TextWrapping="Wrap" Margin="2,4,0,0" />
                     <TextBlock Text="{Binding PreDepositHintText}" FontSize="10" Foreground="#B76E00"
                                TextWrapping="Wrap" Margin="2,4,0,0">
                         <TextBlock.Style>
@@ -181,7 +196,7 @@
                         </TextBlock.Style>
                     </TextBlock>
 
-                    <!-- 收款方式 + 收据号 -->
+                    <!-- 收款方式（CHG-v1.1.0-15：收据号字段前后端下线，本行只保留收款方式） -->
                     <Grid Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -199,14 +214,6 @@
                                 <ComboBoxItem Content="POS" />
                             </ComboBox>
                         </StackPanel>
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="收据号" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6" />
-                            <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
-                                    BorderThickness="1" CornerRadius="6">
-                                <TextBlock Text="{Binding ReceiptNo}" FontSize="12" FontWeight="SemiBold"
-                                           Foreground="{StaticResource PrimaryBrush}" VerticalAlignment="Center" Margin="10,0" />
-                            </Border>
-                        </StackPanel>
                     </Grid>
 
                     <!-- 经手人 + 收款日期 -->
@@ -218,10 +225,12 @@
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
                             <TextBlock Text="经手人" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,6" />
+                            <!-- CHG-v1.1.0-13：经手人改为可自行填写，留空时回落为当前管理员名称 -->
                             <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                                     BorderThickness="1" CornerRadius="6">
-                                <TextBlock Text="{Binding ReceiptHandlerText}" FontSize="12"
-                                           Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" Margin="10,0" />
+                                <TextBox Style="{StaticResource SearchTextBox}" FontSize="12" Margin="8,0"
+                                         Text="{Binding HandlerName, UpdateSourceTrigger=PropertyChanged}"
+                                         hc:InfoElement.Placeholder="{Binding HandlerPlaceholderText}" />
                             </Border>
                         </StackPanel>
                         <StackPanel Grid.Column="2">
@@ -240,9 +249,11 @@
                                  Text="{Binding Remark, UpdateSourceTrigger=PropertyChanged}"
                                  hc:InfoElement.Placeholder="可填写本次收款备注（可选，如：代收、季度优惠说明）" />
                     </Border>
+                </StackPanel>
+                    </ScrollViewer>
 
-                    <!-- 按钮组：确认收款 + 打印收据 -->
-                    <Grid Margin="0,18,0,0">
+                    <!-- 按钮组：确认收款 + 导出打印收据预览模板 -->
+                    <Grid Grid.Row="1" Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="10" />
@@ -250,14 +261,15 @@
                         </Grid.ColumnDefinitions>
                         <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认收款"
                                 Command="{Binding ConfirmCommand}" Height="34" />
-                        <Button Grid.Column="2" Height="34" FontSize="12" Content="打印收据"
+                        <!-- CHG-v1.1.0-14：「打印收据」改为「导出打印收据预览模板」（收据号已下线，模板含逐项收款明细） -->
+                        <Button Grid.Column="2" Height="34" FontSize="12" Content="导出打印收据预览模板"
                                 HorizontalAlignment="Center" VerticalAlignment="Center"
-                                Command="{Binding PrintCommand}">
+                                Command="{Binding ExportReceiptTemplateCommand}">
                             <Button.Style>
                                 <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
                                     <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
                                     <Style.Triggers>
-                                        <DataTrigger Binding="{Binding HasReceipt}" Value="False">
+                                        <DataTrigger Binding="{Binding CanExportTemplate}" Value="False">
                                             <Setter Property="Foreground" Value="#B9C2CF" />
                                             <Setter Property="Cursor" Value="Arrow" />
                                         </DataTrigger>
@@ -266,7 +278,7 @@
                             </Button.Style>
                         </Button>
                     </Grid>
-                </StackPanel>
+                </Grid>
             </Border>
 
             <!-- 右：应缴明细 + 收据预览（PG-FIN-03 / iSnhQ） -->
@@ -279,21 +291,56 @@
                     <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
-                <TextBlock Grid.Row="0" Text="{Binding BillsTitleText}" FontSize="13" FontWeight="Bold"
-                           Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,8" />
+                <!-- CHG-v1.1.0-12：标题只保留「应缴明细」，去掉括号与括号内内容 -->
+                <Grid Grid.Row="0" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="{Binding BillsTitleText}" FontSize="13" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding CheckedBillsText}" FontSize="11" VerticalAlignment="Center"
+                               Foreground="{StaticResource PrimaryBrush}" />
+                </Grid>
 
                 <!-- 应缴明细表 -->
                 <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0">
+                    <!-- CHG-v1.1.0-24：列宽受 MinWidth 约束，窗口较窄时改为横向滚动（而非压缩列导致日期/金额被裁切） -->
                     <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Bills}" IsReadOnly="True"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                              SelectionChanged="BillsGrid_SelectionChanged"
                               SelectedItem="{Binding SelectedBill}" RowHeight="34">
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="账单号" Width="96" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTextColumn Header="收费项目" Width="*" Binding="{Binding Dto.ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTextColumn Header="账单期间" Width="92" Binding="{Binding Dto.CyclePeriod}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTextColumn Header="应收" Width="78" Binding="{Binding Dto.Amount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTextColumn Header="已收" Width="78" Binding="{Binding Dto.PaidAmount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTextColumn Header="未收" Width="78" Binding="{Binding UnpaidAmount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
-                            <DataGridTemplateColumn Header="状态" Width="70">
+                            <!-- CHG-v1.1.0-14：加宽勾选列并留出左内边距，修复勾选框被卡片边缘裁切 -->
+                            <DataGridTemplateColumn Width="56">
+                                <DataGridTemplateColumn.HeaderTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding DataContext.IsSelectAllBills, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.HeaderTemplate>
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="BillCheckBox_Click"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="账单号" Width="96" MinWidth="96" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
+                            <!-- CHG-v1.1.0-13：按业主聚合后，逐行标明欠费所属缴费对象（房/车位/业主直缴） -->
+                            <!-- CHG-v1.1.0-24：缴费对象列 120→96（值约 4-6 字，96px 含 24px 内边距仍可完整显示），
+                                 腾出的宽度补给「账单期间」与金额列，消除同表多列日期/金额被裁切 -->
+                            <DataGridTextColumn Header="缴费对象" Width="96" MinWidth="96" Binding="{Binding ObjectText}" ElementStyle="{StaticResource GridCellText}" />
+                            <!-- CHG-v1.1.0-24：收费项目列设置最小宽度，避免列总宽超出面板时被压成 0（1366 窗口下横向滚动优于内容不可见） -->
+                            <DataGridTextColumn Header="收费项目" Width="*" MinWidth="110" Binding="{Binding Dto.ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
+                            <!-- CHG-v1.1.0-24：账单期间紧凑显示 + 加宽至 148px（原 92px 减 24px 内边距后不足以显示完整期间，实测紧凑文本渲染 116px） -->
+                            <DataGridTextColumn Header="账单期间" Width="148" MinWidth="148" Binding="{Binding CyclePeriodText}"
+                                                ElementStyle="{StaticResource GridCellTextWithTip}" />
+                            <DataGridTextColumn Header="应收" Width="86" MinWidth="86" Binding="{Binding Dto.Amount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="已收" Width="86" MinWidth="86" Binding="{Binding Dto.PaidAmount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="未收" Width="86" MinWidth="86" Binding="{Binding UnpaidAmount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTemplateColumn Header="状态" Width="70" MinWidth="70">
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <Border Background="{Binding StatusBg}" CornerRadius="4" Padding="8,2" HorizontalAlignment="Left">
@@ -315,7 +362,7 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="收款收据（打印预览）" FontSize="12" FontWeight="Bold"
+                            <TextBlock Grid.Column="0" Text="收据打印模板（预览）" FontSize="12" FontWeight="Bold"
                                        Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
                             <Border Grid.Column="1" Background="#EEF2F7" CornerRadius="4" Padding="8,3">
                                 <TextBlock Text="套打模板 HP-58" FontSize="10" FontWeight="SemiBold"
@@ -330,26 +377,31 @@
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="16" />
+                                <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
 
+                            <!-- CHG-v1.1.0-14：收据号下线，模板以「缴款人 / 收款方式 / 收款流水号」为口径 -->
                             <StackPanel Grid.Column="0">
-                                <TextBlock Text="收据编号" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
-                                <TextBlock Text="{Binding ReceiptNo}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="2">
                                 <TextBlock Text="缴款人" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
                                 <TextBlock Text="{Binding ReceiptPayeeText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
                             </StackPanel>
-                            <StackPanel Grid.Column="4">
+                            <StackPanel Grid.Column="2">
                                 <TextBlock Text="收款方式" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
                                 <TextBlock Text="{Binding ReceiptMethodText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="4">
+                                <TextBlock Text="收款流水号" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
+                                <TextBlock Text="{Binding BatchNoText, TargetNullValue=—}" FontSize="11" Foreground="{StaticResource PrimaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+                            </StackPanel>
+                            <StackPanel Grid.Column="6">
+                                <TextBlock Text="经手人" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
+                                <TextBlock Text="{Binding ReceiptHandlerText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
                             </StackPanel>
                         </Grid>
 
                         <Grid Margin="0,10,0,0">
                             <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="16" />
                                 <ColumnDefinition Width="*" />
@@ -363,10 +415,6 @@
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="收款单位" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
                                 <TextBlock Text="{Binding ReceiptUnitText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="4">
-                                <TextBlock Text="经手人" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
-                                <TextBlock Text="{Binding ReceiptHandlerText}" FontSize="11" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,2,0,0" />
                             </StackPanel>
                         </Grid>
 
@@ -389,17 +437,7 @@
                             </StackPanel>
                         </Grid>
 
-                        <Rectangle Height="1" Fill="{StaticResource BorderBrushColor}" Margin="0,12,0,8" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="本收据为电子打印凭证，与原始缴费记录一致（BR-FIN-08 补打保留原号）"
-                                       FontSize="9" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
-                            <TextBlock Grid.Column="1" Text="{Binding PrintCountText}" FontSize="9"
-                                       Foreground="{StaticResource TextMutedBrush}" Margin="10,0,0,0" VerticalAlignment="Bottom" />
-                        </Grid>
+                        <!-- CHG-v1.1.0-14：收据号与打印次数随「打印收据」一并下线（改为导出打印模板） -->
                     </StackPanel>
                 </Border>
             </Grid>

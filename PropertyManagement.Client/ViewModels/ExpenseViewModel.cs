@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -12,7 +13,7 @@ using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
 {
-    /// <summary>支出登记行（PG-FIN-05，UC-FIN-005；T4F-5-1 收款方/关联对象列）。</summary>
+    /// <summary>支出登记行（PG-FIN-05，UC-FIN-005；T4F-5-1 收款方列；「关联对象」列已于 v1.1.0 第 8 轮下线）。</summary>
     public class ExpenseRow : ObservableObject
     {
         public ExpenseDto Dto { get; set; }
@@ -29,9 +30,6 @@ namespace PropertyManagement.Client.ViewModels
 
         public string PayeeText { get { return string.IsNullOrEmpty(Dto.Payee) ? "—" : Dto.Payee; } }
 
-        /// <summary>关联对象本期表单可空（M4 简单版），统一展示“—”。</summary>
-        public string ObjectText { get { return "—"; } }
-
         public string StatusText { get { return Dto.Status == 0 ? "已支付" : "已删除"; } }
 
         public Brush StatusBrush { get { return Dto.Status == 0 ? OkBrush : MutedBrush; } }
@@ -39,6 +37,15 @@ namespace PropertyManagement.Client.ViewModels
         public Brush StatusBg { get { return Dto.Status == 0 ? OkBg : MutedBg; } }
 
         public bool IsActive { get { return Dto.Status == 0; } }
+
+        private bool _isSelected;
+
+        /// <summary>v1.1.0-⑤：批量删除勾选状态（仅选择模式且未删除行可勾选）。</summary>
+        public bool IsSelected
+        {
+            get { return _isSelected; }
+            set { SetProperty(ref _isSelected, value); }
+        }
 
         private static readonly Brush OkBrush = Br("#12805C");
         private static readonly Brush OkBg = Br("#E8F7F1");
@@ -74,6 +81,18 @@ namespace PropertyManagement.Client.ViewModels
         private int _selectedStatusFilter;
         private string _keyword = string.Empty;
         private bool _loading;
+        // v1.1.0 第 7 轮：本月预算（系统参数 finance.budget.monthly）
+        private const string BudgetParamKey = "finance.budget.monthly";
+        private decimal _monthBudget;
+        private string _budgetSub = "可在卡片内设置月度预算";
+        private bool _isBudgetFormVisible;
+        private string _budgetInput = string.Empty;
+        // v1.1.0 第 7 轮：支出分类新增/删除（登记支出表单内）
+        private string _newCategoryName = string.Empty;
+        private string _categoryHint = string.Empty;
+        private bool _isSelectionMode;              // v1.1.0-⑤：点击「批量删除记录」后才显示勾选框列
+        private bool _isBatchConfirmVisible;
+        private string _batchConfirmText = string.Empty;
 
         public ExpenseViewModel(IApiClient api) : base(api)
         {
@@ -86,6 +105,16 @@ namespace PropertyManagement.Client.ViewModels
             CancelDeleteCommand = new RelayCommand(() => { ConfirmRow = null; IsConfirmVisible = false; });
             ViewCommand = new RelayCommand<ExpenseRow>(row => { if (row != null) { SelectedRow = row; IsDetailVisible = true; } });
             CloseDetailCommand = new RelayCommand(() => IsDetailVisible = false);
+            BatchDeleteRecordsCommand = new RelayCommand(BatchDeleteRecords);
+            CancelSelectionCommand = new RelayCommand(ExitSelectionMode);
+            ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
+            CancelBatchDeleteConfirmCommand = new RelayCommand(() => IsBatchConfirmVisible = false);
+            // v1.1.0 第 7 轮：预算设置 + 支出分类新增/删除
+            OpenBudgetCommand = new RelayCommand(OpenBudgetForm);
+            SaveBudgetCommand = new AsyncRelayCommand(SaveBudgetAsync);
+            CancelBudgetCommand = new RelayCommand(() => IsBudgetFormVisible = false);
+            AddCategoryCommand = new AsyncRelayCommand(AddCategoryAsync);
+            DeleteCategoryCommand = new AsyncRelayCommand(DeleteCategoryAsync);
             _ = LoadAsync();
         }
 
@@ -107,6 +136,32 @@ namespace PropertyManagement.Client.ViewModels
         public string PendingText { get { return _pendingText; } private set { SetProperty(ref _pendingText, value); } }
 
         public string BudgetText { get { return _budgetText; } private set { SetProperty(ref _budgetText, value); } }
+
+        /// <summary>本月预算卡片副文案：已用进度 / 未设置提示（v1.1.0 第 7 轮）。</summary>
+        public string BudgetSubText { get { return _budgetSub; } private set { SetProperty(ref _budgetSub, value); } }
+
+        public bool IsBudgetFormVisible
+        {
+            get { return _isBudgetFormVisible; }
+            private set { SetProperty(ref _isBudgetFormVisible, value); }
+        }
+
+        public string BudgetInput { get { return _budgetInput; } set { SetProperty(ref _budgetInput, value); } }
+
+        /// <summary>登记支出表单内的分类维护提示（新增/删除反馈，v1.1.0 第 7 轮）。</summary>
+        public string CategoryHintText { get { return _categoryHint; } private set { SetProperty(ref _categoryHint, value); } }
+
+        public string NewCategoryName { get { return _newCategoryName; } set { SetProperty(ref _newCategoryName, value); } }
+
+        public IRelayCommand OpenBudgetCommand { get; }
+
+        public IAsyncRelayCommand SaveBudgetCommand { get; }
+
+        public IRelayCommand CancelBudgetCommand { get; }
+
+        public IAsyncRelayCommand AddCategoryCommand { get; }
+
+        public IAsyncRelayCommand DeleteCategoryCommand { get; }
 
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
 
@@ -160,6 +215,134 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<ExpenseRow> ViewCommand { get; }
 
         public IRelayCommand CloseDetailCommand { get; }
+
+        // ---------- v1.1.0-⑤：支出记录批量删除（软删留痕 BR-FIN-10） ----------
+
+        public IRelayCommand BatchDeleteRecordsCommand { get; }
+
+        public IRelayCommand CancelSelectionCommand { get; }
+
+        public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
+
+        public IRelayCommand CancelBatchDeleteConfirmCommand { get; }
+
+        /// <summary>
+        /// 选择模式：默认 false（表格不显示勾选框列）；点击「批量删除记录」后进入选择模式，
+        /// 勾选框列显示且按钮文案变为「删除所选」；取消或删除完成后退出并清空勾选。
+        /// </summary>
+        public bool IsSelectionMode
+        {
+            get { return _isSelectionMode; }
+            private set
+            {
+                if (SetProperty(ref _isSelectionMode, value))
+                {
+                    OnPropertyChanged(nameof(BatchDeleteButtonText));
+                }
+            }
+        }
+
+        public string BatchDeleteButtonText
+        {
+            get { return IsSelectionMode ? "删除所选" : "批量删除记录"; }
+        }
+
+        /// <summary>批量删除二次确认浮层（与单条删除弹层相互独立，避免相互干扰）。</summary>
+        public bool IsBatchConfirmVisible
+        {
+            get { return _isBatchConfirmVisible; }
+            set { SetProperty(ref _isBatchConfirmVisible, value); }
+        }
+
+        public string BatchConfirmText
+        {
+            get { return _batchConfirmText; }
+            private set { SetProperty(ref _batchConfirmText, value); }
+        }
+
+        /// <summary>可勾选行（仅未删除记录）：已删除记录无可删除内容，其留痕由「一键清理残余数据」处理。</summary>
+        private List<ExpenseRow> SelectableRows
+        {
+            get { return Items.Where(x => x.IsActive).ToList(); }
+        }
+
+        /// <summary>记录全选/取消全选（表头勾选框双向绑定，仅作用于未删除记录）。</summary>
+        public bool IsAllRecordsSelected
+        {
+            get
+            {
+                List<ExpenseRow> rows = SelectableRows;
+                return rows.Count > 0 && rows.All(r => r.IsSelected);
+            }
+            set
+            {
+                foreach (ExpenseRow row in SelectableRows) { row.IsSelected = value; }
+                OnPropertyChanged(nameof(IsAllRecordsSelected));
+            }
+        }
+
+        /// <summary>刷新全选态（勾选/取消单行后由视图调用）。</summary>
+        public void RefreshSelectAllState()
+        {
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
+
+        /// <summary>批量删除入口：第一次点击进入选择模式，已在选择模式时校验勾选并弹出二次确认。</summary>
+        private void BatchDeleteRecords()
+        {
+            if (!IsSelectionMode)
+            {
+                EnterSelectionMode();
+                return;
+            }
+
+            List<ExpenseRow> selected = Items.Where(x => x.IsSelected && x.IsActive).ToList();
+            if (selected.Count == 0)
+            {
+                ErrorText = "请先勾选要删除的支出记录（可勾选单条，也可勾选表头全选），或点击【取消】退出批量删除";
+                return;
+            }
+            decimal amount = selected.Sum(x => x.Dto.Amount);
+            BatchConfirmText = "将删除所选 " + selected.Count + " 笔支出（合计 ¥" + amount.ToString("N2") +
+                               "）。删除为软删留痕，历史记录保留（BR-FIN-10），可在「备份与恢复」页一键清理。确认删除？";
+            IsBatchConfirmVisible = true;
+        }
+
+        private async Task ConfirmBatchDeleteAsync()
+        {
+            IsBatchConfirmVisible = false;
+            var ids = Items.Where(x => x.IsSelected && x.IsActive).Select(x => x.Dto.Id).Distinct().ToList();
+            if (ids.Count == 0) { return; }
+
+            string message = null;
+            await RunAsync(async () =>
+            {
+                RecordBatchDeleteResultDto result = await Api.BatchDeleteExpensesAsync(
+                    new RecordBatchDeleteRequest { Ids = ids });
+                message = "已删除 " + (result == null ? 0 : result.Deleted) + " 笔支出（软删留痕，可在「备份与恢复」页一键清理）";
+                await LoadAsync();
+                ExitSelectionMode();
+            }, null);
+            StatusText = string.IsNullOrEmpty(message) ? StatusText : message;
+        }
+
+        /// <summary>进入选择模式：显示勾选框列并清空历史勾选。</summary>
+        private void EnterSelectionMode()
+        {
+            foreach (ExpenseRow row in Items) { row.IsSelected = false; }
+            ErrorText = string.Empty;
+            IsSelectionMode = true;
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
+
+        /// <summary>退出选择模式：隐藏勾选框列并清空勾选。</summary>
+        private void ExitSelectionMode()
+        {
+            foreach (ExpenseRow row in Items) { row.IsSelected = false; }
+            IsSelectionMode = false;
+            IsBatchConfirmVisible = false;
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
 
         public async Task LoadAsync()
         {
@@ -247,8 +430,118 @@ namespace PropertyManagement.Client.ViewModels
                     CountSub = "本月暂无支出";
                 }
                 PendingText = "0";
-                BudgetText = "—";
+                // v1.1.0 第 7 轮：本月预算来自系统参数（finance.budget.monthly），并显示已用进度
+                await LoadBudgetAsync();
+                ApplyBudget(monthItems.Sum(x => x.Amount));
             }, "支出记录已加载");
+        }
+
+        /// <summary>读取系统参数中的月度预算（0/空 = 未设置）。</summary>
+        private async Task LoadBudgetAsync()
+        {
+            try
+            {
+                List<ParamDto> ps = await Api.GetSystemParamsAsync();
+                ParamDto row = ps == null ? null : ps.FirstOrDefault(x => x.ParamKey == BudgetParamKey);
+                decimal value;
+                _monthBudget = row != null && decimal.TryParse(row.ParamValue, out value) && value > 0 ? value : 0m;
+            }
+            catch
+            {
+                _monthBudget = 0m;   // 参数接口不可用时不阻断支出页加载
+            }
+        }
+
+        /// <summary>刷新预算卡片：金额 + 已用进度/剩余（未设置时给出设置入口提示）。</summary>
+        private void ApplyBudget(decimal monthUsed)
+        {
+            if (_monthBudget <= 0)
+            {
+                BudgetText = "未设置";
+                BudgetSubText = "点右侧【设置预算】填写月度预算";
+                return;
+            }
+            decimal rate = monthUsed / _monthBudget * 100m;
+            decimal left = _monthBudget - monthUsed;
+            BudgetText = "¥" + _monthBudget.ToString("N0");
+            BudgetSubText = "已用 " + rate.ToString("0.#") + "%（¥" + monthUsed.ToString("N0") + "），" +
+                            (left >= 0 ? "剩余 ¥" + left.ToString("N0") : "超支 ¥" + (-left).ToString("N0"));
+        }
+
+        private void OpenBudgetForm()
+        {
+            BudgetInput = _monthBudget > 0 ? _monthBudget.ToString("0.##") : string.Empty;
+            IsBudgetFormVisible = true;
+        }
+
+        private async Task SaveBudgetAsync()
+        {
+            decimal value;
+            if (!decimal.TryParse((BudgetInput ?? string.Empty).Trim(), out value) || value < 0)
+            {
+                ErrorText = "月度预算必须是不小于 0 的数字（0 = 清除预算）";
+                return;
+            }
+
+            await RunAsync(async () =>
+            {
+                await Api.SetSystemParamAsync(BudgetParamKey, value.ToString("0.##"));
+                _monthBudget = value > 0 ? value : 0m;
+                IsBudgetFormVisible = false;
+                await LoadAsync();
+            }, value > 0 ? "本月预算已保存" : "已清除本月预算");
+        }
+
+        /// <summary>新增支出分类（登记支出表单内）：新增后自动选中，保证「分类为空」不再阻断登记。</summary>
+        private async Task AddCategoryAsync()
+        {
+            string name = (NewCategoryName ?? string.Empty).Trim();
+            if (name.Length == 0)
+            {
+                CategoryHintText = "请输入新分类名称";
+                return;
+            }
+            if (Categories.Any(x => string.Equals(x.Name, name, StringComparison.Ordinal)))
+            {
+                CategoryHintText = "分类「" + name + "」已存在";
+                return;
+            }
+
+            await RunAsync(async () =>
+            {
+                ExpenseCategoryDto created = await Api.CreateExpenseCategoryAsync(new ExpenseCategoryRequest { Name = name });
+                NewCategoryName = string.Empty;
+                await LoadCoreAsync();
+                if (created != null)
+                {
+                    SelectedCategory = Categories.FirstOrDefault(x => x.Id == created.Id) ?? Categories.FirstOrDefault();
+                }
+                CategoryHintText = "分类「" + name + "」已新增并选中";
+            }, null);
+        }
+
+        /// <summary>删除当前选中分类：被支出记录引用时服务端拒绝（提示改用停用），前端给出中文反馈。</summary>
+        private async Task DeleteCategoryAsync()
+        {
+            if (SelectedCategory == null)
+            {
+                CategoryHintText = "请先选择要删除的分类";
+                return;
+            }
+            string name = SelectedCategory.Name;
+            if (MessageBox.Show("确认删除支出分类「" + name + "」？\n被支出记录引用的分类不能删除（可停用）。",
+                    "删除支出分类", MessageBoxButton.OKCancel, MessageBoxImage.Warning) != MessageBoxResult.OK)
+            {
+                return;
+            }
+
+            await RunAsync(async () =>
+            {
+                await Api.DeleteExpenseCategoryAsync(SelectedCategory.Id);
+                SelectedCategory = null;
+                await LoadCoreAsync();
+                CategoryHintText = "分类「" + name + "」已删除";
+            }, null);
         }
 
         /// <summary>T4R-5：就地同步筛选“类别”下拉（首位“全部”），保留当前选中项不被 Clear() 重置。</summary>

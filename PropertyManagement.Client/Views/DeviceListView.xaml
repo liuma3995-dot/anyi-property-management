@@ -182,6 +182,7 @@
                 </StackPanel>
                 <TextBlock Text="·【查看】→ 设备详情含 保养 / 年检 / 故障 / 自定义类型 四类记录；「下次保养」可用日历自定义，清空后按「最近保养 + 周期」派生" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
                 <TextBlock Text="·【报修】→ 生成故障单并转入「故障登记」；【批量删除】为软删，历史台账保留" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                <TextBlock Text="·【批量删除】仅可删除无保养/年检/故障/自定义记录与支出引用的设备；有维保历史的设备请改用「状态变更 → 报废」，到期提醒与状态留痕随删除一并留痕" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
                 <TextBlock Text="·【新增设备】→ 类别与保养周期可扩展（类别支持自定义新增 / 删除，被在册设备引用时禁止删除）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>
         </Border>

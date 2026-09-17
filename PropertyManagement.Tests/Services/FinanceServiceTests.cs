@@ -124,8 +124,12 @@ namespace PropertyManagement.Tests.Services
             Assert.Equal(250m, ScalarDecimal("SELECT amount FROM t_bill WHERE generate_batch_id = @id", batch.Id));
         }
 
+        /// <summary>
+        /// CHG-v1.1.0-18（负责人裁定）：「同对象 + 同周期 + 同项目」重复出账拦截已取消，
+        /// 同项目同周期同对象允许重复出账（补开/重开场景），不再记失败行；对应唯一索引见 migration_043。
+        /// </summary>
         [Fact]
-        public void GenerateBill_重复生成同周期账单_跳过并记失败行()
+        public void GenerateBill_同对象同周期同项目_允许重复出账()
         {
             int property = NewPropertyWithOwner("重复出账小区");
             int chargeItem = TestData.ChargeItem("重复出账物业费", 2m);
@@ -140,10 +144,10 @@ namespace PropertyManagement.Tests.Services
                 ChargeItemId = chargeItem, CycleId = cycle, PropertyIds = new List<int> { property }
             });
 
-            Assert.Equal(0, second.Success);
-            Assert.Equal(1, second.Fail);
-            Assert.Contains("BR-FIN-01", _billing.ListFailures(second.Id)[0].Reason);
-            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE property_id = @id AND del_flag = 0", new { id = property }));
+            Assert.Equal(1, second.Success);
+            Assert.Equal(0, second.Fail);
+            Assert.Equal(0, _billing.ListFailures(second.Id).Count);
+            Assert.Equal(2, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE property_id = @id AND del_flag = 0", new { id = property }));
         }
 
         [Fact]
@@ -163,7 +167,8 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.BadRequest, ex.Code);
-            Assert.Contains("BR-FIN-03", ex.Message);
+            // CHG-v1.1.0-18：用户可见提示不再带业务规则编号（BR-FIN-03），断言改口径关键词
+            Assert.Contains("已停用", ex.Message);
         }
 
         // ===================== BR-FIN-02 少收转部分缴；多收转预存（P-06） =====================
@@ -182,7 +187,9 @@ namespace PropertyManagement.Tests.Services
             Assert.Equal(BillStatus.Partial, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
             Assert.Equal(120m, ScalarDecimal("SELECT paid_amount FROM t_bill WHERE id = @id", billId));
             Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'PAYMENT_CREATE'"));
-            Assert.True(ScalarInt("SELECT COUNT(1) FROM t_receipt WHERE payment_id = @id", new { id = payment.Id }) == 1, "收据应自动开具");
+            // CHG-v1.1.0-15：收据号前后端下线 —— 不再写 t_receipt，收款以「收款流水号」标识
+            Assert.True(ScalarInt("SELECT COUNT(1) FROM t_payment WHERE id = @id", new { id = payment.Id }) == 1, "收款记录应落库");
+            Assert.False(string.IsNullOrEmpty(payment.BatchNo), "收款流水号应自动生成");
             Assert.Equal(0m, ScalarDecimal("SELECT COALESCE((SELECT balance FROM t_pre_deposit WHERE owner_id = @id), 0)", ownerId));
         }
 
@@ -481,34 +488,47 @@ namespace PropertyManagement.Tests.Services
             Assert.Equal(BillStatus.Paid, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
         }
 
-        // ===================== BR-FIN-08 收据编号唯一、打印留痕、支持补打 =====================
+        // ===================== CHG-v1.1.0-15 收款流水号（收据号前后端下线） =====================
 
         [Fact]
-        public void PrintReceipt_重复打印_编号不变且追加打印留痕()
+        public void CreatePayment_单张收款_生成收款流水号且不再生成收据()
         {
             int billId = NewPublishedBill(out int _, 2m, 100m);
             var payment = _payment.CreatePayment(new PaymentCreateRequest
             {
                 BillId = billId, Amount = 200m, PayMethod = PayMethod.Cash, PrintReceipt = true
             });
-            ReceiptDto receipt = _payment.GetReceipt(ScalarInt("SELECT id FROM t_receipt WHERE payment_id = @id", new { id = payment.Id }));
-            Assert.Equal(1, receipt.PrintCount);
-            string originalNo = receipt.ReceiptNo;
 
-            ReceiptDto reprinted = _payment.PrintReceipt(new ReceiptPrintRequest { ReceiptId = receipt.Id });
-
-            Assert.Equal(originalNo, reprinted.ReceiptNo); // 补打保留原号
-            Assert.Equal(2, reprinted.PrintCount);
-            Assert.Equal(2, ScalarInt("SELECT COUNT(1) FROM t_print_log WHERE biz_type = 'receipt' AND biz_id = @id", new { id = receipt.Id }));
+            // 收款流水号格式 PAY-yyyyMMdd-####，且与收据打印模板/收支明细流水「关联单据」同源
+            Assert.Matches(@"^PAY-\d{8}-\d{4}$", payment.BatchNo);
+            Assert.Equal(payment.BatchNo, ScalarText("SELECT batch_no FROM t_payment WHERE id = @id", new { id = payment.Id }));
+            // 收据号已下线：新收款不再生成收据记录
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_receipt WHERE payment_id = @id", new { id = payment.Id }));
         }
 
         [Fact]
-        public void PrintReceipt_收据不存在_抛NotFound()
+        public void CreateBatchPayment_多张账单_共享同一收款流水号()
         {
-            var ex = Assert.Throws<ApiException>(() => _payment.PrintReceipt(new ReceiptPrintRequest { ReceiptId = 999999 }));
+            int first = NewPublishedBill(out int _, 2m, 100m);    // 应收 200
+            int second = NewPublishedBill(out int _, 3m, 100m);   // 应收 300（金额不同以覆盖逐张核销）
+            decimal firstAmount = ScalarDecimal("SELECT amount FROM t_bill WHERE id = @id", first);
+            decimal secondAmount = ScalarDecimal("SELECT amount FROM t_bill WHERE id = @id", second);
 
-            Assert.Equal(ErrorCode.NotFound, ex.Code);
-            Assert.Contains("收据不存在", ex.Message);
+            PaymentBatchResultDto result = _payment.CreateBatchPayment(new PaymentBatchCreateRequest
+            {
+                Items = new List<PaymentBatchItemRequest>
+                {
+                    new PaymentBatchItemRequest { BillId = first, Amount = firstAmount },
+                    new PaymentBatchItemRequest { BillId = second, Amount = secondAmount }
+                },
+                PayMethod = PayMethod.Cash
+            });
+
+            Assert.Matches(@"^PAY-\d{8}-\d{4}$", result.BatchNo);
+            Assert.Equal(2, result.Count);
+            Assert.Equal(firstAmount + secondAmount, result.TotalAmount);
+            Assert.All(result.Payments, p => Assert.Equal(result.BatchNo, p.BatchNo));
+            Assert.Equal(2, ScalarInt("SELECT COUNT(1) FROM t_payment WHERE batch_no = @no", new { no = result.BatchNo }));
         }
 
         // ===================== BR-FIN-09 月/季报表 = 收入 + 支出 + 结余 =====================
@@ -636,6 +656,85 @@ namespace PropertyManagement.Tests.Services
         private static T ScalarEnum<T>(string sql, int id)
         {
             return (T)Enum.ToObject(typeof(T), ScalarInt(sql, new { id }));
+        }
+
+        // ===================== v1.1.0-⑤ 支出记录批量删除（软删留痕 BR-FIN-10） =====================
+
+        [Fact]
+        public void BatchDeleteExpenses_选中多笔_全部软删且列表不再返回()
+        {
+            int categoryId = TestData.ExpenseCategory("批量删除分类");
+            int first = TestData.Expense(categoryId, 120.5m);
+            int second = TestData.Expense(categoryId, 79.5m);
+            int keep = TestData.Expense(categoryId, 30m);
+
+            RecordBatchDeleteResultDto result = _expense.BatchDeleteExpenses(
+                new RecordBatchDeleteRequest { Ids = new List<int> { first, second, second } }, "admin", "127.0.0.1");
+
+            Assert.Equal(2, result.Deleted); // 重复 id 去重
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_expense WHERE id = @id", new { id = first }));
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_expense WHERE id = @id", new { id = second }));
+            Assert.Equal(0, ScalarInt("SELECT del_flag FROM t_expense WHERE id = @id", new { id = keep }));
+            Assert.Equal(1, _expense.QueryExpenses(new PageRequest { PageIndex = 1, PageSize = 20 }).Total);
+            Assert.Equal(1, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'EXPENSE_BATCH_DELETE' AND result = '成功'"));
+        }
+
+        [Fact]
+        public void BatchDeleteExpenses_未选记录_抛ValidationFailed且不写审计()
+        {
+            TestData.Expense(TestData.ExpenseCategory("未选记录分类"), 50m);
+
+            var ex = Assert.Throws<ApiException>(() =>
+                _expense.BatchDeleteExpenses(new RecordBatchDeleteRequest { Ids = new List<int>() }, "admin"));
+
+            Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
+            Assert.Contains("请选择要删除的支出记录", ex.Message);
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_expense WHERE del_flag = 1"));
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_audit_log WHERE action = 'EXPENSE_BATCH_DELETE'"));
+        }
+
+        [Fact]
+        public void BatchDeleteExpenses_含已删除记录_已删除行跳过不重复计数()
+        {
+            int categoryId = TestData.ExpenseCategory("混合状态分类");
+            int active = TestData.Expense(categoryId, 88m);
+            int deleted = TestData.Expense(categoryId, 99m);
+            _expense.DeleteExpense(deleted);
+
+            RecordBatchDeleteResultDto result = _expense.BatchDeleteExpenses(
+                new RecordBatchDeleteRequest { Ids = new List<int> { active, deleted } }, "admin");
+
+            Assert.Equal(1, result.Deleted);
+            Assert.Equal(1, ScalarInt("SELECT del_flag FROM t_expense WHERE id = @id", new { id = active }));
+            Assert.Equal(0, _expense.QueryExpenses(new PageRequest { PageIndex = 1, PageSize = 20 }).Total);
+        }
+
+        [Fact]
+        public void BatchDeleteExpenses_全部为已删除记录_抛NotFound()
+        {
+            int deleted = TestData.Expense(TestData.ExpenseCategory("全删分类"), 10m);
+            _expense.DeleteExpense(deleted);
+
+            var ex = Assert.Throws<ApiException>(() =>
+                _expense.BatchDeleteExpenses(new RecordBatchDeleteRequest { Ids = new List<int> { deleted } }, "admin"));
+
+            Assert.Equal(ErrorCode.NotFound, ex.Code);
+            Assert.Contains("不存在或已删除", ex.Message);
+        }
+
+        [Fact]
+        public void BatchDeleteExpenses_软删后_不再计入流水与报表支出合计()
+        {
+            int categoryId = TestData.ExpenseCategory("流水联动分类");
+            int id = TestData.Expense(categoryId, 240m);
+            decimal before = _report.QueryLedger(new LedgerQueryRequest { PageIndex = 1, PageSize = 50 }).Items
+                .Where(x => x.BizType == "expense").Sum(x => x.OutAmount);
+
+            _expense.BatchDeleteExpenses(new RecordBatchDeleteRequest { Ids = new List<int> { id } }, "admin");
+
+            decimal after = _report.QueryLedger(new LedgerQueryRequest { PageIndex = 1, PageSize = 50 }).Items
+                .Where(x => x.BizType == "expense").Sum(x => x.OutAmount);
+            Assert.Equal(240m, before - after);
         }
     }
 }

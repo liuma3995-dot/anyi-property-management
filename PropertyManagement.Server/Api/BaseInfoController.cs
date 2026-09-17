@@ -8,6 +8,7 @@ using System.Web.Http;
 using PropertyManagement.Contract.BaseInfo;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
+using PropertyManagement.Server.Api.Middleware;
 using PropertyManagement.Server.Services;
 
 namespace PropertyManagement.Server.Api
@@ -203,6 +204,11 @@ namespace PropertyManagement.Server.Api
             return FileResponse(bytes, "导入错误_" + id + ".xlsx");
         }
 
+        /// <summary>导入批次记录批量删除（v1.1.0-⑤）：软删留痕，记录不再出现在批次列表。</summary>
+        [HttpPost] [Route("imports/batch-delete")]
+        public ApiResponse<RecordBatchDeleteResultDto> BatchDeleteImports(RecordBatchDeleteRequest request) =>
+            ApiResponse<RecordBatchDeleteResultDto>.Ok(_service.BatchDeleteImportLogs(request, GetUsername(), GetIp()));
+
         // ---------- 导出（UC-INF-007） ----------
         [HttpPost] [Route("exports")]
         public ApiResponse<ExportLogDto> Export(BaseInfoExportRequest request) =>
@@ -238,6 +244,36 @@ namespace PropertyManagement.Server.Api
             response.Content.Headers.ContentDisposition =
                 new ContentDispositionHeaderValue("attachment") { FileName = fileName };
             return response;
+        }
+
+        /// <summary>操作人（BR-ORG-01 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
+        private string GetUsername()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Get<string>(AuthMiddleware.UsernameEnvKey) ?? string.Empty;
+                }
+            }
+            return string.Empty;
+        }
+
+        /// <summary>客户端 IP（BR-ORG-01 审计八列）。</summary>
+        private string GetIp()
+        {
+            object value;
+            if (Request.Properties.TryGetValue("MS_OwinContext", out value))
+            {
+                var owinContext = value as Microsoft.Owin.IOwinContext;
+                if (owinContext != null)
+                {
+                    return owinContext.Request.RemoteIpAddress;
+                }
+            }
+            return null;
         }
     }
 }

@@ -44,7 +44,8 @@ namespace PropertyManagement.Client.ViewModels
                 return bld + unit + room;
             }
         }
-        public string AreaText { get { return Dto.Area.ToString("0.0") + "㎡"; } }
+        /// <summary>F-02：展示即存值（最多 2 位、去尾零、不四舍五入），不再强制 1 位小数。</summary>
+        public string AreaText { get { return AreaValue.FormatWithUnit(Dto.Area); } }
         public string OwnerName { get { return string.IsNullOrEmpty(Dto.OwnerName) ? "未绑定" : Dto.OwnerName; } }
         public string OwnerPhone { get { return Dto.OwnerPhone ?? string.Empty; } }
         public string ArrearText { get { return "¥" + Dto.CurrentArrear.ToString("#,0.00"); } }
@@ -98,6 +99,10 @@ namespace PropertyManagement.Client.ViewModels
         private int? _formBuildingId;
         private int? _formUnitId;
         private decimal _formArea;
+        private string _formAreaText = string.Empty;
+        private string _formAreaError = string.Empty;
+        /// <summary>F-01：进入编辑时的原始面积，用于识别「存量高精度值原样提交」场景。</summary>
+        private decimal _loadedArea;
         private PropertyUsage _formUsage = PropertyUsage.Residential;
         private PropertyStatus _formStatus = PropertyStatus.Vacant;
         private bool _isBuildingAdd;
@@ -126,7 +131,6 @@ namespace PropertyManagement.Client.ViewModels
             });
             BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
             ExportCommand = new AsyncRelayCommand(ExportAsync);
-            PrintCommand = new AsyncRelayCommand(PrintAsync);
             PrevPageCommand = new RelayCommand(() => { if (_pageIndex > 1) { _pageIndex--; _ = LoadAsync(); } });
             NextPageCommand = new RelayCommand(() => { if (_pageIndex * _pageSize < _total) { _pageIndex++; _ = LoadAsync(); } });
             SaveCommand = new AsyncRelayCommand(SaveAsync);
@@ -209,6 +213,44 @@ namespace PropertyManagement.Client.ViewModels
         public int? FormBuildingId { get { return _formBuildingId; } set { if (SetProperty(ref _formBuildingId, value)) { _ = LoadUnitsAsync(); } } }
         public int? FormUnitId { get { return _formUnitId; } set { SetProperty(ref _formUnitId, value); } }
         public decimal FormArea { get { return _formArea; } set { SetProperty(ref _formArea, value); } }
+        /// <summary>
+        /// F-01：输入框绑定文本（而非 decimal）——中间态 <c>123.</c> 属合法状态，不再被绑定回滚；
+        /// 每个字符变更即做行内校验（最多 2 位小数／非法字符），保存时再走一次。
+        /// </summary>
+        public string FormAreaText
+        {
+            get { return _formAreaText; }
+            set
+            {
+                if (!SetProperty(ref _formAreaText, value)) return;
+                decimal parsed;
+                string error;
+                if (AreaValue.TryParseInput(value, out parsed, out error))
+                {
+                    FormAreaError = string.Empty;
+                    if (parsed > 0) FormArea = parsed;
+                }
+                else if (IsPreservedLegacyArea(value))
+                {
+                    // 存量 >2 位小数的面积：允许原样保留，避免「编辑房号却被迫改写面积」
+                    FormAreaError = string.Empty;
+                }
+                else
+                {
+                    FormAreaError = string.IsNullOrEmpty(value) ? string.Empty : error;
+                }
+            }
+        }
+        /// <summary>建筑面积行内错误提示（不占用页面级 ErrorText）。</summary>
+        public string FormAreaError { get { return _formAreaError; } private set { SetProperty(ref _formAreaError, value); } }
+
+        /// <summary>编辑态下文本框内容与原始存量面积一致（且该值超出 2 位小数）→ 视为合法保留。</summary>
+        private bool IsPreservedLegacyArea(string text)
+        {
+            if (_editingId <= 0 || _loadedArea <= 0 || !AreaValue.HasExcessDecimals(_loadedArea)) return false;
+            decimal loose;
+            return AreaValue.TryParseLoose(text, out loose) && loose == _loadedArea;
+        }
         public PropertyUsage FormUsage { get { return _formUsage; } set { SetProperty(ref _formUsage, value); } }
         public PropertyStatus FormStatus { get { return _formStatus; } set { SetProperty(ref _formStatus, value); } }
         public PropertyRow ViewRow { get { return _viewRow; } set { SetProperty(ref _viewRow, value); OnPropertyChanged(nameof(IsViewVisible)); } }
@@ -240,7 +282,6 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<PropertyRow> DeleteCommand { get; }
         public IRelayCommand BatchDeleteCommand { get; }
         public IAsyncRelayCommand ExportCommand { get; }
-        public IAsyncRelayCommand PrintCommand { get; }
         public IAsyncRelayCommand SaveCommand { get; }
         public IRelayCommand CancelCommand { get; }
         public IRelayCommand PrevPageCommand { get; }
@@ -362,6 +403,8 @@ namespace PropertyManagement.Client.ViewModels
             _formBuildingId = Buildings.FirstOrDefault()?.Id;
             OnPropertyChanged(nameof(FormBuildingId));
             FormArea = 0;
+            _loadedArea = 0;
+            FormAreaText = string.Empty;   // F-01：新增时留空，由用户逐键输入（含小数点）
             FormUsage = PropertyUsage.Residential;
             FormStatus = PropertyStatus.Vacant;
             IsFormVisible = true;
@@ -381,6 +424,8 @@ namespace PropertyManagement.Client.ViewModels
             await LoadUnitsAsync();
             FormUnitId = row.Dto.UnitId ?? 0;   // 无单元回显为「（无单元）」
             FormArea = row.Dto.Area;
+            _loadedArea = row.Dto.Area;
+            FormAreaText = AreaValue.Format(row.Dto.Area);   // F-01/F-02：按存值回显（最多 2 位）
             FormUsage = row.Dto.Usage;
             FormStatus = row.Dto.Status;
             IsFormVisible = true;
@@ -390,7 +435,27 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (string.IsNullOrWhiteSpace(FormRoomNo)) { ErrorText = "房号不能为空"; return; }
             if (!FormBuildingId.HasValue || FormBuildingId.Value <= 0) { ErrorText = "请选择所属楼栋"; return; }
-            if (FormArea <= 0) { ErrorText = "建筑面积必须大于 0"; return; }
+            // F-01：以输入框文本为准解析（容忍尾随小数点与全角字符），失败给出行内提示
+            decimal area;
+            string areaError;
+            if (!AreaValue.TryParseInput(FormAreaText, out area, out areaError))
+            {
+                // 存量高精度面积原样提交（编辑场景）不受 2 位限制约束
+                decimal loose;
+                if (IsPreservedLegacyArea(FormAreaText) && AreaValue.TryParseLoose(FormAreaText, out loose))
+                {
+                    area = loose;
+                }
+                else
+                {
+                    FormAreaError = string.IsNullOrEmpty(FormAreaText) ? string.Empty : areaError;
+                    ErrorText = areaError;
+                    return;
+                }
+            }
+            if (area <= 0) { ErrorText = "建筑面积必须大于 0"; return; }
+            FormArea = area;
+            FormAreaError = string.Empty;
             // 单元选填：Id<=0 视为「无单元」
             int? unitId = FormUnitId.HasValue && FormUnitId.Value > 0 ? FormUnitId : (int?)null;
             var request = new PropertyRequest
@@ -398,7 +463,7 @@ namespace PropertyManagement.Client.ViewModels
                 BuildingId = FormBuildingId.Value,
                 UnitId = unitId,
                 RoomNo = FormRoomNo.Trim(),
-                Area = FormArea,
+                Area = area,
                 Usage = FormUsage,
                 Status = FormStatus
             };
@@ -519,9 +584,5 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        private async Task PrintAsync()
-        {
-            await RunAsync(async () => { StatusText = "打印走客户端本地（演示）"; }, "已执行打印");
-        }
     }
 }

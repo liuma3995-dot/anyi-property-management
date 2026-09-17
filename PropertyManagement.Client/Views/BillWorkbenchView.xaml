@@ -5,6 +5,10 @@
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- CHG-v1.1.0-23：账单期间紧凑显示 + 悬停查看完整期间 -->
+        <Style x:Key="GridCellTextWithTip" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+            <Setter Property="ToolTip" Value="{Binding CyclePeriodFull}" />
+        </Style>
         <Style x:Key="GridStyle" TargetType="DataGrid">
             <Setter Property="AutoGenerateColumns" Value="False" />
             <Setter Property="HeadersVisibility" Value="Column" />
@@ -105,6 +109,18 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- CHG-v1.1.0-10：灰字提示行（文本为空时自动折叠） -->
+        <Style x:Key="HintLine" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+            <Setter Property="Margin" Value="0,3,0,0" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding RelativeSource={RelativeSource Self}, Path=Text}" Value="">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -149,7 +165,17 @@
                     <TextBlock Text="发布失败" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
                     <TextBlock Text="{Binding FailedText}" FontSize="26" FontWeight="Bold" Margin="0,6,0,0"
                                Foreground="{StaticResource DangerBrush}" />
-                    <TextBlock Text="可一键重推（FL-FIN-01）" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" />
+                    <!-- CHG-v1.1.0-21：卡片提示「可一键重推」原先只是文案，未接功能；此处补齐一键重推入口
+                         CHG-v1.1.0-22：提示语与入口同一行 —— 统计卡行高固定 118，第 4 行会被裁切（按钮被遮挡） -->
+                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                        <TextBlock Text="失败对象可一键重推" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                   VerticalAlignment="Center" />
+                        <Button Style="{StaticResource LinkButton}" Content="一键重推" FontSize="11" Padding="0"
+                                VerticalAlignment="Center" Margin="8,0,0,0"
+                                Command="{Binding RetryAllFailuresCommand}"
+                                Visibility="{Binding HasFailedBatches, Converter={StaticResource BoolToVis}}"
+                                ToolTip="按批次重推全部发布失败对象（等价逐批次点「重推」）" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </UniformGrid>
@@ -227,7 +253,9 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="批次号" Width="110" Binding="{Binding BatchNoText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="收费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="账单期间" Width="110" Binding="{Binding CyclePeriod}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.0-23：账单期间紧凑显示（同年省略结束年份）并加宽，避免日期被省略号遮挡；悬停看完整期间 -->
+                    <DataGridTextColumn Header="账单期间" Width="150" MinWidth="150" Binding="{Binding CyclePeriodText}"
+                                        ElementStyle="{StaticResource GridCellTextWithTip}" />
                     <DataGridTextColumn Header="户数" Width="70" Binding="{Binding HouseCountText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="总金额" Width="120" Binding="{Binding TotalAmountText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="状态" Width="100">
@@ -240,8 +268,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="发布时间" Width="130" Binding="{Binding PublishTimeText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTemplateColumn Header="操作" Width="300">
+                    <DataGridTextColumn Header="发布时间" Width="120" Binding="{Binding PublishTimeText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="操作" Width="250">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -364,19 +392,20 @@
         <!-- ============ 生成账单浮层 ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
-            <Border Width="580" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+            <Border Width="860" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="700">
                 <StackPanel>
                     <TextBlock Text="生成账单（草稿）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="选择收费项目与计费周期，生成草稿账单；重复对象进入失败清单（BR-FIN-01）"
+                    <TextBlock Text="依次选择收费项目、计费周期与缴费对象，生成草稿账单；校验不通过的对象进入失败清单"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,16" />
 
                     <TextBlock Text="收费项目" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <ComboBox Height="34" Margin="0,8,0,14" FontSize="12" VerticalContentAlignment="Center"
+                    <ComboBox x:Name="BillChargeItemCombo" Height="34" Margin="0,8,0,14" FontSize="12" VerticalContentAlignment="Center"
                               ItemsSource="{Binding ChargeItems}" SelectedItem="{Binding SelectedItem}"
                               DisplayMemberPath="Name" />
 
                     <TextBlock Text="计费周期" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <ComboBox Height="34" Margin="0,8,0,20" FontSize="12" VerticalContentAlignment="Center"
+                    <ComboBox x:Name="BillCycleCombo" Height="34" Margin="0,8,0,20" FontSize="12" VerticalContentAlignment="Center"
                               ItemsSource="{Binding Cycles}" SelectedItem="{Binding SelectedCycle}">
                         <ComboBox.ItemTemplate>
                             <DataTemplate>
@@ -400,6 +429,7 @@
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="开始日期" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -412,9 +442,117 @@
                                     SelectedDate="{Binding NewCycleEnd}" />
                         <Button Grid.Column="5" Style="{StaticResource LinkButton}" Content="添加周期"
                                 FontSize="13" VerticalAlignment="Center" Margin="10,0,0,0" Command="{Binding AddCycleCommand}" />
+                        <!-- CHG-v1.1.0-17：删除当前选中的自定义周期（内置周期/已被账单引用由服务端拦截） -->
+                        <Button Grid.Column="6" Style="{StaticResource LinkButton}" Content="删除周期"
+                                Foreground="{StaticResource DangerBrush}"
+                                FontSize="13" VerticalAlignment="Center" Margin="10,0,0,0" Command="{Binding DeleteCycleCommand}" />
                     </Grid>
-                    <TextBlock Text="添加后自动选中；也可直接填好日期点“生成草稿”（自动建周期再生成）"
+                    <TextBlock Text="添加后自动选中；也可直接填好日期点“生成草稿”（自动建周期再生成）；“删除周期”删除当前选中的自定义周期"
                                FontSize="9" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,2" TextWrapping="Wrap" />
+
+                    <!-- CHG-v1.1.0-10：缴费对象（默认不预选；单选／多选／全选；全选作用域＝当前搜索结果） -->
+                    <TextBlock Text="缴费对象" FontSize="12" FontWeight="SemiBold"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,0" />
+                    <!-- CHG-v1.1.0-18：自定义缴费对象 → 隐藏候选勾选区，改为手工填写表格 -->
+                    <Grid Margin="0,8,0,6" Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="104" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="BillObjectKindCombo" Grid.Column="0" Height="32" FontSize="12" VerticalContentAlignment="Center"
+                                  SelectedIndex="{Binding ObjectKindIndex, Mode=TwoWay}">
+                            <ComboBoxItem Content="房产" />
+                            <ComboBoxItem Content="车位" />
+                            <!-- CHG-v1.1.0-11：业主直缴（办卡费/清理费/维修费等面向业主本人的收费项目） -->
+                            <ComboBoxItem Content="业主" />
+                        </ComboBox>
+                        <Border Grid.Column="1" Height="32" Margin="8,0,6,0" Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}"
+                                      Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0" />
+                                <TextBox x:Name="BillObjectKeywordBox" Grid.Column="1" Style="{StaticResource SearchTextBox}" FontSize="11" Margin="8,0,12,0"
+                                         Text="{Binding ObjectKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                         hc:InfoElement.Placeholder="房产搜楼栋/房号 · 车位搜编号 · 业主搜姓名/手机" />
+                            </Grid>
+                        </Border>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,4,0" VerticalAlignment="Center">
+                            <CheckBox Content="全选" IsChecked="{Binding IsAllObjectsChecked, Mode=TwoWay}" FontSize="12" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding SelectedObjectCountText}" FontSize="11" VerticalAlignment="Center"
+                                       Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+                    <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6"
+                            Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}">
+                        <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BillObjects}" IsReadOnly="True"
+                                  RowHeight="32" MaxHeight="140" HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="40">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="ObjectCheckBox_Click"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="缴费对象" Width="240" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="说明" Width="*" Binding="{Binding SubText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="缴费人" Width="120" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                    <StackPanel Visibility="{Binding IsCustomChargeObject, Converter={StaticResource BoolToVis}}">
+                        <StackPanel Orientation="Horizontal" Margin="0,8,0,6">
+                            <Button Style="{StaticResource LinkButton}" Content="新增一行" FontSize="12"
+                                    Command="{Binding AddCustomPayerCommand}" />
+                            <TextBlock Text="手工填写缴费对象名称（如：1号楼租户-张三 / XX广告公司）"
+                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                       VerticalAlignment="Center" Margin="10,0,0,0" />
+                        </StackPanel>
+                        <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                            <ItemsControl x:Name="CustomPayerList" ItemsSource="{Binding CustomPayers}" MinHeight="72" MaxHeight="140">
+                                <ItemsControl.Template>
+                                    <ControlTemplate TargetType="ItemsControl">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="8,6">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <TextBox Grid.Column="0" Height="30" FontSize="12" VerticalContentAlignment="Center"
+                                                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                     AutomationProperties.HelpText="自定义缴费对象名称"
+                                                     hc:InfoElement.Placeholder="缴费对象名称（必填）" />
+                                            <Button Grid.Column="1" Style="{StaticResource LinkButton}" Content="删除"
+                                                    Foreground="{StaticResource DangerBrush}" FontSize="12"
+                                                    VerticalAlignment="Center" Margin="10,0,4,0"
+                                                    Command="{Binding DataContext.RemoveCustomPayerCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                    CommandParameter="{Binding}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Border>
+                    </StackPanel>
+                    <TextBlock Style="{StaticResource HintLine}" Text="{Binding HiddenOwnerText}" />
+                    <TextBlock Style="{StaticResource HintLine}" Text="{Binding ObjectListHint}" />
+                    <TextBlock Style="{StaticResource HintLine}"
+                               Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}"
+                               Text="提示：房产收物业费、车位收停车费、业主收办卡/清理/维修等直缴费用；全选只作用于当前搜索结果，未勾选任何缴费对象时无法生成。" />
+                    <!-- CHG-v1.1.0-16：校验失败（如缴费对象与收费项目不一致）在弹窗内可见，避免提示被浮层遮住 -->
+                    <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}"
+                               TextWrapping="Wrap" Margin="0,8,0,0" />
 
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -422,12 +560,14 @@
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="生成草稿" Command="{Binding GenerateCommand}" />
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="生成草稿" Margin="0,14,0,0"
+                                Command="{Binding GenerateCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource LinkButton}" Content="取消" FontSize="13"
-                                HorizontalAlignment="Center" VerticalAlignment="Center"
+                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,14,0,0"
                                 Command="{Binding CloseGenerateCommand}" />
                     </Grid>
                 </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
 
@@ -459,7 +599,7 @@
             <Border Background="#66000000" />
             <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
-                    <TextBlock Text="确认删除批次" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding DeleteConfirmTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Text="{Binding DeleteConfirmText}" FontSize="13" TextWrapping="Wrap"
                                Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,22" />
                     <Grid>
@@ -495,6 +635,7 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="批次号" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,0,10" />
                         <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding ViewBatchRow.BatchNoText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
@@ -510,6 +651,10 @@
                         <TextBlock Grid.Row="5" Grid.Column="1" Text="{Binding ViewBatchRow.StatusText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
                         <TextBlock Grid.Row="6" Grid.Column="0" Text="发布时间" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding ViewBatchRow.PublishTimeText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
+                        <!-- CHG-v1.1.0-10：本次生成范围摘要（对账口径） -->
+                        <TextBlock Grid.Row="7" Grid.Column="0" Text="生成范围" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="7" Grid.Column="1" Text="{Binding ViewBatchRow.ScopeSummaryText}" FontSize="12"
+                                   Foreground="{StaticResource TextPrimaryBrush}" TextWrapping="Wrap" />
                     </Grid>
                     <Button Style="{StaticResource LinkButton}" Content="关闭" FontSize="13" HorizontalAlignment="Right"
                             Margin="0,18,0,0" Command="{Binding CloseViewCommand}" />

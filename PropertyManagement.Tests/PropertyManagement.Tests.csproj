@@ -81,6 +81,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="Infrastructure\DbTestBase.cs" />
+    <Compile Include="Contract\AreaValueTests.cs" />
     <Compile Include="Infrastructure\TestDb.cs" />
     <Compile Include="Infrastructure\TestData.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />

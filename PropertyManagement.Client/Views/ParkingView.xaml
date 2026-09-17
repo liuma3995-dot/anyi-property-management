@@ -50,7 +50,8 @@
                     <TextBlock Text="已出租" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <TextBlock Text="{Binding RentedCount}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="24" FontWeight="Bold" Margin="0,8,0,4" />
                     <Border Background="{StaticResource SuccessSoftBrush}" CornerRadius="4" Padding="7,2" HorizontalAlignment="Left">
-                        <TextBlock Text="{Binding RentIncomeText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" />
+                        <!-- CHG-v1.1.0-12：租金已下线，「已出租」卡片副文案改为含绑定业主户数 -->
+                        <TextBlock Text="{Binding RentedOwnerHintText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" />
                     </Border>
                 </StackPanel>
             </Border>
@@ -136,8 +137,8 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="绑定房产" Width="*" Binding="{Binding BindProperty}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="租金" Width="112" Binding="{Binding RentText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="租期至" Width="104" Binding="{Binding RentTo}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.0-11：租金/租期至下线（车位不再承载计费规则，定价统一由收费项目维护） -->
+                    <DataGridTextColumn Header="绑定业主" Width="120" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="操作" Width="132">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -162,12 +163,12 @@
                     <TextBlock Text="{Binding FormTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
                     <TextBlock Text="车位编号 / 区域" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
-                        <TextBox Text="{Binding FormSpaceNo, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="170" />
+                        <TextBox x:Name="ParkingSpaceNoBox" Text="{Binding FormSpaceNo, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="170" />
                         <TextBox Text="{Binding FormArea, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="170" Margin="10,0,0,0" hc:InfoElement.Placeholder="区域，如 B1 层" />
                     </StackPanel>
                     <TextBlock Text="类型 / 状态" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
-                        <ComboBox SelectedValue="{Binding FormType}" SelectedValuePath="Tag" Width="170">
+                        <ComboBox x:Name="ParkingTypeCombo" SelectedValue="{Binding FormType}" SelectedValuePath="Tag" Width="170">
                             <ComboBoxItem Content="产权" Tag="PropertyRight" />
                             <ComboBoxItem Content="人防" Tag="CivilDefense" />
                             <ComboBoxItem Content="临时" Tag="Temporary" />
@@ -179,20 +180,16 @@
                             <ComboBoxItem Content="维修中" Tag="Repairing" />
                         </ComboBox>
                     </StackPanel>
-                    <TextBlock Text="绑定房产" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <ComboBox IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
-                              Text="{Binding PropertySearchText, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding FilteredProperties}" DisplayMemberPath="UnitPath"
-                              SelectedValuePath="Id" SelectedValue="{Binding FormPropertyId, Mode=TwoWay}" Margin="0,6,0,12" />
-                    <TextBlock Text="租金 / 租期至" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
-                        <ComboBox SelectedValue="{Binding FormRentMode}" SelectedValuePath="Tag" Width="100">
-                            <ComboBoxItem Content="按月" Tag="Monthly" />
-                            <ComboBoxItem Content="按年" Tag="Yearly" />
-                        </ComboBox>
-                        <TextBox Text="{Binding FormRent, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="110" Margin="10,0,0,0" hc:InfoElement.Placeholder="租金金额" />
-                        <hc:DatePicker SelectedDate="{Binding FormRentTo, Mode=TwoWay}" Height="32" Width="130" Margin="10,0,0,0" hc:InfoElement.Placeholder="租期至" />
-                    </StackPanel>
+                    <!-- CHG-v1.1.0-12：绑定房产下线（改由「绑定业主 → 自动引用房产」，避免与业主-房产关系模块歧义） -->
+                    <!-- CHG-v1.1.0-11：租金/租期至下线（定价统一由收费项目维护）；表单新增绑定业主 -->
+                    <TextBlock Text="绑定业主" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <ComboBox x:Name="ParkingOwnerCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                              IsSynchronizedWithCurrentItem="False"
+                              ItemsSource="{Binding OwnersView}" DisplayMemberPath="DisplayText"
+                              SelectedItem="{Binding SelectedOwner, Mode=TwoWay}"
+                              Text="{Binding OwnerSearchText, UpdateSourceTrigger=PropertyChanged}"
+                              Height="32" Margin="0,6,0,12" MaxDropDownHeight="220" FontSize="12"
+                              hc:InfoElement.Placeholder="输入业主姓名 / 手机号检索" />
                     <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,0,0,8" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelCommand}" />
@@ -238,18 +235,15 @@
                             <TextBlock Text="{Binding ViewRow.BindProperty}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
                         </StackPanel>
                     </Grid>
+                    <!-- CHG-v1.1.0-11：详情面板同步下线「租金 / 租期至」，保留绑定业主 -->
                     <Grid Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">
-                            <TextBlock Text="业主" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                            <TextBlock Text="绑定业主" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
                             <TextBlock Text="{Binding ViewRow.OwnerName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1">
-                            <TextBlock Text="租金 / 租期至" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
-                            <TextBlock Text="{Binding ViewRow.RentPeriodText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
                         </StackPanel>
                     </Grid>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">

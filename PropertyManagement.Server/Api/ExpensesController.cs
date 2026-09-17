@@ -78,6 +78,15 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<object>.Ok(null);
         }
 
+        /// <summary>支出记录批量删除（v1.1.0-⑤）：软删留痕（BR-FIN-10），已删除记录自动跳过。</summary>
+        [HttpPost]
+        [Route("batch-delete")]
+        public ApiResponse<RecordBatchDeleteResultDto> BatchDeleteExpenses(RecordBatchDeleteRequest request)
+        {
+            return ApiResponse<RecordBatchDeleteResultDto>.Ok(
+                _expenses.BatchDeleteExpenses(request, GetUsername(), GetIp()));
+        }
+
         /// <summary>操作人（BR-ORG-01 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
         private string GetUsername()
         {

@@ -221,7 +221,14 @@ namespace PropertyManagement.Contract.Enums
     public enum ChargeObjectType
     {
         Property = 0, // 房产
-        Parking = 1   // 车位
+        Parking = 1,  // 车位
+        /// <summary>CHG-v1.1.0-16：业主（直缴：办卡费/清理费/维修费等面向业主本人的收费项目）。</summary>
+        Owner = 2,
+        /// <summary>
+        /// CHG-v1.1.0-17：自定义缴费对象（租户/广告商/外部单位等无基础信息档案的对象），
+        /// 具体名称由 charge_object 字典项（t_charge_item.object_code）决定；该类项目暂不支持批量出账。
+        /// </summary>
+        Custom = 3
     }
     /// <summary>报表导出格式（D-3：Excel/PDF）。</summary>
     public enum ExportFormat

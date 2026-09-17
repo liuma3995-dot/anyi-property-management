@@ -14,6 +14,13 @@ namespace PropertyManagement.Contract.Finance
         public BillingCycleType CycleType { get; set; }
         public int Status { get; set; }
         public ChargeObjectType ObjectType { get; set; }   // CHG-M4-09：适用对象（房产/车位），由计价方式派生
+        /// <summary>
+        /// CHG-v1.1.0-17：缴费对象字典项编码（charge_object：property/parking/owner 为系统固定三项，
+        /// 其余为自定义项）；为空表示历史数据（按 ObjectType 展示）。
+        /// </summary>
+        public string ObjectCode { get; set; }
+        /// <summary>CHG-v1.1.0-17：缴费对象显示名（字典项名称；缺失时按 ObjectType 回落「房产/车位/业主」）。</summary>
+        public string ObjectName { get; set; }
 
         // T4F-1-5：收费项目类别/计价方式/单价单位/自定义周期（CHG-M4-11）
         public string Category { get; set; }      // 类别（收费项目类别字典名，如 物业费/代收代缴）
@@ -31,6 +38,10 @@ namespace PropertyManagement.Contract.Finance
     {
         public int? PropertyId { get; set; }
         public int? ParkingId { get; set; }
+        /// <summary>CHG-v1.1.0-11：业主缴费对象（业主直缴失败行）。</summary>
+        public int? OwnerId { get; set; }
+        /// <summary>CHG-v1.1.0-21：自定义缴费对象名称（该类失败行重推时按名称重新出账）。</summary>
+        public string PayerName { get; set; }
         public string No { get; set; }
         public string Reason { get; set; }
     }
@@ -42,7 +53,25 @@ namespace PropertyManagement.Contract.Finance
         public string ChargeItemName { get; set; }
         public int? PropertyId { get; set; }
         public int? ParkingId { get; set; }
+        /// <summary>CHG-v1.1.0-11：业主直缴账单的缴费对象（与 property/parking 互斥）。</summary>
+        public int? OwnerId { get; set; }
         public string PropertyNo { get; set; }
+        /// <summary>CHG-v1.1.0-12：楼栋（收款登记缴费对象展示「姓名 → 楼栋 → 房号」）。</summary>
+        public string BuildingNo { get; set; }
+        /// <summary>CHG-v1.1.0-12：房号。</summary>
+        public string RoomNo { get; set; }
+        /// <summary>CHG-v1.1.0-12：车位编号（车位账单展示用）。</summary>
+        public string SpaceNo { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-13：缴费人（业主）ID —— 直缴取 owner_id，房产取有效业主关系，车位取绑定业主。
+        /// 收款登记按此聚合「一个业主一行，列出其全部欠费项目」。
+        /// </summary>
+        public int? PayerOwnerId { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-18：自定义缴费对象账单的缴费人名称（property/parking/owner 均为空时有效）。
+        /// 收款登记按该名称聚合「一个自定义缴费对象一行」。
+        /// </summary>
+        public string PayerName { get; set; }
         public string OwnerName { get; set; }
         public int CycleId { get; set; }
         public string CyclePeriod { get; set; }
@@ -69,6 +98,13 @@ namespace PropertyManagement.Contract.Finance
         public int ChargeItemId { get; set; }
         public int? PropertyId { get; set; }
         public int? ParkingId { get; set; }
+        /// <summary>CHG-v1.1.0-11：业主直缴账单（与 property/parking 三者互斥）。</summary>
+        public int? OwnerId { get; set; }
+        /// <summary>
+        /// CHG-v1.1.0-18：自定义缴费对象账单的缴费人名称（租户/广告商/外部单位等无档案对象，由用户手工填写）。
+        /// 与 property_id / parking_id / owner_id 互斥。
+        /// </summary>
+        public string PayerName { get; set; }
         public int CycleId { get; set; }
         public decimal Amount { get; set; }
         public decimal PaidAmount { get; set; }
@@ -83,6 +119,8 @@ namespace PropertyManagement.Contract.Finance
     {
         public int Id { get; set; }
         public int BillId { get; set; }
+        /// <summary>CHG-v1.1.0-12：统一收款流水号（同一批多账单收款共享；单笔收款为 NULL）。</summary>
+        public string BatchNo { get; set; }
         public decimal Amount { get; set; }
         public PayMethod PayMethod { get; set; }
         public DateTime PaidAt { get; set; }
@@ -91,6 +129,28 @@ namespace PropertyManagement.Contract.Finance
 
         /// <summary>收款备注（T4R-3：随收款登记落库）。</summary>
         public string Remark { get; set; }
+    }
+
+    /// <summary>统一收款结果（CHG-v1.1.0-12）。</summary>
+    public class PaymentBatchResultDto
+    {
+        /// <summary>本次统一收款流水号（如 PAY-20260917-0001）。</summary>
+        public string BatchNo { get; set; }
+        /// <summary>实际入账的分账单收款记录（每张账单一条）。</summary>
+        public List<PaymentDto> Payments { get; set; }
+        public decimal TotalAmount { get; set; }
+        public int Count { get; set; }
+    }
+
+    /// <summary>退款/减免/调整批量登记结果（CHG-v1.1.0-13：一组账单各登记一条记录）。</summary>
+    public class RefundBatchResultDto
+    {
+        /// <summary>本次登记生成的记录（每张账单一条，各自申请编号）。</summary>
+        public List<RefundAdjustmentDto> Items { get; set; }
+        /// <summary>账单张数。</summary>
+        public int Count { get; set; }
+        /// <summary>合计金额（每张金额 × 张数）。</summary>
+        public decimal TotalAmount { get; set; }
     }
 
     /// <summary>收据（t_receipt，UC-FIN-011，BR-FIN-08 收据号唯一）。</summary>
@@ -169,6 +229,45 @@ namespace PropertyManagement.Contract.Finance
         public int Success { get; set; }
         public int Fail { get; set; }
         public string FailDetail { get; set; }
+
+        /// <summary>CHG-v1.1.0-10：本次生成范围摘要（全选／指定 N 个／筛选条件），用于事后对账。</summary>
+        public string ScopeSummary { get; set; }
+    }
+
+    /// <summary>缴费对象候选行（CHG-v1.1.0-10：生成账单弹窗选择器）。</summary>
+    public class BillObjectCandidateDto
+    {
+        public int Id { get; set; }
+        /// <summary>"property" 或 "parking"。</summary>
+        public string Kind { get; set; }
+        /// <summary>主文本：楼栋 单元 房号（房产）／车位编号（车位）。</summary>
+        public string No { get; set; }
+        /// <summary>副文本：建筑面积／用途（房产），车位类型／绑定房（车位）。</summary>
+        public string SubText { get; set; }
+        /// <summary>缴费人（房产取有效业主，车位取车位绑定业主）。</summary>
+        public string OwnerName { get; set; }
+        /// <summary>是否未绑定业主（仅作展示标记，生成时仍按 BR-INF-02 判定）。</summary>
+        public bool NoOwner { get; set; }
+        public decimal? Area { get; set; }
+    }
+
+    /// <summary>缴费对象候选查询结果（CHG-v1.1.0-10）。</summary>
+    public class BillObjectQueryResult
+    {
+        public List<BillObjectCandidateDto> Items { get; set; }
+        /// <summary>房产口径：因未绑定有效业主被隐藏的房产数量（车位口径恒为 0）。</summary>
+        public int HiddenCount { get; set; }
+        /// <summary>是否因超出返回上限被截断（请用关键字缩小范围）。</summary>
+        public bool Truncated { get; set; }
+    }
+
+    /// <summary>草稿批次既有缴费对象（CHG-v1.1.0-10：批次编辑回填）。</summary>
+    public class BillObjectSelectionDto
+    {
+        public List<int> PropertyIds { get; set; }
+        public List<int> ParkingIds { get; set; }
+        /// <summary>CHG-v1.1.0-11：业主缴费对象（批次编辑回填）。</summary>
+        public List<int> OwnerIds { get; set; }
     }
 
     /// <summary>账单状态变更记录（t_bill_status_log，只追加）。</summary>
@@ -290,6 +389,12 @@ namespace PropertyManagement.Contract.Finance
         public int PaidCount { get; set; }
         public DateTime GenerateAt { get; set; }
         public string PublishedAtRaw { get; set; }
+        /// <summary>CHG-v1.1.0-21：失败对象重推时间（未重推为空）。</summary>
+        public string RetriedAtRaw { get; set; }
+        /// <summary>CHG-v1.1.0-21：本次重推成功户数（累计口径为最近一次）。</summary>
+        public int RetriedCount { get; set; }
+        /// <summary>CHG-v1.1.0-10：本次生成范围摘要（批次详情展示）。</summary>
+        public string ScopeSummary { get; set; }
 
         public DateTime? PublishedAt
         {
@@ -300,15 +405,34 @@ namespace PropertyManagement.Contract.Finance
             }
         }
 
-        /// <summary>批次状态：Draft=草稿 / Published=已发布 / Partial=部分缴纳 / Failed=发布失败。</summary>
+        /// <summary>
+        /// 批次状态：Draft=草稿 / Published=已发布 / Partial=部分缴纳 / Failed=发布失败 / Retried=已重推。
+        /// CHG-v1.1.0-21：失败对象全部重推成功后（fail=0 且 retried_at 非空、批次自身无账单）显示「已重推」，
+        /// 不再计入「发布失败」卡片。
+        /// </summary>
         public string Status
         {
             get
             {
                 if (FailCount > 0 && SuccessCount == 0) return "Failed";
+                if (!string.IsNullOrEmpty(RetriedAtRaw) && DraftCount == 0 && PendingCount == 0 &&
+                    PartialCount == 0 && PaidCount == 0)
+                {
+                    return "Retried";
+                }
                 if (DraftCount > 0 && PendingCount == 0 && PartialCount == 0 && PaidCount == 0) return "Draft";
                 if (PartialCount > 0) return "Partial";
                 return "Published";
+            }
+        }
+
+        /// <summary>CHG-v1.1.0-21：最近一次重推时间（未重推为空）。</summary>
+        public DateTime? RetriedAt
+        {
+            get
+            {
+                DateTime parsed;
+                return DateTime.TryParse(RetriedAtRaw, out parsed) ? (DateTime?)parsed : null;
             }
         }
     }

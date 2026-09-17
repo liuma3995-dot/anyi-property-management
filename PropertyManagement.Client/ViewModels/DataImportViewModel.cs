@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -10,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.BaseInfo;
+using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 
 namespace PropertyManagement.Client.ViewModels
@@ -28,6 +30,16 @@ namespace PropertyManagement.Client.ViewModels
         public string TimeText { get { return Dto.CreatedAt == default ? "—" : Dto.CreatedAt.ToString("yyyy-MM-dd HH:mm"); } }
         public Brush StatusBg { get { return Dto.Status == ImportStatus.Success ? Br("#E8F7F1") : (Dto.Status == ImportStatus.PartialSuccess ? Br("#FEF0C7") : Br("#F1F3F7")); } }
         public Brush StatusBrush { get { return Dto.Status == ImportStatus.Success ? Br("#12805C") : (Dto.Status == ImportStatus.PartialSuccess ? Br("#B54708") : Br("#667085")); } }
+
+        private bool _isSelected;
+
+        /// <summary>v1.1.0-⑤：批量删除勾选状态（仅选择模式下显示勾选框列）。</summary>
+        public bool IsSelected
+        {
+            get { return _isSelected; }
+            set { SetProperty(ref _isSelected, value); }
+        }
+
         private static Brush Br(string hex) { return new SolidColorBrush((Color)ColorConverter.ConvertFromString(hex)); }
     }
 
@@ -38,6 +50,10 @@ namespace PropertyManagement.Client.ViewModels
         private string _selectedFileName = string.Empty;
         private byte[] _selectedFile;
         private bool _isImporting;
+        private bool _isSelectionMode;        // v1.1.0-⑤：点击「批量删除记录」后才显示勾选框列
+        private bool _isConfirmVisible;
+        private string _confirmTitle = "确认操作";
+        private string _confirmMessage = string.Empty;
 
         public DataImportViewModel(IApiClient api) : base(api)
         {
@@ -47,6 +63,10 @@ namespace PropertyManagement.Client.ViewModels
             DownloadErrorsCommand = new AsyncRelayCommand<ImportLogRow>(DownloadErrorsAsync);
             ReImportCommand = new AsyncRelayCommand<ImportLogRow>(ReImportAsync);
             RefreshCommand = new AsyncRelayCommand(LoadAsync);
+            BatchDeleteRecordsCommand = new RelayCommand(BatchDeleteRecords);
+            CancelSelectionCommand = new RelayCommand(ExitSelectionMode);
+            ConfirmActionCommand = new AsyncRelayCommand(ConfirmActionAsync);
+            CancelConfirmCommand = new RelayCommand(CancelConfirm);
             _ = LoadAsync();
         }
 
@@ -63,6 +83,133 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand<ImportLogRow> DownloadErrorsCommand { get; }
         public IAsyncRelayCommand<ImportLogRow> ReImportCommand { get; }
         public IAsyncRelayCommand RefreshCommand { get; }
+
+        // ---------- v1.1.0-⑤：导入批次记录批量删除（软删留痕） ----------
+
+        public IRelayCommand BatchDeleteRecordsCommand { get; }
+
+        public IRelayCommand CancelSelectionCommand { get; }
+
+        public IAsyncRelayCommand ConfirmActionCommand { get; }
+
+        public IRelayCommand CancelConfirmCommand { get; }
+
+        /// <summary>记录全选/取消全选（表头勾选框双向绑定）。</summary>
+        public bool IsAllRecordsSelected
+        {
+            get { return Batches.Count > 0 && Batches.All(r => r.IsSelected); }
+            set
+            {
+                foreach (ImportLogRow row in Batches) { row.IsSelected = value; }
+                OnPropertyChanged(nameof(IsAllRecordsSelected));
+            }
+        }
+
+        /// <summary>刷新全选态（勾选/取消单行后由视图调用）。</summary>
+        public void RefreshSelectAllState()
+        {
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
+
+        /// <summary>
+        /// 选择模式：默认 false（批次表不显示勾选框列）；点击「批量删除记录」后进入选择模式，
+        /// 勾选框列显示且按钮文案变为「删除所选」；取消或删除完成后退出并清空勾选。
+        /// </summary>
+        public bool IsSelectionMode
+        {
+            get { return _isSelectionMode; }
+            private set
+            {
+                if (SetProperty(ref _isSelectionMode, value))
+                {
+                    OnPropertyChanged(nameof(BatchDeleteButtonText));
+                }
+            }
+        }
+
+        public string BatchDeleteButtonText
+        {
+            get { return IsSelectionMode ? "删除所选" : "批量删除记录"; }
+        }
+
+        public bool IsConfirmVisible
+        {
+            get { return _isConfirmVisible; }
+            set { SetProperty(ref _isConfirmVisible, value); }
+        }
+
+        public string ConfirmTitle
+        {
+            get { return _confirmTitle; }
+            private set { SetProperty(ref _confirmTitle, value); }
+        }
+
+        public string ConfirmMessage
+        {
+            get { return _confirmMessage; }
+            private set { SetProperty(ref _confirmMessage, value); }
+        }
+
+        /// <summary>批量删除入口：第一次点击进入选择模式，已在选择模式时校验勾选并弹出二次确认。</summary>
+        private void BatchDeleteRecords()
+        {
+            if (!IsSelectionMode)
+            {
+                EnterSelectionMode();
+                return;
+            }
+
+            List<ImportLogRow> selected = Batches.Where(r => r.IsSelected).ToList();
+            if (selected.Count == 0)
+            {
+                ErrorText = "请先勾选要删除的导入批次记录（可勾选单条，也可勾选表头全选），或点击【取消】退出批量删除";
+                return;
+            }
+            ConfirmTitle = "批量删除导入批次记录";
+            ConfirmMessage = "将删除所选 " + selected.Count + " 条导入批次记录（记录留痕，已导入的业务数据不受影响）。确认删除？";
+            IsConfirmVisible = true;
+        }
+
+        private async Task ConfirmActionAsync()
+        {
+            IsConfirmVisible = false;
+            var ids = Batches.Where(r => r.IsSelected).Select(r => r.Id).Distinct().ToList();
+            if (ids.Count == 0) { return; }
+
+            string message = null;
+            await RunAsync(async () =>
+            {
+                RecordBatchDeleteResultDto result = await Api.BatchDeleteImportLogsAsync(
+                    new RecordBatchDeleteRequest { Ids = ids });
+                message = "已删除 " + (result == null ? 0 : result.Deleted) + " 条导入批次记录（可在「备份与恢复」页一键清理留痕）";
+                await LoadAsync();
+                ExitSelectionMode();
+            }, null);
+            StatusText = string.IsNullOrEmpty(message) ? StatusText : message;
+        }
+
+        private void CancelConfirm()
+        {
+            IsConfirmVisible = false;
+        }
+
+        /// <summary>进入选择模式：显示勾选框列并清空历史勾选。</summary>
+        private void EnterSelectionMode()
+        {
+            foreach (ImportLogRow row in Batches) { row.IsSelected = false; }
+            ErrorText = string.Empty;
+            IsSelectionMode = true;
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
+
+        /// <summary>退出选择模式：隐藏勾选框列并清空勾选。</summary>
+        private void ExitSelectionMode()
+        {
+            foreach (ImportLogRow row in Batches) { row.IsSelected = false; }
+            IsSelectionMode = false;
+            IsConfirmVisible = false;
+            OnPropertyChanged(nameof(IsAllRecordsSelected));
+        }
 
         private async Task LoadAsync()
         {
@@ -86,7 +233,13 @@ namespace PropertyManagement.Client.ViewModels
                 };
                 if (dialog.ShowDialog() == true)
                 {
-                    File.WriteAllBytes(dialog.FileName, bytes);
+                    string saveError;
+                    if (!TryWriteFile(dialog.FileName, bytes, out saveError))
+                    {
+                        ErrorText = saveError;
+                        MessageBox.Show(saveError, "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
                     StatusText = DateTime.Now.ToString("HH:mm:ss ") + "模板已下载：" + dialog.FileName;
                     MessageBox.Show("模板已下载到：" + dialog.FileName, "下载成功", MessageBoxButton.OK, MessageBoxImage.Information);
                 }
@@ -110,9 +263,76 @@ namespace PropertyManagement.Client.ViewModels
             var dialog = new OpenFileDialog { Filter = "Excel 文件|*.xlsx;*.xls" };
             if (dialog.ShowDialog() == true)
             {
-                _selectedFile = File.ReadAllBytes(dialog.FileName);
+                // 修复（v1.1.0-①）：文件正被 Excel/WPS 占用时 File.ReadAllBytes 会抛未处理异常
+                // → 全局异常处理器 Shutdown(1)，用户看到的是"程序崩溃"。这里改为共享读 + 业务化提示。
+                byte[] content;
+                string readError;
+                if (!TryReadFile(dialog.FileName, out content, out readError))
+                {
+                    ErrorText = readError;
+                    StatusText = string.Empty;
+                    MessageBox.Show(readError, "无法读取文件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                _selectedFile = content;
                 SelectedFileName = System.IO.Path.GetFileName(dialog.FileName);
                 OnPropertyChanged(nameof(HasFile));
+                ErrorText = string.Empty;
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已选择文件：" + SelectedFileName;
+            }
+        }
+
+        /// <summary>
+        /// 读取用户选择的数据文件。以 <see cref="FileShare.ReadWrite"/> 打开，兼容「文件仍在 Excel/WPS 中打开」
+        /// 的常见场景（只读共享即可读到已保存内容）；确实无法读取时返回业务化提示而不是让进程崩溃。
+        /// </summary>
+        private static bool TryReadFile(string path, out byte[] content, out string error)
+        {
+            content = null;
+            error = null;
+            try
+            {
+                using (var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
+                           FileShare.ReadWrite | FileShare.Delete))
+                {
+                    var buffer = new byte[stream.Length];
+                    int read = 0;
+                    while (read < buffer.Length)
+                    {
+                        int n = stream.Read(buffer, read, buffer.Length - read);
+                        if (n <= 0) break;
+                        read += n;
+                    }
+                    if (read != buffer.Length) Array.Resize(ref buffer, read);
+                    content = buffer;
+                }
+                if (content.Length == 0) { error = "所选文件为空，请重新选择。"; return false; }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException)) throw;
+                error = "无法读取所选文件：" + ex.Message + Environment.NewLine +
+                        "若该文件正在 Excel/WPS 中打开，请先保存并关闭后重试。";
+                return false;
+            }
+        }
+
+        /// <summary>保存导出文件：目标文件被占用/无权限时给出提示而不是崩溃。</summary>
+        private static bool TryWriteFile(string path, byte[] bytes, out string error)
+        {
+            error = null;
+            try
+            {
+                File.WriteAllBytes(path, bytes);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                if (!(ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException)) throw;
+                error = "无法写入文件：" + ex.Message + Environment.NewLine +
+                        "若目标文件正在 Excel/WPS 中打开，请先关闭后重试，或另存为其它文件名。";
+                return false;
             }
         }
 
@@ -156,7 +376,15 @@ namespace PropertyManagement.Client.ViewModels
             var dialog = new OpenFileDialog { Filter = "Excel 文件|*.xlsx;*.xls" };
             if (dialog.ShowDialog() == true)
             {
-                _selectedFile = File.ReadAllBytes(dialog.FileName);
+                byte[] content;
+                string readError;
+                if (!TryReadFile(dialog.FileName, out content, out readError))
+                {
+                    ErrorText = readError;
+                    MessageBox.Show(readError, "无法读取文件", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    return;
+                }
+                _selectedFile = content;
                 SelectedFileName = System.IO.Path.GetFileName(dialog.FileName);
                 OnPropertyChanged(nameof(HasFile));
                 await ImportAsync();
@@ -174,7 +402,13 @@ namespace PropertyManagement.Client.ViewModels
                 var dialog = new SaveFileDialog { Filter = "Excel 文件|*.xlsx", FileName = "导入错误_" + row.BatchNo + ".xlsx" };
                 if (dialog.ShowDialog() == true)
                 {
-                    File.WriteAllBytes(dialog.FileName, bytes);
+                    string saveError;
+                    if (!TryWriteFile(dialog.FileName, bytes, out saveError))
+                    {
+                        ErrorText = saveError;
+                        MessageBox.Show(saveError, "保存失败", MessageBoxButton.OK, MessageBoxImage.Warning);
+                        return;
+                    }
                     saved = true;
                     savedPath = dialog.FileName;
                 }

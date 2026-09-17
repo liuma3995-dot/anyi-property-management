@@ -87,6 +87,23 @@ namespace PropertyManagement.Server.Infrastructure.Security
         }
 
         /// <summary>
+        /// 改密失效判定（按**秒**比较，v1.1.0 第 4 轮修复）：
+        /// token 的 <c>iat</c> 只有秒精度，而 <c>password_changed_at</c> 可能带亚秒精度（DateTime.Now 写入）。
+        /// 若直接比较，会出现「改密后**同一秒内**重新登录 → 新 token 的 iat(31.000) &lt; changedAt(31.123)
+        /// → 被误判为旧 token」（表现为登录成功后首个接口即 401「密码已修改，请重新登录」，
+        /// v1.1.0 回归锚点 R-01 实测复现）。统一截断到秒后比较：同一秒内一律视为未失效
+        /// （容忍窗口 ≤1 秒，与 5 秒改密失效缓存口径一致）。
+        /// </summary>
+        public static bool IsRevokedByTime(DateTime issuedAt, DateTime changedAt)
+        {
+            DateTime issuedSecond = new DateTime(issuedAt.Year, issuedAt.Month, issuedAt.Day,
+                issuedAt.Hour, issuedAt.Minute, issuedAt.Second, issuedAt.Kind);
+            DateTime changedSecond = new DateTime(changedAt.Year, changedAt.Month, changedAt.Day,
+                changedAt.Hour, changedAt.Minute, changedAt.Second, changedAt.Kind);
+            return issuedSecond < changedSecond;
+        }
+
+        /// <summary>
         /// 解析 token 签发时间（改密后旧 token 失效校验用，M6 PG-COM-04）。
         /// 解析失败返回 null（此时不阻断校验）。
         /// </summary>

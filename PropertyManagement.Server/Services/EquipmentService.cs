@@ -154,8 +154,39 @@ namespace PropertyManagement.Server.Services
                 _repo.UpdateDeviceNextMaintenance(c, tx, deviceId, request.NextMaintenanceOverride.Value.ToString("yyyy-MM-dd"));
         }
 
-        public void DeleteDevice(int id) =>
-            WithTransaction((c, tx) => _repo.SoftDeleteDevice(c, tx, id));
+        /// <summary>
+        /// 删除设备（软删）。v1.1.0 R1（跨模块引用闭环）：
+        /// 存在保养/年检/故障/自定义记录或未删除支出引用时**拒绝删除**（提示改用「状态变更 → 报废」），
+        /// 保证「能删 ⇒ 必无在用子行」，使「一键清理残余数据」回收留痕父行后不产生孤儿引用；
+        /// 到期提醒（派生待办，可重算）与状态变更日志（含登记行，设备过程留痕）随设备删除一并软删留痕。
+        /// </summary>
+        public void DeleteDevice(int id)
+        {
+            int cascaded = 0;
+            string deviceName = string.Empty;
+            WithTransaction((c, tx) =>
+            {
+                var existing = _repo.GetDevice(c, id) ?? throw ApiException.NotFound("设备不存在");
+                int referenced = _repo.CountDeviceReferences(c, id);
+                if (referenced > 0)
+                    throw ApiException.Conflict(
+                        "该设备存在 " + referenced + " 条保养/年检/故障/自定义记录或支出引用，不能删除；" +
+                        "设备退出使用请改用「状态变更 → 报废」，如为误录入请先处理上述记录");
+
+                deviceName = existing.Name;
+                cascaded = _repo.SoftDeleteDeviceReminders(c, tx, id)
+                           + _repo.SoftDeleteDeviceStatusLogs(c, tx, id);
+                _repo.SoftDeleteDevice(c, tx, id);
+            });
+
+            if (cascaded > 0)
+            {
+                // 审计在业务事务提交后单独写入（AuditService 自建连接，事务内写会与 SQLite 写锁冲突）
+                _audit.Write("EQP_DEVICE_REMINDER_CASCADE", "device", id.ToString(),
+                    "删除设备「" + deviceName + "」：级联软删到期提醒/处置流水/状态变更日志 " + cascaded + " 条（R1，避免孤儿引用）",
+                    module: "设备台账");
+            }
+        }
 
         /// <summary>BR-EQP-01 合法迁移表：报废为终态。</summary>
         private static readonly Dictionary<DeviceStatus, DeviceStatus[]> AllowedTransitions = new Dictionary<DeviceStatus, DeviceStatus[]>

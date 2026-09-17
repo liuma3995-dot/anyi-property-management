@@ -282,6 +282,175 @@ namespace PropertyManagement.Server.Services
         }
 
         // ---------- PDF 导出（PDFsharp，中文用 SimHei 字体解析） ----------
+        /// <summary>
+        /// 导出「收据打印模板」（CHG-v1.1.0-14）：
+        /// 收据号已下线，模板以「收款流水号 + 逐项收款明细」为口径；
+        /// 统一收款时把同批每张账单（缴费对象/收费项目/账单期间/账单号/金额）逐行写清，便于打印核对。
+        /// </summary>
+        public ReportLogDto ExportReceiptTemplate(ReceiptTemplateRequest request)
+        {
+            if (request == null || request.Items == null || request.Items.Count == 0)
+            {
+                throw ApiException.ValidationFailed("没有可导出的收款明细，请先完成收款");
+            }
+
+            string period = request.PaidAt == default(DateTime) ? DateTime.Now.ToString("yyyyMMddHHmmss")
+                : request.PaidAt.ToString("yyyyMMddHHmmss");
+            string fileName = "receipt_" + period + "_" + DateTime.Now.ToString("fff") + ".pdf";
+            string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+            ExportReceiptPdf(filePath, request);
+
+            var log = new ReportLogDto
+            {
+                ReportType = "receipt",
+                Period = request.PaidAt == default(DateTime) ? DateTime.Now.ToString("yyyy-MM-dd") : request.PaidAt.ToString("yyyy-MM-dd"),
+                Format = ExportFormat.Pdf,
+                FilePath = filePath
+            };
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                log.Id = _finance.InsertReportLog(connection, transaction, log);
+                transaction.Commit();
+                return _finance.GetReportLog(connection, log.Id) ?? log;
+            }
+        }
+
+        /// <summary>账单期间压缩显示：同年省略结束年份（2026-09-01 ~ 2026-09-30 → 2026-09-01~09-30）。</summary>
+        /// <summary>
+        /// CHG-v1.1.0-19：是否需要隐藏「缴费对象」列。
+        /// 口径：请求显式声明（客户端判定为自定义缴费对象）**且**全部明细的缴费对象都等于缴款人名称 ——
+        /// 两者同时满足才隐藏，避免误隐藏真实对象信息。
+        /// </summary>
+        private static bool ShouldHideObjectColumn(ReceiptTemplateRequest request)
+        {
+            if (request == null || !request.HideObjectColumn) { return false; }
+            string payee = (request.PayeeName ?? string.Empty).Trim();
+            if (payee.Length == 0 || request.Items == null || request.Items.Count == 0) { return false; }
+            foreach (ReceiptTemplateItemRequest item in request.Items)
+            {
+                string objectText = (item == null ? string.Empty : (item.ObjectText ?? string.Empty)).Trim();
+                // 空文本＝客户端未提供对象信息（自定义缴费对象场景），以客户端声明为准；
+                // 一旦提供了非空对象文本，则必须与缴款人一致，否则视为真实对象信息，保留该列。
+                if (objectText.Length > 0 && !string.Equals(objectText, payee, StringComparison.OrdinalIgnoreCase))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static string ShortPeriod(string period)
+        {
+            if (string.IsNullOrWhiteSpace(period)) { return "—"; }
+            string compact = period.Replace(" ", string.Empty);
+            string[] parts = compact.Split('~');
+            if (parts.Length == 2 && parts[0].Length >= 10 && parts[1].Length >= 10 &&
+                parts[0].Substring(0, 4) == parts[1].Substring(0, 4))
+            {
+                return parts[0] + "~" + parts[1].Substring(5);
+            }
+            return compact;
+        }
+
+        private static void ExportReceiptPdf(string filePath, ReceiptTemplateRequest request)
+        {
+            PdfFontSupport.Ensure();
+            using (var document = new PdfDocument())
+            {
+                PdfPage page = document.AddPage();
+                page.Size = PdfSharp.PageSize.A4;
+                using (XGraphics gfx = XGraphics.FromPdfPage(page))
+                {
+                    var titleFont = new XFont("SimHei", 16, XFontStyleEx.Bold);
+                    var headerFont = new XFont("SimHei", 10, XFontStyleEx.Bold);
+                    var bodyFont = new XFont("SimHei", 9, XFontStyleEx.Regular);
+
+                    double y = 40;
+                    gfx.DrawString("安怡物业 · 收款收据（打印模板）", titleFont, XBrushes.Black, 40, y);
+                    y += 26;
+                    gfx.DrawString("缴款人：" + (request.PayeeName ?? "—"), bodyFont, XBrushes.Black, 40, y);
+                    gfx.DrawString("收款日期：" + (request.PaidAt == default(DateTime) ? "—" : request.PaidAt.ToString("yyyy-MM-dd")), bodyFont, XBrushes.Black, 240, y);
+                    y += 16;
+                    gfx.DrawString("收款方式：" + (string.IsNullOrEmpty(request.PayMethod) ? "—" : request.PayMethod), bodyFont, XBrushes.Black, 40, y);
+                    gfx.DrawString("经手人：" + (string.IsNullOrEmpty(request.HandlerName) ? "—" : request.HandlerName), bodyFont, XBrushes.Black, 240, y);
+                    y += 16;
+                    gfx.DrawString("收款流水号：" + (string.IsNullOrEmpty(request.BatchNo) ? "单张收款（无批量流水号）" : request.BatchNo),
+                        bodyFont, XBrushes.Black, 40, y);
+                    y += 24;
+
+                    // CHG-v1.1.0-19：自定义缴费对象（缴款人＝缴费对象，同一名称）时过滤「缴费对象」列，
+                    // 避免同一名称重复两列造成歧义；其余场景保持五列（CHG-v1.1.0-15 列宽口径）。
+                    bool hideObjectColumn = ShouldHideObjectColumn(request);
+                    double colObject = 40, colItem = 130, colPeriod = 234, colBill = 394, colAmount = 478;
+                    if (hideObjectColumn)
+                    {
+                        colItem = 40; colPeriod = 200; colBill = 360; colAmount = 478;
+                    }
+                    if (!hideObjectColumn)
+                    {
+                        gfx.DrawString("缴费对象", headerFont, XBrushes.Black, colObject, y);
+                    }
+                    gfx.DrawString("收费项目", headerFont, XBrushes.Black, colItem, y);
+                    gfx.DrawString("账单期间", headerFont, XBrushes.Black, colPeriod, y);
+                    gfx.DrawString("账单号", headerFont, XBrushes.Black, colBill, y);
+                    gfx.DrawString("金额", headerFont, XBrushes.Black, colAmount, y);
+                    y += 6;
+                    gfx.DrawLine(XPens.Gray, 40, y, 555, y);
+                    double tableTop = y;
+                    y += 14;
+                    double tableBottom = y;
+
+                    decimal total = 0m;
+                    foreach (ReceiptTemplateItemRequest item in request.Items)
+                    {
+                        if (y > 760)
+                        {
+                            gfx.DrawString("…（本页已满，其余明细请见后续收款记录）", bodyFont, XBrushes.Gray, 40, y);
+                            break;
+                        }
+                        if (!hideObjectColumn)
+                        {
+                            gfx.DrawString(Crop(item.ObjectText, 12), bodyFont, XBrushes.Black, colObject, y);
+                        }
+                        gfx.DrawString(Crop(item.ChargeItemName, 14), bodyFont, XBrushes.Black, colItem, y);
+                        gfx.DrawString(Crop(ShortPeriod(item.CyclePeriod), 23), bodyFont, XBrushes.Black, colPeriod, y);
+                        gfx.DrawString(Crop(item.BillNo, 14), bodyFont, XBrushes.Black, colBill, y);
+                        gfx.DrawString(item.Amount.ToString("0.00"), bodyFont, XBrushes.Black, colAmount, y);
+                        total += item.Amount;
+                        y += 14;
+                        tableBottom = y;
+                    }
+
+                    // 列分隔线：视觉上把各列固定住，避免长文本跨列看起来像「遮挡」
+                    if (!hideObjectColumn)
+                    {
+                        gfx.DrawLine(XPens.LightGray, 128, tableTop, 128, tableBottom);
+                    }
+                    gfx.DrawLine(XPens.LightGray, colPeriod - 2, tableTop, colPeriod - 2, tableBottom);
+                    gfx.DrawLine(XPens.LightGray, colBill - 2, tableTop, colBill - 2, tableBottom);
+                    gfx.DrawLine(XPens.LightGray, 476, tableTop, 476, tableBottom);
+
+                    y += 6;
+                    gfx.DrawLine(XPens.Gray, 40, y, 555, y);
+                    y += 16;
+                    // 说明：PDFsharp + SimHei 子集不含「¥」字形（会渲染成 cid），统一用「元」表述金额
+                    gfx.DrawString("合计：" + request.Items.Count + " 笔，" + total.ToString("0.00") + " 元",
+                        headerFont, XBrushes.Black, 380, y);
+                    y += 24;
+                    if (!string.IsNullOrWhiteSpace(request.Remark))
+                    {
+                        gfx.DrawString("备注：" + Crop(request.Remark.Trim(), 40), bodyFont, XBrushes.Black, 40, y);
+                        y += 16;
+                    }
+                    gfx.DrawString("收款单位：安怡物业服务中心", bodyFont, XBrushes.Black, 40, y);
+
+                    document.Save(filePath);
+                }
+            }
+        }
+
         private static void ExportPdf(string filePath, string period, FinancialReportDto report, bool annualWindow)
         {
             PdfFontSupport.Ensure();

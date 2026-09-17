@@ -20,6 +20,12 @@ namespace PropertyManagement.Server.Services
     /// </summary>
     public class DictService
     {
+        /// <summary>CHG-v1.1.0-17：缴费对象字典类型编码。</summary>
+        internal const string ChargeObjectTypeCode = "charge_object";
+
+        /// <summary>CHG-v1.1.0-17：系统固定缴费对象编码（出账跨模块引用基础信息，不可停用/删除）。</summary>
+        private static readonly string[] FixedChargeObjectCodes = { "property", "parking", "owner" };
+
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly IDictRepository _dict;
         private readonly AuditService _audit;
@@ -195,6 +201,12 @@ namespace PropertyManagement.Server.Services
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
                 DictItemRow entry = _dict.GetItem(connection, id) ?? throw ApiException.NotFound("字典项不存在");
+                // CHG-v1.1.0-17：系统固定缴费对象（房产/车位/业主）不可停用（停用会让收费项目表单失去该口径）
+                if (status == DictItemStatus.Disabled && IsFixedChargeObject(entry))
+                {
+                    throw ApiException.ValidationFailed(
+                        "「" + entry.ItemName + "」为系统固定缴费对象，不可停用（新增收费项目依赖该口径）");
+                }
                 _dict.SetItemStatus(connection, transaction, id, (int)status, operatorName);
                 transaction.Commit();
                 _audit.Write("DICT_ITEM_STATUS", "dict_item", id.ToString(),
@@ -234,13 +246,47 @@ namespace PropertyManagement.Server.Services
                     rows.Add(row);
                 }
 
-                var blocked = rows.Where(r => r.Status != DictItemStatus.Disabled)
-                    .Select(r => new DictItemDeleteBlockedDto
+                // CHG-v1.1.0-17：缴费对象的额外保护 —— 固定三项不可删除；自定义项被收费项目引用时不可删除
+                var blocked = new List<DictItemDeleteBlockedDto>();
+                foreach (DictItemRow row in rows)
+                {
+                    // 系统固定项先判（该项永不可停用，若先提示「请先停用」会形成死路）
+                    if (IsFixedChargeObject(row))
                     {
-                        Id = r.Id,
-                        ItemName = r.ItemName,
-                        Reason = "该字典项未停用，请先【停用】后再删除"
-                    }).ToList();
+                        blocked.Add(new DictItemDeleteBlockedDto
+                        {
+                            Id = row.Id,
+                            ItemName = row.ItemName,
+                            Reason = "系统固定缴费对象（房产/车位/业主），不可删除"
+                        });
+                        continue;
+                    }
+                    if (row.Status != DictItemStatus.Disabled)
+                    {
+                        blocked.Add(new DictItemDeleteBlockedDto
+                        {
+                            Id = row.Id,
+                            ItemName = row.ItemName,
+                            Reason = "该字典项未停用，请先【停用】后再删除"
+                        });
+                        continue;
+                    }
+                    if (string.Equals(row.TypeCode, ChargeObjectTypeCode, StringComparison.OrdinalIgnoreCase))
+                    {
+                        int used = connection.ExecuteScalar<int>(
+                            "SELECT COUNT(1) FROM t_charge_item WHERE del_flag = 0 AND object_code = @code",
+                            new { code = row.ItemCode }, transaction);
+                        if (used > 0)
+                        {
+                            blocked.Add(new DictItemDeleteBlockedDto
+                            {
+                                Id = row.Id,
+                                ItemName = row.ItemName,
+                                Reason = "仍被 " + used + " 个收费项目引用，请先调整这些项目的缴费对象"
+                            });
+                        }
+                    }
+                }
                 if (blocked.Count > 0)
                 {
                     transaction.Rollback();
@@ -288,6 +334,19 @@ namespace PropertyManagement.Server.Services
         private static string StatusText(DictItemStatus status)
         {
             return status == DictItemStatus.Enabled ? "启用" : "停用";
+        }
+
+        /// <summary>
+        /// CHG-v1.1.0-17：是否为系统固定缴费对象（charge_object 的 property/parking/owner）。
+        /// 该三项在生成账单时跨模块调用房产/车位/业主档案，因此恒定存在、不可停用与删除。
+        /// </summary>
+        internal static bool IsFixedChargeObject(DictItemRow row)
+        {
+            if (row == null || !string.Equals(row.TypeCode, ChargeObjectTypeCode, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+            return FixedChargeObjectCodes.Any(c => string.Equals(row.ItemCode, c, StringComparison.OrdinalIgnoreCase));
         }
 
         /// <summary>新增项编码：{类型前缀}-{序号}（原型 JFFS-01 风格），如 charge_mode → CHARGEMODE-01。</summary>

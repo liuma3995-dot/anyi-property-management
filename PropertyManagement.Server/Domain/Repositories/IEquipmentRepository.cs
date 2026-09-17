@@ -30,6 +30,24 @@ namespace PropertyManagement.Server.Domain.Repositories
         /// <summary>写入/清空自定义下次保养日期（R6；nextMaintenanceAt=null 表示恢复按周期派生）。</summary>
         void UpdateDeviceNextMaintenance(IDbConnection connection, IDbTransaction transaction, int id, string nextMaintenanceAt);
         void SoftDeleteDevice(IDbConnection connection, IDbTransaction transaction, int id);
+
+        /// <summary>
+        /// 设备删除引用校验（v1.1.0 R1）：保养/年检/故障/自定义记录/状态变更日志/支出引用的总数。
+        /// &gt; 0 表示设备仍有在用历史（或财务引用），不可删除。
+        /// </summary>
+        int CountDeviceReferences(IDbConnection connection, int deviceId);
+
+        /// <summary>
+        /// 设备删除级联（v1.1.0 R1）：软删该设备的到期提醒及其催办/处置流水（派生数据，可重算），
+        /// 避免留痕父行被物理清理后残留孤儿提醒。返回软删行数。
+        /// </summary>
+        int SoftDeleteDeviceReminders(IDbConnection connection, IDbTransaction transaction, int deviceId);
+
+        /// <summary>
+        /// 设备删除级联（v1.1.0 R1 / migration_036）：软删该设备的状态变更日志（含登记行）。
+        /// 状态日志是设备过程留痕，随设备删除一并软删并由「一键清理残余数据」回收。返回软删行数。
+        /// </summary>
+        int SoftDeleteDeviceStatusLogs(IDbConnection connection, IDbTransaction transaction, int deviceId);
         void InsertDeviceStatusLog(IDbConnection connection, IDbTransaction transaction, int deviceId, int oldStatus, int newStatus, string reason);
         List<DeviceStatusLogDto> ListDeviceStatusLogs(IDbConnection connection, int deviceId);
         DeviceSummaryDto GetDeviceSummary(IDbConnection connection);

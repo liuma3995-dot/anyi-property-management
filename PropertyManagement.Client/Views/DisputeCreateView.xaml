@@ -38,7 +38,7 @@
                         <!-- 行一：关联房产（下拉内部检索，全宽） -->
                         <StackPanel>
                             <TextBlock Text="关联房产" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                            <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                            <ComboBox x:Name="DisputePropertyCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
                                       ItemsSource="{Binding PropertyView}" DisplayMemberPath="Display"
                                       SelectedItem="{Binding SelectedPropertyOption, Mode=TwoWay}"
                                       Text="{Binding PropertySearch, UpdateSourceTrigger=PropertyChanged}"
@@ -51,7 +51,7 @@
                             <Grid.ColumnDefinitions><ColumnDefinition Width="*" /><ColumnDefinition Width="16" /><ColumnDefinition Width="*" /></Grid.ColumnDefinitions>
                             <StackPanel Grid.Column="0">
                                 <TextBlock Text="当事人（甲方 · 报修方）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                                <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                <ComboBox x:Name="DisputeOwnerACombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
                                           ItemsSource="{Binding OwnerAView}" DisplayMemberPath="Display"
                                           SelectedItem="{Binding SelectedOwnerAOption, Mode=TwoWay}"
                                           Text="{Binding PartyASearch, UpdateSourceTrigger=PropertyChanged}"
@@ -66,7 +66,7 @@
                             </StackPanel>
                             <StackPanel Grid.Column="2">
                                 <TextBlock Text="当事人（乙方 · 责任方）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                                <ComboBox IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
+                                <ComboBox x:Name="DisputeOwnerBCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True" IsSynchronizedWithCurrentItem="False"
                                           ItemsSource="{Binding OwnerBView}" DisplayMemberPath="Display"
                                           SelectedItem="{Binding SelectedOwnerBOption, Mode=TwoWay}"
                                           Text="{Binding PartyBSearch, UpdateSourceTrigger=PropertyChanged}"

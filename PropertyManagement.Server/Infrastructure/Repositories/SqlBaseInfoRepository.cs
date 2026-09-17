@@ -731,6 +731,16 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "WHERE p.id = @id AND p.del_flag = 0", new { id });
         }
 
+        /// <summary>CHG-v1.1.0-12：业主名下有效房产 ID（按楼栋/房号排序，供车位「绑定房产」自动引用）。</summary>
+        public List<int> ListActivePropertyIdsByOwner(IDbConnection connection, int ownerId)
+        {
+            return connection.Query<int>(
+                "SELECT p.id FROM t_property p " +
+                "JOIN t_owner_property_rel rel ON rel.property_id = p.id " +
+                "WHERE rel.owner_id = @ownerId AND rel.del_flag = 0 AND rel.rel_status <> 2 AND p.del_flag = 0 " +
+                "ORDER BY p.building_id, p.room_no", new { ownerId }).ToList();
+        }
+
         public PageResult<ParkingSpaceDto> QueryParkings(IDbConnection connection, BaseInfoQueryRequest query, out int total)
         {
             string where = "WHERE p.del_flag = 0";
@@ -846,7 +856,19 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
         public List<ImportLogDto> ListImportLogs(IDbConnection connection)
         {
-            return connection.Query<ImportLogDto>(ImportLogSelectSql + " ORDER BY l.id DESC LIMIT 200").ToList();
+            // v1.1.0-⑤：批次记录支持批量删除（软删留痕 del_flag=1）→ 列表只返回未删除批次
+            return connection.Query<ImportLogDto>(
+                ImportLogSelectSql + " WHERE l.del_flag = 0 ORDER BY l.id DESC LIMIT 200").ToList();
+        }
+
+        /// <summary>导入批次记录批量删除（v1.1.0-⑤）：软删留痕，可被「一键清理残余数据」物理清理。</summary>
+        public int SoftDeleteImportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids)
+        {
+            var list = (ids ?? Enumerable.Empty<int>()).Distinct().Where(x => x > 0).ToList();
+            if (list.Count == 0) { return 0; }
+            return connection.Execute(
+                "UPDATE t_import_log SET del_flag = 1 WHERE id IN @ids AND del_flag = 0",
+                new { ids = list }, transaction);
         }
 
         private const string ImportLogSelectSql =

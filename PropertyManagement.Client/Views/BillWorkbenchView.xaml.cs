@@ -20,5 +20,14 @@ namespace PropertyManagement.Client.Views
                 row.IsChecked = cb.IsChecked == true;
             }
         }
+
+        /// <summary>CHG-v1.1.0-10：缴费对象勾选写回（生成账单弹窗内只读 DataGrid）。</summary>
+        private void ObjectCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is BillObjectRow row)
+            {
+                row.IsChecked = cb.IsChecked == true;
+            }
+        }
     }
 }

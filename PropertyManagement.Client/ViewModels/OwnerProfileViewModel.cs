@@ -275,13 +275,13 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SaveAsync()
         {
             if (string.IsNullOrWhiteSpace(FormName)) { ErrorText = "姓名不能为空"; return; }
-            if (string.IsNullOrWhiteSpace(FormPhone)) { ErrorText = "联系电话不能为空"; return; }
+            // v1.1.0 F-07：联系电话放开为选填（与导入模板/接口口径统一）；同名业主请填证件号或电话
             var request = new OwnerRequest
             {
                 Name = FormName.Trim(),
                 IdCardType = FormIdCardType,
                 IdCard = (FormIdCard ?? string.Empty).Trim(),
-                Phone = FormPhone.Trim(),
+                Phone = (FormPhone ?? string.Empty).Trim(),
                 ResidentAddress = FormAddress,
                 EmergencyContactName = FormEmergencyName,
                 EmergencyContactPhone = FormEmergencyPhone,

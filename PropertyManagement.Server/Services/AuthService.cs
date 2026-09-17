@@ -18,7 +18,7 @@ namespace PropertyManagement.Server.Services
     /// <summary>
     /// 认证用例服务（UC-COM-001/002）：
     /// 登录（BCrypt 校验 + P-02 失败锁定 + BR-COM-02/03 + token 签发 + 登录逐次留痕）、
-    /// 修改密码（PG-COM-04 简化规则：6-20 位 + 必须含字母与数字 + 最近 3 次不重复；
+    /// 修改密码（PG-COM-04 简化规则：6-20 位 + 必须含字母与数字；v1.1.0 第 8 轮起**不再**校验最近 3 次重复；
     /// R16 已下线「90 天强制更换」规则，强制改密仅保留首登/管理员标记；
     /// t_password_history 保留 5 条；审计留痕 BR-COM-01）。
     /// 事务边界在本服务层控制（M2-D7）。
@@ -27,8 +27,7 @@ namespace PropertyManagement.Server.Services
     {
         private const int PasswordMinLength = 6;
         private const int PasswordMaxLength = 20;
-        private const int PasswordHistoryDenyCount = 3; // 不得与最近 3 次重复
-        private const int PasswordHistoryKeep = 5;      // 历史保留条数
+        private const int PasswordHistoryKeep = 5;      // 历史留痕条数（PG-COM-04；历史重复校验已下线）
 
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly IUserRepository _users;
@@ -198,21 +197,8 @@ namespace PropertyManagement.Server.Services
                     throw ApiException.ValidationFailed("新密码不能与旧密码相同");
                 }
 
-                // 不得与最近 3 次重复（t_password_history BCrypt 逐条比对）
-                System.Collections.Generic.IList<string> recentHashes =
-                    _users.GetRecentPasswordHashes(connection, user.Id, PasswordHistoryDenyCount);
-                foreach (string historyHash in recentHashes)
-                {
-                    if (PasswordHasher.Verify(request.NewPassword, historyHash))
-                    {
-                        WriteAuthAudit(connection, transaction, "CHANGE_PASSWORD", user.Id, user.Username, ip, "失败",
-                            "修改密码失败：新密码与最近 " + PasswordHistoryDenyCount + " 次使用过的密码重复");
-                        transaction.Commit();
-                        throw ApiException.ValidationFailed(
-                            "新密码不得与最近 " + PasswordHistoryDenyCount + " 次使用过的密码重复");
-                    }
-                }
-
+                // v1.1.0 第 8 轮（负责人裁定）：已下线「新密码不得与最近 3 次使用过的密码重复」规则——
+                // 仅保留「不能与当前旧密码相同」+ 强度规则（6-20 位且含字母与数字）；历史哈希仍按 PG-COM-04 留痕。
                 DateTime now = DateTime.Now;
                 string newHash = PasswordHasher.Hash(request.NewPassword);
 
@@ -222,7 +208,7 @@ namespace PropertyManagement.Server.Services
                 _users.UpdatePassword(connection, transaction, user.Id, newHash, now);
 
                 WriteAuthAudit(connection, transaction, "CHANGE_PASSWORD", user.Id, user.Username, ip, "成功",
-                    "修改登录密码（强度规则与历史校验通过，旧 token 改密后由中间件失效，见 CHG 报告）");
+                    "修改登录密码（强度规则通过；历史重复校验已下线，旧 token 改密后由中间件失效）");
 
                 transaction.Commit();
             }

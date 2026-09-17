@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
@@ -323,14 +325,37 @@ namespace PropertyManagement.Client.ViewModels
         {
             await RunAsync(async () =>
             {
-                var log = await Api.ExportReportAsync(new ReportExportRequest
+                // v1.1.0 第 7 轮：服务端生成报表文件（Excel=ClosedXML / PDF=PDFsharp）后，
+                // 由客户端选择保存位置并下载到本机，导出留痕仍写 t_report_log（UC-FIN-010）。
+                string type = format == ExportFormat.Excel ? "Excel" : "PDF";
+                ReportLogDto log = await Api.ExportReportAsync(new ReportExportRequest
                 {
                     Query = BuildQuery(),
                     Format = format
                 });
-                string type = format == ExportFormat.Excel ? "Excel" : "PDF";
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 导出成功："
-                    + (string.IsNullOrEmpty(log.FilePath) ? "（导出日志 " + log.Id + "）" : log.FilePath);
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException(type + " 导出失败：服务端未生成导出记录");
+                }
+
+                string ext = format == ExportFormat.Excel ? ".xlsx" : ".pdf";
+                string suggested = "财务报表_" + (Period == null ? string.Empty : Period.Trim().Replace("-", "")) + ext;
+                var dialog = new SaveFileDialog
+                {
+                    Title = "保存" + type + "报表",
+                    Filter = format == ExportFormat.Excel ? "Excel 文件|*.xlsx" : "PDF 文件|*.pdf",
+                    FileName = suggested
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 报表已在服务端生成（导出日志 " + log.Id + "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 已导出：" + dialog.FileName;
+                MessageBox.Show(type + " 报表已导出到：" + dialog.FileName, "导出成功",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
             }, null);
         }
     }

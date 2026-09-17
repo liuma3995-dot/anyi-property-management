@@ -342,7 +342,7 @@ namespace PropertyManagement.Client.Services
                 PayMode = request.PayMode,
                 UnitPrice = request.UnitPrice,
                 CycleType = request.CycleType,
-                ObjectType = request.ObjectType,
+                ObjectType = request.ObjectType ?? ChargeObjectType.Property,
                 Status = request.Status ?? 0,
                 Category = request.Category,
                 MethodCode = request.MethodCode,
@@ -361,7 +361,7 @@ namespace PropertyManagement.Client.Services
             item.PayMode = request.PayMode;
             item.UnitPrice = request.UnitPrice;
             item.CycleType = request.CycleType;
-            item.ObjectType = request.ObjectType;
+            item.ObjectType = request.ObjectType ?? item.ObjectType;
             item.Status = request.Status ?? 0;
             item.Category = request.Category;
             item.MethodCode = request.MethodCode;
@@ -441,19 +441,19 @@ namespace PropertyManagement.Client.Services
             return Task.FromResult(cycle);
         }
 
+        public Task DeleteCycleAsync(int id)
+        {
+            BillingCycleDto cycle = _cycles.FirstOrDefault(x => x.Id == id);
+            if (cycle != null) { _cycles.Remove(cycle); }
+            return Task.FromResult(0);
+        }
+
         public Task<BillGenerateLogDto> GenerateBillsAsync(BillGenerateRequest request)
         {
             int id = _batches.Count + 1;
             int fail = 0;
             var failures = new List<BillFailureDto>();
-            foreach (BillListItemDto b in _bills)
-            {
-                if (b.ChargeItemId == request.ChargeItemId && b.CycleId == request.CycleId)
-                {
-                    fail++;
-                    failures.Add(new BillFailureDto { No = b.PropertyNo, Reason = "同对象同周期同项目账单已存在（BR-FIN-01）" });
-                }
-            }
+            // CHG-v1.1.0-18：同对象同周期同项目允许重复出账（演示实现同步取消判重拦截）
             var log = new BillGenerateLogDto { Id = id, GenerateAt = DateTime.Now, Total = 2, Success = fail == 0 ? 2 : 0, Fail = fail, FailDetail = "{\"failures\":[]}" };
             _batches.Add(new BillBatchDto
             {
@@ -469,6 +469,42 @@ namespace PropertyManagement.Client.Services
                 GenerateAt = DateTime.Now
             });
             return Task.FromResult(log);
+        }
+
+        /// <summary>CHG-v1.1.0-10：演示实现——按房产/车位类型返回候选（无服务端过滤）。</summary>
+        public Task<BillObjectQueryResult> QueryBillObjectsAsync(BillObjectQueryRequest request)
+        {
+            bool parking = request != null && string.Equals(request.Kind, "parking", StringComparison.OrdinalIgnoreCase);
+            var result = new BillObjectQueryResult { Items = new List<BillObjectCandidateDto>(), HiddenCount = 0 };
+            string kw = request == null ? null : request.Keyword;
+            foreach (BillListItemDto b in _bills)
+            {
+                if (parking) { continue; }
+                if (!string.IsNullOrWhiteSpace(kw) &&
+                    (b.PropertyNo ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) < 0)
+                {
+                    continue;
+                }
+                result.Items.Add(new BillObjectCandidateDto
+                {
+                    Id = b.PropertyId ?? 0,
+                    Kind = "property",
+                    No = b.PropertyNo,
+                    SubText = "演示数据",
+                    OwnerName = b.OwnerName
+                });
+            }
+            return Task.FromResult(result);
+        }
+
+        /// <summary>CHG-v1.1.0-10：演示实现——批次编辑回填返回空选择。</summary>
+        public Task<BillObjectSelectionDto> GetBatchBillObjectsAsync(int batchId)
+        {
+            return Task.FromResult(new BillObjectSelectionDto
+            {
+                PropertyIds = new List<int>(),
+                ParkingIds = new List<int>()
+            });
         }
 
         public Task<BillGenerateLogDto> PublishBillsAsync(BillPublishRequest request)
@@ -505,8 +541,8 @@ namespace PropertyManagement.Client.Services
         {
             return Task.FromResult(new List<BillFailureDto>
             {
-                new BillFailureDto { PropertyId = 1, No = "B1-01", Reason = "同对象同周期同项目账单已存在（BR-FIN-01）" },
-                new BillFailureDto { PropertyId = 2, No = "B1-02", Reason = "同对象同周期同项目账单已存在（BR-FIN-01）" }
+                new BillFailureDto { PropertyId = 1, No = "B1-01", Reason = "房产不存在有效「房产-业主」关系，请先在业主-房产关系中绑定业主后再出账" },
+                new BillFailureDto { PropertyId = 2, No = "B1-02", Reason = "房产缺少建筑面积，无法按建筑面积计费" }
             });
         }
 
@@ -576,15 +612,38 @@ namespace PropertyManagement.Client.Services
             return Task.FromResult(new PaymentDto { Id = id, BillId = 1, Amount = 1280m, PayMethod = PayMethod.Cash, PaidAt = DateTime.Now, Status = PaymentStatus.Normal });
         }
 
-        public Task<ReceiptDto> GetReceiptByPaymentAsync(int paymentId)
+        /// <summary>CHG-v1.1.0-12：演示实现——统一收款（逐张核销并共享流水号）。</summary>
+        public Task<PaymentBatchResultDto> CreateBatchPaymentAsync(PaymentBatchCreateRequest request)
         {
-            return Task.FromResult(new ReceiptDto { Id = paymentId, PaymentId = paymentId, ReceiptNo = "SK-2026-00345", PrintCount = 1, PrintedAt = DateTime.Now });
+            string batchNo = "PAY-" + DateTime.Now.ToString("yyyyMMdd") + "-0001";
+            var payments = new List<PaymentDto>();
+            foreach (PaymentBatchItemRequest item in request.Items ?? new List<PaymentBatchItemRequest>())
+            {
+                BillListItemDto bill = _bills.FirstOrDefault(x => x.Id == item.BillId);
+                if (bill == null) { continue; }
+                bill.PaidAmount = Math.Min(bill.Amount, bill.PaidAmount + item.Amount);
+                bill.Status = bill.PaidAmount >= bill.Amount ? BillStatus.Paid : BillStatus.Partial;
+                payments.Add(new PaymentDto
+                {
+                    Id = 100 + bill.Id,
+                    BillId = bill.Id,
+                    BatchNo = batchNo,
+                    Amount = item.Amount,
+                    PayMethod = request.PayMethod,
+                    PaidAt = DateTime.Now,
+                    Status = PaymentStatus.Normal
+                });
+            }
+            return Task.FromResult(new PaymentBatchResultDto
+            {
+                BatchNo = batchNo,
+                Payments = payments,
+                Count = payments.Count,
+                TotalAmount = payments.Sum(x => x.Amount)
+            });
         }
 
-        public Task<ReceiptDto> PrintReceiptAsync(int receiptId)
-        {
-            return Task.FromResult(new ReceiptDto { Id = receiptId, PaymentId = receiptId, ReceiptNo = "SK-2026-00345", PrintCount = 2, PrintedAt = DateTime.Now });
-        }
+        // CHG-v1.1.0-15：收据号前后端下线（原收据查询/打印实现已移除）
 
         public Task<PreDepositDto> GetPreDepositAsync(int ownerId)
         {
@@ -612,9 +671,55 @@ namespace PropertyManagement.Client.Services
             return Page(_refunds);
         }
 
+        /// <summary>CHG-v1.1.0-13：演示实现——批量退款/减免/调整（每张账单一条记录）。</summary>
+        public Task<RefundBatchResultDto> CreateRefundBatchAsync(RefundAdjustmentRequest request)
+        {
+            var items = new List<RefundAdjustmentDto>();
+            foreach (int billId in request.BillIds ?? new List<int>())
+            {
+                items.Add(new RefundAdjustmentDto
+                {
+                    Id = _refunds.Count + 1,
+                    BillId = billId,
+                    RefundType = request.RefundType,
+                    Amount = request.Amount,
+                    Reason = request.Reason,
+                    RefNo = "REF-" + DateTime.Now.ToString("yyMMdd") + "-" + (_refunds.Count + 1),
+                    CreatedAt = DateTime.Now
+                });
+            }
+            foreach (var dto in items) { _refunds.Insert(0, dto); }
+            return Task.FromResult(new RefundBatchResultDto
+            {
+                Items = items,
+                Count = items.Count,
+                TotalAmount = request.Amount * items.Count
+            });
+        }
+
         public Task<List<ExpenseCategoryDto>> GetExpenseCategoriesAsync()
         {
             return Task.FromResult(_categories.ToList());
+        }
+
+        public Task<ExpenseCategoryDto> CreateExpenseCategoryAsync(ExpenseCategoryRequest request)
+        {
+            var dto = new ExpenseCategoryDto
+            {
+                Id = (_categories.Count == 0 ? 0 : _categories.Max(x => x.Id)) + 1,
+                Name = request == null ? string.Empty : request.Name,
+                CategoryType = request == null ? null : request.CategoryType,
+                Status = 0
+            };
+            _categories.Add(dto);
+            return Task.FromResult(dto);
+        }
+
+        public Task DeleteExpenseCategoryAsync(int id)
+        {
+            ExpenseCategoryDto item = _categories.FirstOrDefault(x => x.Id == id);
+            if (item != null) { item.Status = 1; }
+            return Task.CompletedTask;
         }
 
         public Task<ExpenseDto> CreateExpenseAsync(ExpenseCreateRequest request)
@@ -644,6 +749,20 @@ namespace PropertyManagement.Client.Services
             ExpenseDto e = _expenses.FirstOrDefault(x => x.Id == id);
             if (e != null) { e.Status = 1; }
             return Task.CompletedTask;
+        }
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteExpensesAsync(RecordBatchDeleteRequest request)
+        {
+            int deleted = 0;
+            if (request != null && request.Ids != null)
+            {
+                foreach (ExpenseDto e in _expenses.Where(x => request.Ids.Contains(x.Id) && x.Status == 0).ToList())
+                {
+                    e.Status = 1;
+                    deleted++;
+                }
+            }
+            return Task.FromResult(new RecordBatchDeleteResultDto { Deleted = deleted });
         }
 
         public Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request)
@@ -676,6 +795,18 @@ namespace PropertyManagement.Client.Services
                     new FinancialSummaryItemDto { Category = "维修支出", CurrentAmount = 62100m, PreviousAmount = 65400m, MoM = -5.0m, QuarterTotal = 189600m, Remark = "支出" },
                     new FinancialSummaryItemDto { Category = "绿化支出", CurrentAmount = 24320m, PreviousAmount = 23900m, MoM = 1.8m, QuarterTotal = 70200m, Remark = "支出" }
                 }
+            });
+        }
+
+        /// <summary>CHG-v1.1.0-14：演示实现——导出收据打印模板。</summary>
+        public Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 2,
+                ReportType = "receipt",
+                Period = DateTime.Now.ToString("yyyy-MM-dd"),
+                Format = ExportFormat.Pdf
             });
         }
 
@@ -864,6 +995,12 @@ namespace PropertyManagement.Client.Services
 
         public Task<List<ImportLogDto>> GetImportLogsAsync() =>
             Task.FromResult(new List<ImportLogDto>());
+
+        public Task<RecordBatchDeleteResultDto> BatchDeleteImportLogsAsync(RecordBatchDeleteRequest request) =>
+            Task.FromResult(new RecordBatchDeleteResultDto
+            {
+                Deleted = request != null && request.Ids != null ? request.Ids.Count : 0
+            });
 
         public Task<byte[]> DownloadImportErrorsAsync(int id) =>
             Task.FromResult(new byte[0]);

@@ -38,6 +38,26 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsDisabled { get { return Dto.Status != DictItemStatus.Enabled; } }
         public bool IsEnabledVisible { get { return !IsDisabled; } }
         public bool IsDisabledVisible { get { return IsDisabled; } }
+
+        /// <summary>
+        /// CHG-v1.1.0-17：系统固定缴费对象（charge_object 的房产/车位/业主）。
+        /// 生成账单需跨模块引用基础信息档案，故不可停用、不可删除。
+        /// </summary>
+        public bool IsSystemFixed
+        {
+            get
+            {
+                if (!string.Equals(Dto.TypeCode, "charge_object", StringComparison.OrdinalIgnoreCase)) { return false; }
+                string code = Dto.ItemCode ?? string.Empty;
+                return string.Equals(code, "property", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(code, "parking", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(code, "owner", StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        /// <summary>停用入口仅对「已启用且非系统固定项」显示（系统固定项不提供停用按钮）。</summary>
+        public bool IsDisableVisible { get { return IsEnabledVisible && !IsSystemFixed; } }
+
         public int Sort { get { return Dto.Sort; } }
     }
 

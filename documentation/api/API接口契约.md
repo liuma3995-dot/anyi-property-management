@@ -32,12 +32,25 @@
 ### 1.5 删除与审计
 
 - 删除统一为**软删除**（`del_flag`），不做物理删除（DM-07 §二）；
+- 「批量删除」同样只置 `del_flag = 1`（软删留痕），记录立即从列表/流水账消失，物理清理由
+  `POST /system/cleanup/soft-deleted`（一键清理残余数据）统一执行：逐表物理删除 `del_flag = 1` 行，
+  并同步清理「随父行作废、自身无 `del_flag` 列」的纯子记录（导入错误行、支出关联对象）；
 - 敏感操作（收款/退款/支出/结案/导入/备份/字典修改等）由后端写入 `t_audit_log`，前端不可修改；
+- **删除入口的跨模块引用校验（v1.1.0 R1）**：房产/业主/车位/设备删除前先在服务层校验其它模块的在用引用
+  （房产：业主关系 / 未删除账单 / 绑定车位；业主：关系 / 名下车位 / 预存款 / 纠纷当事人；
+  车位：未删除账单；设备：保养/年检/故障/自定义记录、支出引用），命中即 `409 / 40900` 并返回中文处置提示，
+  以保证「能删 ⇒ 必无在用子行」，使一键清理回收留痕父行后不产生孤儿引用；
 - 导出/打印留痕：`t_export_log` / `t_print_log`，补打保留原收据号并递增打印次数（BR-FIN-08）。
 
 ### 1.6 导入/导出/文件
 
 - 导入：`multipart/form-data` 上传 Excel（模块类型见 `ImportModule`）；校验不通过不入库，错误清单可下载重传（BR-INF-05）；
+  - **模板必填矩阵（v1.1.0）**：房产＝楼栋号/房号/建筑面积（**单元号选填**、**已移除「用途」列**）；车位＝车位编号；业主＝姓名（**联系电话选填**）；业主-房产关系＝楼栋号/房号/业主姓名（**单元号选填**）；
+  - **表头驱动**：导入按表头名识别列（列序可调整、V1.0.0 旧模板继续可用）；表头不匹配返回 `42200` 并提示缺少列；
+  - **示例行**：模板第 2 行为示例（首列「示例：」开头），导入时自动跳过、不计入批次 `total`；另附「填写说明」工作表；
+  - **面积口径**：`area` 保留原始精度（前端最多 2 位小数录入、展示不四舍五入）；计费按全精度面积 × 单价后对金额四舍五入到分；
+  - **数值往返**：`POST/PUT /baseinfo/properties` 的 `area` 原值写入、原值回读（不做四舍五入）；
+  - **软删留痕与唯一性**：楼栋/单元/房产/账单的唯一约束均为 `del_flag = 0` 部分唯一索引，软删留痕后可重建同键；唯一约束冲突返回 `40900`（HTTP 409）并给出可读提示；
 - 导出：创建导出任务（写 `t_export_log`/`t_report_log`）后返回记录，文件经下载端点获取；
 - 文件下载端点：`GET /{group}/files/{logId}` 返回文件流（Content-Disposition 携带文件名）。
 
@@ -69,6 +82,7 @@
 | UC-INF-006 导入批次 | GET | /baseinfo/imports/{id} | — | ImportLogDto |
 | UC-INF-006 模板 | GET | /baseinfo/imports/template?module= | — | 文件流 |
 | UC-INF-006 错误清单 | GET | /baseinfo/imports/{id}/errors | — | 文件流 |
+| UC-INF-006 批次记录批量删除（v1.1.0） | POST | /baseinfo/imports/batch-delete | RecordBatchDeleteRequest | RecordBatchDeleteResultDto |
 | UC-INF-007 查询（房产） | GET | /baseinfo/properties | BaseInfoQueryRequest | PageResult\<PropertyDto\> |
 | UC-INF-007 查询（业主） | GET | /baseinfo/owners | BaseInfoQueryRequest | PageResult\<OwnerDto\> |
 | UC-INF-007 查询（车位） | GET | /baseinfo/parking-spaces | BaseInfoQueryRequest | PageResult\<ParkingSpaceDto\> |
@@ -96,13 +110,18 @@
 
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
-| UC-FIN-001 收费项目 | GET/POST/PUT/DELETE | /billing/charge-items[/{id}] | ChargeItemRequest | ChargeItemDto |
+| UC-FIN-001 收费项目（含 **objectCode** 缴费对象字典编码：property/parking/owner 为系统固定项、其余为自定义项；objectType 0 房产/1 车位/2 业主/3 自定义，null 时按计价方式派生） | GET/POST/PUT/DELETE | /billing/charge-items[/{id}] | ChargeItemRequest | ChargeItemDto |
 | UC-FIN-001 计费周期 | GET/POST/PUT/DELETE | /billing/cycles[/{id}] | BillingCycleRequest | BillingCycleDto |
-| UC-FIN-002 生成账单 | POST | /billing/bills/generate | BillGenerateRequest | BillGenerateLogDto |
+| UC-FIN-001 删除计费周期（仅自定义周期；内置周期或已被账单引用 → 42200） | DELETE | /billing/cycles/{id} | — | — |
+| UC-FIN-002 生成账单（**校验缴费对象类型与收费项目一致**，不一致返回 42200；**同对象同周期同项目允许重复出账**） | POST | /billing/bills/generate | BillGenerateRequest | BillGenerateLogDto |
+| UC-FIN-002 生成账单（**自定义缴费对象**：`customPayerNames` 手工填写名称，一行一张账单；与房产/车位/业主口径互斥） | POST | /billing/bills/generate | BillGenerateRequest | BillGenerateLogDto |
+| UC-FIN-002 缴费对象候选 | GET | /billing/bill-objects?kind=property/parking/owner&keyword= | BillObjectQueryRequest | BillObjectQueryResult |
 | UC-FIN-002 批次查询 | GET | /billing/bills/generate-logs/{id} | — | BillGenerateLogDto |
+| UC-FIN-002 批次缴费对象 | GET | /billing/bills/generate-logs/{id}/objects | — | BillObjectSelectionDto |
 | UC-FIN-002 发布 | POST | /billing/bills/publish | BillPublishRequest | BillGenerateLogDto |
 | UC-FIN-002 失败清单 | GET | /billing/bills/generate-logs/{id}/failures | — | List\<BillDto\> |
-| UC-FIN-002 账单列表 | GET | /billing/bills | BillQueryRequest | PageResult\<BillDto\> |
+| UC-FIN-002 失败对象重推（FL-FIN-01：按失败清单重新出账，并收敛源批次失败清单；全部成功 → 源批次状态「已重推」Retried） | POST | /billing/bills/generate-logs/{id}/retry | BillRetryRequest | BillGenerateLogDto |
+| UC-FIN-002 账单列表 | GET | /billing/bills（可按 ownerId / **payerOwnerId** / **payerName** 取账单；payerOwnerId＝按缴费人取全部欠费，payerName＝按自定义缴费对象名称取全部欠费） | BillQueryRequest | PageResult\<BillDto\> |
 | UC-FIN-007 欠费台账 | GET | /billing/bills/arrears | BillQueryRequest（arrearsOnly） | PageResult\<ArrearDto\> |
 | UC-FIN-008 已缴/未缴统计 | GET | /billing/statistics/payment | — | PaymentStatisticsDto |
 
@@ -111,14 +130,16 @@
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
 | UC-FIN-003 收款登记 | POST | /payments | PaymentCreateRequest | PaymentDto |
+| UC-FIN-003 统一收款（多账单） | POST | /payments/batch | PaymentBatchCreateRequest | PaymentBatchResultDto |
 | UC-FIN-003 收款历史 | GET | /payments | PageRequest | PageResult\<PaymentDto\> |
 | UC-FIN-003 收款查询 | GET | /payments/{id} | — | PaymentDto |
 | UC-FIN-003 预存款 | GET | /payments/pre-deposits/{ownerId} | — | PreDepositDto |
 | UC-FIN-003 预存退还 | POST | /payments/pre-deposits/refund | PreDepositRefundRequest | PreDepositDto |
 | UC-FIN-004 退款/减免/调整 | POST | /payments/refunds | RefundAdjustmentRequest | RefundAdjustmentDto |
+| UC-FIN-004 批量退款/减免/调整 | POST | /payments/refunds/batch | RefundAdjustmentRequest（billIds 多账单） | RefundBatchResultDto |
 | UC-FIN-004 记录查询 | GET | /payments/refunds | PageRequest | PageResult\<RefundAdjustmentDto\> |
-| UC-FIN-011 收据查询 | GET | /payments/receipts/{id} | — | ReceiptDto |
-| UC-FIN-011 收据打印/补打 | POST | /payments/receipts/{id}/print | ReceiptPrintRequest | ReceiptDto |
+| UC-FIN-011 收据查询（v1.1.0 第 15 轮起下线） | ~~GET /payments/receipts/{id}~~ | 收据号下线，改为导出打印模板 | — | — |
+| UC-FIN-011 收据打印/补打（v1.1.0 第 15 轮起下线） | ~~POST /payments/receipts/{id}/print~~ | 同上 | — | — |
 
 ### 2.6 expenses（财务-支出）
 
@@ -128,14 +149,17 @@
 | UC-FIN-005 支出登记 | POST | /expenses | ExpenseCreateRequest | ExpenseDto |
 | UC-FIN-005 支出查询 | GET | /expenses | PageRequest | PageResult\<ExpenseDto\> |
 | UC-FIN-005 支出修改/软删 | PUT/DELETE | /expenses/{id} | ExpenseCreateRequest | ExpenseDto |
+| UC-FIN-005 支出批量删除（v1.1.0） | POST | /expenses/batch-delete | RecordBatchDeleteRequest | RecordBatchDeleteResultDto |
 
 ### 2.7 reports（财务-报表）
 
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
-| UC-FIN-010 收支流水 | GET | /reports/ledger | LedgerQueryRequest | PageResult\<LedgerEntryDto\> |
+| UC-FIN-010 收支流水（keyword 支持 **单据号/流水号 + 付款人 + 项目**；付款人列优先取自定义缴费对象名称） | GET | /reports/ledger | LedgerQueryRequest | PageResult\<LedgerEntryDto\> |
 | UC-FIN-009 财务报表 | GET | /reports/financial | FinancialReportQueryRequest | FinancialReportDto |
 | UC-FIN-012 导出报表 | POST | /reports/export | ReportExportRequest | ReportLogDto |
+| UC-FIN-011 导出收据打印模板（**hideObjectColumn=true 且全部明细对象文本＝缴款人时过滤「缴费对象」列**，四列布局） | POST | /reports/receipt-template | ReceiptTemplateRequest | ReportLogDto |
+| 导出文件下载（报表/收据模板） | GET | /reports/files/{logId} | — | 文件流 |
 | UC-FIN-012 文件下载 | GET | /reports/files/{logId} | — | 文件流 |
 
 ### 2.8 emergency（应急处置）
@@ -202,6 +226,7 @@
 | UC-COM-003 审计日志 | GET | /common/audit-logs | AuditLogQueryRequest | PageResult\<AuditLogDto\> |
 | UC-COM-004 字典类型 | GET | /common/dict-types | — | List\<DictTypeDto\> |
 | UC-COM-004 字典项 | GET/POST/PUT/DELETE | /common/dict-items[/{id}]?typeCode= | DictItemRequest | DictItemDto |
+| UC-COM-004 缴费对象字典（`charge_object`：房产/车位/业主＝**系统固定项**，不可停用/删除；其余自定义项在被收费项目引用时不可删除） | GET/POST | /dicts/charge_object · /dicts/charge_object/items · /system/dict-types/charge_object/items · /system/dict-items/{id}/status · /system/dict-items/batch-delete | DictItemRequest | DictItemDto |
 | UC-COM-004 参数查询 | GET | /common/params | — | List\<ParamDto\> |
 | UC-COM-004 参数修改 | PUT | /common/params | ParamUpdateRequest | ParamDto |
 | UC-COM-005 手动备份 | POST | /common/backups | BackupCreateRequest | BackupDto |

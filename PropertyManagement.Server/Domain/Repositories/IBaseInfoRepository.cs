@@ -64,6 +64,12 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         // ---------- 车位（UC-INF-005，BR-INF-03） ----------
         ParkingSpaceDto GetParking(IDbConnection connection, int id);
+
+        /// <summary>
+        /// CHG-v1.1.0-12：业主名下有效房产 ID（del_flag=0 且 rel_status≠2 已解除）。
+        /// 用于车位维护「绑定业主 → 自动引用房产」的派生口径。
+        /// </summary>
+        List<int> ListActivePropertyIdsByOwner(IDbConnection connection, int ownerId);
         PageResult<ParkingSpaceDto> QueryParkings(IDbConnection connection, BaseInfoQueryRequest query, out int total);
         int InsertParking(IDbConnection connection, IDbTransaction transaction, ParkingSpaceDto dto);
         void UpdateParking(IDbConnection connection, IDbTransaction transaction, ParkingSpaceDto dto);
@@ -80,6 +86,10 @@ namespace PropertyManagement.Server.Domain.Repositories
         void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, ImportStatus status, int success, int fail, string errorFile);
         ImportLogDto GetImportLog(IDbConnection connection, int id);
         List<ImportLogDto> ListImportLogs(IDbConnection connection);
+
+        /// <summary>导入批次记录批量删除（v1.1.0-⑤，软删留痕）：返回受影响行数。</summary>
+        int SoftDeleteImportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids);
+
         void InsertImportErrors(IDbConnection connection, IDbTransaction transaction, IEnumerable<ImportErrorItemDto> errors, int importId);
         List<ImportErrorItemDto> ListImportErrors(IDbConnection connection, int importId);
 

@@ -146,10 +146,14 @@
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
                                     <StackPanel Orientation="Horizontal">
+                                        <!-- CHG-v1.1.0-17：系统固定缴费对象（房产/车位/业主）只读标记，不提供停用 -->
+                                        <TextBlock Text="系统固定" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                                   VerticalAlignment="Center" Margin="0,0,6,0"
+                                                   Visibility="{Binding IsSystemFixed, Converter={StaticResource BoolToVis}}" />
                                         <Button Style="{StaticResource LinkButton}" Content="编辑" Padding="4,2"
                                                 Command="{Binding DataContext.EditCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
                                         <Button Style="{StaticResource LinkButton}" Content="停用" Foreground="{StaticResource DangerBrush}" Padding="4,2" Margin="4,0,0,0"
-                                                Visibility="{Binding IsEnabledVisible, Converter={StaticResource BoolToVis}}"
+                                                Visibility="{Binding IsDisableVisible, Converter={StaticResource BoolToVis}}"
                                                 Command="{Binding DataContext.DisableCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
                                         <Button Style="{StaticResource LinkButton}" Content="恢复" Foreground="{StaticResource SuccessBrush}" Padding="4,2" Margin="4,0,0,0"
                                                 Visibility="{Binding IsDisabledVisible, Converter={StaticResource BoolToVis}}"

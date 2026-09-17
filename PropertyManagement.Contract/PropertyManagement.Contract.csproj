@@ -41,6 +41,7 @@
     <Compile Include="Auth\LoginResult.cs" />
     <Compile Include="Auth\UserProfileDtos.cs" />
     <Compile Include="Common\ApiResponse.cs" />
+    <Compile Include="Common\AreaValue.cs" />
     <Compile Include="Common\CommonDtos.cs" />
     <Compile Include="Common\ErrorCode.cs" />
     <Compile Include="Common\PageRequest.cs" />

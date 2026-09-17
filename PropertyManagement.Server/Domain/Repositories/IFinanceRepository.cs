@@ -30,13 +30,24 @@ namespace PropertyManagement.Server.Domain.Repositories
         // ---------- 账单生成/发布（UC-FIN-002，FL-FIN-01） ----------
         IEnumerable<BillObjectCandidate> ListPropertyCandidates(IDbConnection connection);
         IEnumerable<BillObjectCandidate> ListParkingCandidates(IDbConnection connection);
+        /// <summary>CHG-v1.1.0-11：业主缴费对象候选（业主直缴：办卡费/清理费/维修费等）。</summary>
+        IEnumerable<BillObjectCandidate> ListOwnerCandidates(IDbConnection connection);
+
         /// <summary>
-        /// BR-INF-02（M7 BUG-002 修复）：缴费对象是否存在有效「房产-业主」关系。
-        /// 房产取 t_owner_property_rel（del_flag=0 且 rel_status≠2 已解除）；车位取 t_parking_space.owner_id。
+        /// CHG-v1.1.0-10／11：生成账单「缴费对象」候选查询（只读）。
+        /// 房产口径：隐藏未绑定有效业主的房产并回传隐藏数量；车位/业主口径：全部返回（不隐藏）。
+        /// </summary>
+        BillObjectQueryResult QueryBillObjects(IDbConnection connection, string kind, string keyword, int limit);
+
+        /// <summary>CHG-v1.1.0-10：草稿批次既有缴费对象（批次编辑回填，避免「重新生成必定全失败」的误解）。</summary>
+        BillObjectSelectionDto GetBatchBillObjects(IDbConnection connection, int batchId);
+        /// <summary>
+        /// BR-INF-02（M7 BUG-002 修复）：缴费对象是否存在有效缴费人关系。
+        /// 房产取 t_owner_property_rel（del_flag=0 且 rel_status≠2 已解除）；车位取 t_parking_space.owner_id；
+        /// 业主直缴（CHG-v1.1.0-11）以业主本人在册为有效。
         /// 口径与收款侧 <see cref="GetOwnerIdByBill"/> 一致。
         /// </summary>
-        bool HasValidOwnerRelation(IDbConnection connection, int? propertyId, int? parkingId);
-        BillDto FindDuplicateBill(IDbConnection connection, IDbTransaction transaction, int chargeItemId, int? propertyId, int? parkingId, int cycleId);
+        bool HasValidOwnerRelation(IDbConnection connection, int? propertyId, int? parkingId, int? ownerId);
         int InsertBill(IDbConnection connection, IDbTransaction transaction, BillDto bill); // 按 bill.DelFlag 落库（失败占位=1）
         void UpdateBillPaidAmount(IDbConnection connection, IDbTransaction transaction, BillDto bill);
         void MarkOverdue(IDbConnection connection, IDbTransaction transaction, DateTime now);
@@ -48,6 +59,10 @@ namespace PropertyManagement.Server.Domain.Repositories
         int InsertBillGenerateLog(IDbConnection connection, IDbTransaction transaction, BillGenerateLogDto log);
         BillGenerateLogDto GetBillGenerateLog(IDbConnection connection, int id);
         void UpdateGenerateLogResult(IDbConnection connection, IDbTransaction transaction, int id, int success, int fail, string failDetail);
+
+        /// <summary>CHG-v1.1.0-21：失败对象重推闭环 —— 收敛源批次失败清单并记录重推时间/成功户数。</summary>
+        void MarkBatchRetried(IDbConnection connection, IDbTransaction transaction,
+            int id, int remainingFail, string remainingFailDetail, int retriedCount);
         PageResult<BillListItemDto> QueryBills(IDbConnection connection, BillQueryRequest query);
 
         /// <summary>账单生成批次列表（CHG-M4-10：PG-FIN-02 批次工作台）。</summary>
@@ -93,6 +108,10 @@ namespace PropertyManagement.Server.Domain.Repositories
         int InsertExpense(IDbConnection connection, IDbTransaction transaction, ExpenseDto expense);
         void UpdateExpense(IDbConnection connection, IDbTransaction transaction, ExpenseDto expense);
         void SoftDeleteExpense(IDbConnection connection, IDbTransaction transaction, int id);
+
+        /// <summary>支出记录批量删除（v1.1.0-⑤，软删留痕 BR-FIN-10）：返回受影响行数。</summary>
+        int SoftDeleteExpenses(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids);
+
         ExpenseDto GetExpense(IDbConnection connection, int id);
         List<ExpenseDto> ListExpenses(IDbConnection connection, PageRequest query, out int total);
         void InsertExpenseObjectRels(IDbConnection connection, IDbTransaction transaction, int expenseId, IEnumerable<ExpenseObjectRelDto> rels);
@@ -129,6 +148,10 @@ namespace PropertyManagement.Server.Domain.Repositories
     public enum BillObjectKind
     {
         Property = 0,
-        Parking = 1
+        Parking = 1,
+        /// <summary>CHG-v1.1.0-11：业主直缴（办卡费/清理费/维修费等）。</summary>
+        Owner = 2,
+        /// <summary>CHG-v1.1.0-18：自定义缴费对象（租户/广告商/外部单位，缴费人名称由用户手工填写）。</summary>
+        Custom = 3
     }
 }

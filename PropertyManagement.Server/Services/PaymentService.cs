@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Linq;
 using PropertyManagement.Contract.Common;
 using Dapper;
 using PropertyManagement.Contract.Enums;
@@ -52,105 +53,199 @@ namespace PropertyManagement.Server.Services
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
-                BillDto bill = _finance.GetBill(connection, request.BillId);
-                if (bill == null)
+                // CHG-v1.1.0-15：单张收款同样生成收款流水号（与收支明细流水「关联单据」同一编号），收据号已下线
+                string batchNo = BuildBatchNo(connection);
+                SettlementResult settled = SettleBill(connection, transaction, new PaymentBatchItemRequest
                 {
-                    throw ApiException.NotFound("账单不存在或已删除");
-                }
-                if (bill.Status == BillStatus.Paid || bill.Status == BillStatus.Reversed)
-                {
-                    throw ApiException.ValidationFailed("账单已缴清或已冲正，不能重复收款");
-                }
-                if (bill.Status == BillStatus.Draft)
-                {
-                    throw ApiException.ValidationFailed("账单尚未发布，不能收款");
-                }
-
-                int ownerId = _finance.GetOwnerIdByBill(connection, bill.Id);
-                if (ownerId <= 0)
-                {
-                    throw ApiException.BadRequest("账单未关联业主，无法登记收款");
-                }
-
-                decimal remaining = bill.Amount - bill.PaidAmount;
-                if (remaining <= 0)
-                {
-                    throw ApiException.ValidationFailed("账单已无应缴金额");
-                }
-
-                // P-06 自动抵扣：业主预存款余额优先抵扣账单
-                decimal preDeposit = _finance.GetOwnerPreDeposit(connection, ownerId);
-                decimal usedFromPreDeposit = 0m;
-                if (preDeposit > 0m && remaining > 0m)
-                {
-                    usedFromPreDeposit = Math.Min(preDeposit, remaining);
-                    _finance.DecreasePreDeposit(connection, transaction, ownerId, usedFromPreDeposit);
-                }
-
-                // 本次实收：先抵剩余，超出部分转预存款（P-06）
-                decimal cash = request.Amount;
-                decimal toBill = Math.Min(cash, remaining - usedFromPreDeposit);
-                decimal excess = cash - toBill;
-                if (excess > 0m)
-                {
-                    _finance.IncreasePreDeposit(connection, transaction, ownerId, excess);
-                }
-
-                decimal totalCovered = usedFromPreDeposit + toBill;
-                bill.PaidAmount += totalCovered;
-                BillStatus oldStatus = bill.Status;
-                bill.Status = bill.PaidAmount >= bill.Amount
-                    ? BillStatus.Paid
-                    : (bill.PaidAmount > 0m ? BillStatus.Partial : bill.Status);
-                _finance.UpdateBillPaidAmount(connection, transaction, bill);
-
-                if (bill.Status != oldStatus)
-                {
-                    _finance.InsertBillStatusLog(connection, transaction, new BillStatusLogDto
-                    {
-                        BillId = bill.Id,
-                        OldStatus = oldStatus,
-                        NewStatus = bill.Status,
-                        Reason = "收款登记"
-                    });
-                }
-
-                var payment = new PaymentDto
-                {
-                    BillId = bill.Id,
-                    Amount = cash,
-                    PayMethod = request.PayMethod,
-                    PaidAt = DateTime.Now,
-                    ToPreDeposit = excess,
-                    Remark = string.IsNullOrWhiteSpace(request.Remark) ? string.Empty : request.Remark.Trim()
-                };
-                payment.Id = _finance.InsertPayment(connection, transaction, payment);
-
-                // 收据（BR-FIN-08：编号唯一）
-                var receipt = new ReceiptDto
-                {
-                    PaymentId = payment.Id,
-                    ReceiptNo = "RC-" + DateTime.Now.ToString("yyyyMMdd") + "-" + payment.Id
-                };
-                receipt.Id = _finance.InsertReceipt(connection, transaction, receipt);
-
-                if (request.PrintReceipt)
-                {
-                    receipt.PrintCount = 1;
-                    _finance.MarkReceiptPrinted(connection, transaction, receipt);
-                    _finance.InsertPrintLog(connection, transaction, "receipt", receipt.Id);
-                }
-
+                    BillId = request.BillId,
+                    Amount = request.Amount
+                }, request.PayMethod, request.PrintReceipt, request.Remark, batchNo);
                 transaction.Commit();
 
-                _audit.Write("PAYMENT_CREATE", "bill", bill.Id.ToString(),
-                    string.Format("收款登记：账单 {0}，实收 {1:0.00}，其中抵扣预存 {2:0.00}，转预存 {3:0.00}，收据 {4}{5}",
-                        bill.Id, cash, usedFromPreDeposit, excess, receipt.ReceiptNo,
-                        string.IsNullOrEmpty(payment.Remark) ? string.Empty : "，备注：" + payment.Remark),
+                _audit.Write("PAYMENT_CREATE", "bill", settled.Payment.BillId.ToString(),
+                    string.Format("收款登记：账单 {0}，实收 {1:0.00}，其中抵扣预存 {2:0.00}，转预存 {3:0.00}，收款流水号 {4}{5}",
+                        settled.Payment.BillId, settled.Payment.Amount, settled.UsedFromPreDeposit, settled.Payment.ToPreDeposit,
+                        batchNo,
+                        string.IsNullOrEmpty(settled.Payment.Remark) ? string.Empty : "，备注：" + settled.Payment.Remark),
                     userName: operatorName, ip: ip, result: "成功");
 
-                return payment;
+                return settled.Payment;
             }
+        }
+
+        /// <summary>
+        /// 统一收款（CHG-v1.1.0-12）：对同一缴费对象下的多个账单一次性收款。
+        /// 实现口径：按账单逐条落 t_payment（各自保留账单号与收据号，退款/减免仍可按账单号跨模块引用），
+        /// 同一批共享 batch_no 流水号；任何一条明细校验失败，整批回滚。
+        /// </summary>
+        public PaymentBatchResultDto CreateBatchPayment(PaymentBatchCreateRequest request,
+            string operatorName = null, string ip = null)
+        {
+            if (request == null || request.Items == null || request.Items.Count == 0)
+            {
+                throw ApiException.BadRequest("请至少选择一张账单");
+            }
+
+            var items = request.Items.Where(x => x != null && x.BillId > 0).ToList();
+            if (items.Count == 0)
+            {
+                throw ApiException.BadRequest("请至少选择一张账单");
+            }
+            if (items.Count != items.Select(x => x.BillId).Distinct().Count())
+            {
+                throw ApiException.ValidationFailed("同一账单只能收款一次，请重新选择");
+            }
+            if (items.Any(x => x.Amount <= 0))
+            {
+                throw ApiException.ValidationFailed("每张账单的收款金额必须大于 0");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                string batchNo = BuildBatchNo(connection);
+                var payments = new List<PaymentDto>();
+                decimal total = 0m;
+                foreach (PaymentBatchItemRequest item in items)
+                {
+                    SettlementResult settled = SettleBill(connection, transaction, item,
+                        request.PayMethod, request.PrintReceipt, request.Remark, batchNo);
+                    payments.Add(settled.Payment);
+                    total += settled.Payment.Amount;
+                }
+                transaction.Commit();
+
+                _audit.Write("PAYMENT_BATCH_CREATE", "payment_batch", batchNo,
+                    string.Format("统一收款：流水号 {0}，账单 {1} 张，合计 {2:0.00}，方式 {3}{4}",
+                        batchNo, payments.Count, total, request.PayMethod,
+                        string.IsNullOrWhiteSpace(request.Remark) ? string.Empty : "，备注：" + request.Remark.Trim()),
+                    userName: operatorName, ip: ip, result: "成功");
+
+                return new PaymentBatchResultDto
+                {
+                    BatchNo = batchNo,
+                    Payments = payments,
+                    TotalAmount = total,
+                    Count = payments.Count
+                };
+            }
+        }
+
+        /// <summary>统一收款流水号：PAY-yyyyMMdd-####（当日序号，事务内查重）。</summary>
+        private static string BuildBatchNo(IDbConnection connection)
+        {
+            string prefix = "PAY-" + DateTime.Now.ToString("yyyyMMdd") + "-";
+            int today = connection.ExecuteScalar<int>(
+                "SELECT COUNT(1) FROM (SELECT DISTINCT batch_no FROM t_payment WHERE batch_no LIKE @prefix)",
+                new { prefix = prefix + "%" });
+            return prefix + (today + 1).ToString("D4");
+        }
+
+        /// <summary>
+        /// 单张账单结算核心（单笔收款与统一收款共用）：
+        /// 预存抵扣 → 超额转预存 → 更新账单状态 → 落收款记录 → 出收据（BR-FIN-08 编号唯一）。
+        /// </summary>
+        private SettlementResult SettleBill(IDbConnection connection, IDbTransaction transaction,
+            PaymentBatchItemRequest item, PayMethod payMethod, bool printReceipt, string remark, string batchNo)
+        {
+            BillDto bill = _finance.GetBill(connection, item.BillId);
+            if (bill == null)
+            {
+                throw ApiException.NotFound("账单不存在或已删除");
+            }
+            if (bill.Status == BillStatus.Paid || bill.Status == BillStatus.Reversed)
+            {
+                throw ApiException.ValidationFailed("账单 " + bill.Id + " 已缴清或已冲正，不能重复收款");
+            }
+            if (bill.Status == BillStatus.Draft)
+            {
+                throw ApiException.ValidationFailed("账单 " + bill.Id + " 尚未发布，不能收款");
+            }
+
+            int ownerId = _finance.GetOwnerIdByBill(connection, bill.Id);
+            // CHG-v1.1.0-18：自定义缴费对象账单（payer_name 手工填写，无业主档案）允许收款，
+            // 但不参与预存款抵扣/超额转预存（预存主体是业主）。
+            bool isCustomPayer = ownerId <= 0 && !string.IsNullOrWhiteSpace(bill.PayerName);
+            if (ownerId <= 0 && !isCustomPayer)
+            {
+                throw ApiException.BadRequest("账单 " + bill.Id + " 未关联业主，无法登记收款");
+            }
+
+            decimal remaining = bill.Amount - bill.PaidAmount;
+            if (remaining <= 0)
+            {
+                throw ApiException.ValidationFailed("账单 " + bill.Id + " 已无应缴金额");
+            }
+
+            // P-06 自动抵扣：业主预存款余额优先抵扣账单（自定义缴费对象无预存主体）
+            decimal preDeposit = ownerId > 0 ? _finance.GetOwnerPreDeposit(connection, ownerId) : 0m;
+            decimal usedFromPreDeposit = 0m;
+            if (preDeposit > 0m && remaining > 0m)
+            {
+                usedFromPreDeposit = Math.Min(preDeposit, remaining);
+                _finance.DecreasePreDeposit(connection, transaction, ownerId, usedFromPreDeposit);
+            }
+
+            // 本次实收：先抵剩余，超出部分转预存款（P-06）
+            decimal cash = item.Amount;
+            decimal toBill = Math.Min(cash, remaining - usedFromPreDeposit);
+            decimal excess = cash - toBill;
+            if (excess > 0m)
+            {
+                if (isCustomPayer)
+                {
+                    throw ApiException.ValidationFailed(
+                        "自定义缴费对象不支持超额转预存，请将收款金额调整为不超过应缴金额");
+                }
+                _finance.IncreasePreDeposit(connection, transaction, ownerId, excess);
+            }
+
+            decimal totalCovered = usedFromPreDeposit + toBill;
+            bill.PaidAmount += totalCovered;
+            BillStatus oldStatus = bill.Status;
+            bill.Status = bill.PaidAmount >= bill.Amount
+                ? BillStatus.Paid
+                : (bill.PaidAmount > 0m ? BillStatus.Partial : bill.Status);
+            _finance.UpdateBillPaidAmount(connection, transaction, bill);
+
+            if (bill.Status != oldStatus)
+            {
+                _finance.InsertBillStatusLog(connection, transaction, new BillStatusLogDto
+                {
+                    BillId = bill.Id,
+                    OldStatus = oldStatus,
+                    NewStatus = bill.Status,
+                    Reason = string.IsNullOrEmpty(batchNo) ? "收款登记" : "统一收款（" + batchNo + "）"
+                });
+            }
+
+            var payment = new PaymentDto
+            {
+                BillId = bill.Id,
+                Amount = cash,
+                PayMethod = payMethod,
+                PaidAt = DateTime.Now,
+                ToPreDeposit = excess,
+                BatchNo = batchNo,
+                Remark = string.IsNullOrWhiteSpace(remark) ? string.Empty : remark.Trim()
+            };
+            payment.Id = _finance.InsertPayment(connection, transaction, payment);
+
+            // CHG-v1.1.0-15：收据号前后端下线 —— 不再生成 t_receipt 记录，
+            // 收款凭据统一以「收款流水号」（t_payment.batch_no）标识，收支明细流水「关联单据」同源。
+            // 存量 t_receipt 数据保留（历史流水的关联单据仍可追溯），BR-FIN-08 对存量数据继续有效。
+
+            return new SettlementResult
+            {
+                Payment = payment,
+                UsedFromPreDeposit = usedFromPreDeposit
+            };
+        }
+
+        private class SettlementResult
+        {
+            public PaymentDto Payment { get; set; }
+            public decimal UsedFromPreDeposit { get; set; }
         }
         // ---------- 收款历史/收据 ----------
         public PageResult<PaymentDto> QueryPayments(PageRequest query)
@@ -182,47 +277,9 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        public ReceiptDto GetReceipt(int receiptId)
-        {
-            using (IDbConnection connection = _connectionFactory.OpenConnection())
-            {
-                ReceiptDto receipt = _finance.GetReceipt(connection, receiptId);
-                if (receipt == null)
-                {
-                    throw ApiException.NotFound("收据不存在");
-                }
-                return receipt;
-            }
-        }
-        public ReceiptDto PrintReceipt(ReceiptPrintRequest request,
-            string operatorName = null, string ip = null)
-        {
-            if (request == null || request.ReceiptId <= 0)
-            {
-                throw ApiException.BadRequest("收据不能为空");
-            }
-
-            using (IDbConnection connection = _connectionFactory.OpenConnection())
-            using (IDbTransaction transaction = connection.BeginTransaction())
-            {
-                ReceiptDto receipt = _finance.GetReceipt(connection, request.ReceiptId);
-                if (receipt == null)
-                {
-                    throw ApiException.NotFound("收据不存在");
-                }
-
-                // BR-FIN-08：补打保留原收据号，递增打印次数并留痕
-                receipt.PrintCount += 1;
-                _finance.MarkReceiptPrinted(connection, transaction, receipt);
-                _finance.InsertPrintLog(connection, transaction, "receipt", receipt.Id);
-                transaction.Commit();
-
-                _audit.Write("RECEIPT_PRINT", "receipt", receipt.Id.ToString(),
-                    "收据打印/补打：编号 " + receipt.ReceiptNo + "，第 " + receipt.PrintCount + " 次",
-                    userName: operatorName, ip: ip, result: "成功");
-                return receipt;
-            }
-        }
+        // CHG-v1.1.0-15：收据号前后端下线 —— 原「收据查询 / 收据打印·补打」接口一并移除，
+        // 收款凭据改为导出「收据打印模板」（POST /reports/receipt-template），
+        // 收款标识统一使用「收款流水号」（t_payment.batch_no，与收支明细流水「关联单据」同源）。
 
         // ---------- 预存款（P-06 简单版） ----------
         public PreDepositDto GetPreDeposit(int ownerId)
@@ -283,6 +340,67 @@ namespace PropertyManagement.Server.Services
             {
                 throw ApiException.BadRequest("账单不能为空");
             }
+            ValidateRefundRequest(request);
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                RefundAdjustmentDto refund = ApplyRefund(connection, transaction, request.BillId, request);
+                transaction.Commit();
+
+                _audit.Write("REFUND_CREATE", "bill", refund.BillId.ToString(),
+                    string.Format("{0} {1:0.00} 元，编号 {2}，原因：{3}",
+                        request.RefundType, request.Amount, refund.RefNo, refund.Reason),
+                    userName: operatorName, ip: ip, result: "成功");
+
+                return refund;
+            }
+        }
+
+        /// <summary>
+        /// 批量登记退款/减免/调整（CHG-v1.1.0-13）：对所选多张账单**逐张**登记，
+        /// 金额口径为「每张金额」（合计 = 每张金额 × 张数）；任一张校验失败则整批回滚。
+        /// 每张账单各自生成申请编号与账单号引用，保证退款/减免仍可按账单号跨模块追溯。
+        /// </summary>
+        public RefundBatchResultDto CreateRefundBatch(RefundAdjustmentRequest request,
+            string operatorName = null, string ip = null)
+        {
+            List<int> billIds = request == null || request.BillIds == null
+                ? new List<int>()
+                : request.BillIds.Where(x => x > 0).Distinct().ToList();
+            if (billIds.Count == 0)
+            {
+                throw ApiException.BadRequest("请至少选择一张账单");
+            }
+            ValidateRefundRequest(request);
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                var items = new List<RefundAdjustmentDto>();
+                foreach (int billId in billIds)
+                {
+                    items.Add(ApplyRefund(connection, transaction, billId, request));
+                }
+                transaction.Commit();
+
+                decimal total = request.Amount * items.Count;
+                _audit.Write("REFUND_BATCH_CREATE", "refund_batch", items[0].RefNo,
+                    string.Format("批量{0}：账单 {1} 张，每张 {2:0.00} 元，合计 {3:0.00} 元，原因：{4}",
+                        request.RefundType, items.Count, request.Amount, total, request.Reason.Trim()),
+                    userName: operatorName, ip: ip, result: "成功");
+
+                return new RefundBatchResultDto
+                {
+                    Items = items,
+                    Count = items.Count,
+                    TotalAmount = total
+                };
+            }
+        }
+
+        private static void ValidateRefundRequest(RefundAdjustmentRequest request)
+        {
             if (request.Amount <= 0)
             {
                 throw ApiException.ValidationFailed("退款/减免金额必须大于 0");
@@ -291,11 +409,14 @@ namespace PropertyManagement.Server.Services
             {
                 throw ApiException.ValidationFailed("必须填写退款/减免原因（BR-FIN-06）");
             }
+        }
 
-            using (IDbConnection connection = _connectionFactory.OpenConnection())
-            using (IDbTransaction transaction = connection.BeginTransaction())
+        /// <summary>单张账单的退款/减免/调整核心（单张与批量共用）。</summary>
+        private RefundAdjustmentDto ApplyRefund(IDbConnection connection, IDbTransaction transaction,
+            int billId, RefundAdjustmentRequest request)
+        {
             {
-                BillDto bill = _finance.GetBill(connection, request.BillId);
+                BillDto bill = _finance.GetBill(connection, billId);
                 if (bill == null)
                 {
                     throw ApiException.NotFound("账单不存在或已删除");
@@ -346,13 +467,6 @@ namespace PropertyManagement.Server.Services
                     NewStatus = BillStatus.Reversed,
                     Reason = request.RefundType + "：" + refund.Reason
                 });
-
-                transaction.Commit();
-
-                _audit.Write("REFUND_CREATE", "bill", bill.Id.ToString(),
-                    string.Format("{0} {1:0.00} 元，编号 {2}，原因：{3}",
-                        request.RefundType, request.Amount, refund.RefNo, refund.Reason),
-                    userName: operatorName, ip: ip, result: "成功");
 
                 return refund;
             }

@@ -104,7 +104,7 @@ namespace PropertyManagement.Server.Api.Middleware
                 return false;
             }
 
-            return issuedAt.Value < changedAt.Value;
+            return TokenService.IsRevokedByTime(issuedAt.Value, changedAt.Value);
         }
 
         /// <summary>

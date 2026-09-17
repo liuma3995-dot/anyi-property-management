@@ -136,7 +136,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="房产" Width="110" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.0-12：列头由「房产」改为「缴费对象」（含房产/车位/业主直缴，显示口径见 PropertyNo） -->
+                    <DataGridTextColumn Header="缴费对象" Width="110" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="业主" Width="100" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="欠费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="欠费期间" Width="120" Binding="{Binding PeriodText}" ElementStyle="{StaticResource GridCellText}" />

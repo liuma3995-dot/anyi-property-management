@@ -36,9 +36,20 @@ namespace PropertyManagement.Server.Api.Filters
                      exception is System.IO.IOException ||
                      exception is UnauthorizedAccessException)
             {
-                code = ErrorCode.ServiceUnavailable;
-                httpStatus = 503;
-                message = "数据服务暂不可用，请稍后重试";
+                // v1.1.0 T9：唯一约束冲突属业务冲突（重复名称/编号），返回可读提示而非「数据服务暂不可用」
+                if (exception is System.Data.SQLite.SQLiteException &&
+                    (exception.Message ?? string.Empty).IndexOf("UNIQUE constraint failed", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    code = ErrorCode.Conflict;
+                    httpStatus = 409;
+                    message = "数据已存在：请检查名称/编号是否与既有记录重复（软删除留下的留痕记录不影响新建）";
+                }
+                else
+                {
+                    code = ErrorCode.ServiceUnavailable;
+                    httpStatus = 503;
+                    message = "数据服务暂不可用，请稍后重试";
+                }
             }
 
             if (code == ErrorCode.InternalError || code == ErrorCode.ServiceUnavailable)

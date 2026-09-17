@@ -1,4 +1,5 @@
 using System;
+using PropertyManagement.Server.Infrastructure.Security;
 using PropertyManagement.Contract.Auth;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Server.Services;
@@ -180,17 +181,20 @@ namespace PropertyManagement.Tests.Services
         }
 
         [Fact]
-        public void ChangePassword_与最近3次历史密码重复_抛ValidationFailed()
+        public void ChangePassword_与历史密码重复_规则已下线_可通过()
         {
+            // v1.1.0 第 8 轮（负责人裁定）：下线「新密码不得与最近 3 次使用过的密码重复」，
+            // 历史哈希仍按 PG-COM-04 留痕，但不再作为拦截条件。
             _service.ChangePassword(new ChangePasswordRequest { OldPassword = AdminPassword, NewPassword = "abc123" }, "admin");
 
-            var ex = Assert.Throws<ApiException>(() => _service.ChangePassword(new ChangePasswordRequest
+            _service.ChangePassword(new ChangePasswordRequest
             {
                 OldPassword = "abc123", NewPassword = AdminPassword
-            }, "admin"));
+            }, "admin");
 
-            Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
-            Assert.Contains("最近 3 次", ex.Message);
+            LoginResult login = _service.Login(new LoginRequest { UserName = "admin", Password = AdminPassword });
+            Assert.False(login.MustChangePassword);
+            Assert.True(ScalarInt("SELECT COUNT(1) FROM t_password_history") >= 2); // 历史仍留痕
         }
 
         [Fact]
@@ -234,6 +238,37 @@ namespace PropertyManagement.Tests.Services
             LoginResult result = _service.Login(new LoginRequest { UserName = "admin", Password = AdminPassword });
 
             Assert.True(result.MustChangePassword); // 首登（password_changed_at 为空）仍需改密
+        }
+
+        // ===================== v1.1.0 第 4 轮：改密失效判定（秒级口径） =====================
+
+        [Fact]
+        public void IsRevokedByTime_改密后同一秒内签发的token_不判为失效()
+        {
+            // token 的 iat 只有秒精度（31.000），password_changed_at 带亚秒（31.123）：
+            // 修复前直接比较会误判为「密码已修改」，导致刚改密重登就 401
+            DateTime changedAt = new DateTime(2026, 9, 16, 19, 52, 31, 123);
+            DateTime issuedAt = new DateTime(2026, 9, 16, 19, 52, 31, 0);
+
+            Assert.False(TokenService.IsRevokedByTime(issuedAt, changedAt));
+        }
+
+        [Fact]
+        public void IsRevokedByTime_改密前签发的token_判为失效()
+        {
+            DateTime changedAt = new DateTime(2026, 9, 16, 19, 52, 31, 123);
+            DateTime issuedAt = new DateTime(2026, 9, 16, 19, 52, 30, 900);
+
+            Assert.True(TokenService.IsRevokedByTime(issuedAt, changedAt));
+        }
+
+        [Fact]
+        public void IsRevokedByTime_改密后较晚签发的token_不判为失效()
+        {
+            DateTime changedAt = new DateTime(2026, 9, 16, 19, 52, 31, 123);
+            DateTime issuedAt = new DateTime(2026, 9, 16, 19, 52, 35, 0);
+
+            Assert.False(TokenService.IsRevokedByTime(issuedAt, changedAt));
         }
     }
 }

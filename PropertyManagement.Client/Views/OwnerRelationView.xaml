@@ -96,15 +96,23 @@
                 <StackPanel>
                     <TextBlock Text="绑定业主-房产关系" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
                     <TextBlock Text="房产" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <ComboBox IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
+                    <!-- F-03/F-04（v1.1.0 返工）：对齐「纠纷登记」单框内检索——同一个框既可输入检索、又可下拉选择；
+                         过滤走 ICollectionView（不重建集合），选中项恒保留，故不会再出现"选不中/存不了" -->
+                    <ComboBox x:Name="PropertyCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                              IsSynchronizedWithCurrentItem="False"
+                              ItemsSource="{Binding PropertiesView}" DisplayMemberPath="UnitPath"
+                              SelectedItem="{Binding SelectedProperty, Mode=TwoWay}"
                               Text="{Binding PropertySearchText, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding FilteredProperties}" DisplayMemberPath="UnitPath"
-                              SelectedValuePath="Id" SelectedValue="{Binding FormPropertyId, Mode=TwoWay}" Margin="0,6,0,12" />
+                              Height="32" Margin="0,6,0,12" MaxDropDownHeight="220" FontSize="12"
+                              hc:InfoElement.Placeholder="输入楼栋 / 房号 / 业主检索" />
                     <TextBlock Text="业主" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <ComboBox IsEditable="True" StaysOpenOnEdit="True" IsTextSearchEnabled="False"
+                    <ComboBox x:Name="OwnerCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
+                              IsSynchronizedWithCurrentItem="False"
+                              ItemsSource="{Binding OwnersView}" DisplayMemberPath="OwnerDisplayName"
+                              SelectedItem="{Binding SelectedOwner, Mode=TwoWay}"
                               Text="{Binding OwnerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                              ItemsSource="{Binding FilteredOwners}" DisplayMemberPath="OwnerDisplayName"
-                              SelectedValuePath="Id" SelectedValue="{Binding FormOwnerId, Mode=TwoWay}" Margin="0,6,0,12" />
+                              Height="32" Margin="0,6,0,12" MaxDropDownHeight="220" FontSize="12"
+                              hc:InfoElement.Placeholder="输入姓名 / 电话 / 证件号检索" />
                     <TextBlock Text="关系类型" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <ComboBox SelectedValue="{Binding FormRelType}" SelectedValuePath="Tag" Margin="0,6,0,12">
                         <ComboBoxItem Content="业主" Tag="Owner" />

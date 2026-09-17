@@ -32,7 +32,7 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         void InsertPasswordHistory(IDbConnection connection, IDbTransaction transaction, int userId, string passwordHash);
 
-        /// <summary>只保留最近 keep 条历史（PG-COM-04：保留 5 条，供「最近 3 次不重复」校验）。</summary>
+        /// <summary>只保留最近 keep 条历史（PG-COM-04：保留 5 条；「最近 3 次不重复」校验已于 v1.1.0 第 8 轮下线，仅留痕）。</summary>
         void TrimPasswordHistory(IDbConnection connection, IDbTransaction transaction, int userId, int keep);
 
         /// <summary>R17：读取账号个人信息（display_name/phone/bio/avatar_key）。</summary>
