@@ -27,6 +27,17 @@ jobs:
       - name: Build (Release)
         run: msbuild PropertyManagement.sln /p:Configuration=Release /m /v:m /nologo
 
+      # v1.1.1 版本元数据同源治理：打印程序集版本便于构建记录可追溯（不阻断构建）
+      - name: Print assembly version (traceability)
+        shell: powershell
+        continue-on-error: true
+        run: |
+          $exe = 'PropertyManagement.Client\bin\Release\PropertyManagement.Client.exe'
+          $info = (Get-Item $exe).VersionInfo
+          $line = "客户端产物：文件版本 $($info.FileVersion) / 产品版本 $($info.ProductVersion) / 产品名称 $($info.ProductName) / 公司 $($info.CompanyName)"
+          Write-Host $line
+          Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value $line
+
       - name: Run unit tests
         shell: powershell
         run: powershell -NoProfile -ExecutionPolicy Bypass -File PropertyManagement.Tests\run-tests.ps1 -Configuration Release

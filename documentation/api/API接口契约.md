@@ -1,6 +1,6 @@
 # API 接口契约
 
-> 适用版本：安怡物业管理系统 1.0.0 ｜ 基址：`http://127.0.0.1:5210/api/v1`（仅绑定回环地址）
+> 适用版本：安怡物业管理系统 1.1.1 ｜ 基址：`http://127.0.0.1:5210/api/v1`（仅绑定回环地址）
 > 契约代码：`PropertyManagement.Contract`（前后端同源引用，DTO/枚举/错误码）
 ## 一、通用规范
 
@@ -53,6 +53,22 @@
   - **软删留痕与唯一性**：楼栋/单元/房产/账单的唯一约束均为 `del_flag = 0` 部分唯一索引，软删留痕后可重建同键；唯一约束冲突返回 `40900`（HTTP 409）并给出可读提示；
 - 导出：创建导出任务（写 `t_export_log`/`t_report_log`）后返回记录，文件经下载端点获取；
 - 文件下载端点：`GET /{group}/files/{logId}` 返回文件流（Content-Disposition 携带文件名）。
+
+### 1.7 服务健康检查与版本
+
+- `GET /health`（免鉴权）返回 `{ code, message, data: { service, version, status, serverTime } }`；
+- **`version` 为服务端真实程序集版本**（v1.1.1 起）：取值来自程序集特性，而特性由唯一版本源
+  `Build\Version.props` 在编译期生成，不再是手工维护的字符串；
+- 因此「安装包版本 / 程序集文件版本 / 界面版本串 / 健康检查 version」四处取值恒等，
+  现场排查可一条命令确认版本：
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandProperty data
+```
+
+```json
+{ "service": "PropertyManagement.Server", "version": "1.1.1", "status": "ok", "serverTime": "2026-09-18T10:24:05+08:00" }
+```
 
 ## 二、60 用例 → 端点映射表
 

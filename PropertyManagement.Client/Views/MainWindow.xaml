@@ -197,7 +197,7 @@
                     </StackPanel>
                 </Border>
 
-                <!-- 栏栏品牌（M8-D8-0 徽记对齐 2026-09-14）：唯一源 docs\brand\anyi-logo-square-color.svg
+                <!-- 栏栏品牌（M8-D8-0 徽记对齐 2026-09-14）：唯一源 docs\prototypes\品牌logo\brand\anyi-logo-square-color.svg
                      母版 240×240 网格 + LayoutTransform 等比缩放至 36×36（36/240 = 0.15），含金色叶片 -->
                 <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,18">
                     <Border Width="240" Height="240" Background="{StaticResource PrimaryBrush}" CornerRadius="54">

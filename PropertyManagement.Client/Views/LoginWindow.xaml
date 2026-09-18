@@ -37,7 +37,7 @@
                             <RowDefinition Height="*" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <!-- M8-D8-0 徽记对齐（2026-09-14）：唯一源 docs\brand\anyi-logo-square-color.svg（与 app.ico 同源）
+                        <!-- M8-D8-0 徽记对齐（2026-09-14）：唯一源 docs\prototypes\品牌logo\brand\anyi-logo-square-color.svg（与 app.ico 同源）
                              采用母版 240×240 网格坐标 + LayoutTransform 等比缩放至 52×52（52/240 = 0.2166667），
                              几何/色值/叶片与母版逐值一致；已移除原「半透明白描边容器」（与 exe 图标 1:1） -->
                         <Border Grid.Row="0" Width="240" Height="240"
@@ -79,7 +79,8 @@
                             </StackPanel>
                         </Border>
 
-                        <TextBlock Grid.Row="5" Text="DESKTOP CLIENT  ·  V1.0"
+                        <!-- v1.1.1 版本元数据同源治理：版本串改为绑定（原硬编码 V1.0 已过期） -->
+                        <TextBlock Grid.Row="5" Text="{Binding VersionText}"
                                    Foreground="#BFD8D2" FontSize="10" />
                     </Grid>
                 </Border>

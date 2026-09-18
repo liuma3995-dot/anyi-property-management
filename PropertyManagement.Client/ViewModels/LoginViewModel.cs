@@ -26,6 +26,12 @@ namespace PropertyManagement.Client.ViewModels
         private SolidColorBrush _serviceStatusBrush = PendingBrush;
         private string _hintText;
 
+        /// <summary>登录页版本串（v1.1.1 起同源读取：消灭原先硬编码的「V1.0」）。</summary>
+        public string VersionText
+        {
+            get { return "DESKTOP CLIENT  ·  V" + AppVersionInfo.Display; }
+        }
+
         public string UserName
         {
             get { return _userName; }

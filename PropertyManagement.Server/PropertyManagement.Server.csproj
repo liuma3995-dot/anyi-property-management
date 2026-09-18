@@ -357,6 +357,14 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </None>
   </ItemGroup>
+  <!-- v1.1.1 版本元数据同源治理：运行期版本读取唯一入口（值来自 Build\Version.props） -->
+  <ItemGroup>
+    <Compile Include="..\Build\AppVersionInfo.cs">
+      <Link>AppVersionInfo.cs</Link>
+    </Compile>
+  </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Import Project="..\packages\Stub.System.Data.SQLite.Core.NetFramework.1.0.118.0\build\net46\Stub.System.Data.SQLite.Core.NetFramework.targets" Condition="Exists('..\packages\Stub.System.Data.SQLite.Core.NetFramework.1.0.118.0\build\net46\Stub.System.Data.SQLite.Core.NetFramework.targets')" />
+  <!-- v1.1.1 版本元数据同源治理：程序集版本特性由 Build\Version.props 统一生成 -->
+  <Import Project="..\Build\ProductInfo.targets" />
 </Project>

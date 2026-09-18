@@ -16,6 +16,8 @@
 #ifndef AppVersion
   #define AppVersion "1.0.0"
 #endif
+; 四位程序集版本（v1.1.1 起）：安装包自身 FileVersion 用它，展示版本仍用三位 AppVersion
+#define AppVersionQuad AppVersion + ".0"
 #define ClientBin "..\PropertyManagement.Client\bin\Release"
 #define ServerBin "..\PropertyManagement.Server\bin\Release"
 #define RedistDir "redist"
@@ -26,6 +28,13 @@ AppName={#AppName}
 AppVersion={#AppVersion}
 AppVerName={#AppName} {#AppVersion}
 AppPublisher={#AppPublisher}
+; 安装包自身的版本资源（v1.1.1 补齐）：原先仅由 Inno 默认写入产品名/产品版本，FileVersion 为空
+VersionInfoVersion={#AppVersionQuad}
+VersionInfoProductVersion={#AppVersion}
+VersionInfoProductName={#AppName}
+VersionInfoCompany={#AppPublisher}
+VersionInfoDescription={#AppName} 安装程序
+VersionInfoCopyright=Copyright (C) 2026 {#AppPublisher}
 DefaultDirName={autopf}\PropertyManagement
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
@@ -42,7 +51,7 @@ PrivilegesRequired=admin
 SetupIconFile=..\PropertyManagement.Client\Assets\app.ico
 UninstallDisplayIcon={app}\Client\PropertyManagement.Client.exe
 UninstallDisplayName={#AppName} {#AppVersion}
-; 品牌图（T8-1-2 接入 docs\brand\ 资产，由 build-setup.ps1 生成 BMP 到 build\）
+; 品牌图（T8-1-2 接入 docs\prototypes\品牌logo\brand\ 资产，由 build-setup.ps1 生成 BMP 到 build\）
 WizardImageFile=build\wizard-image.bmp
 WizardSmallImageFile=build\wizard-small.bmp
 ; 品牌图以 2 倍分辨率生成，交由 Inno 按目标 DPI 缩放（缩小而非放大）以保证文字锐利

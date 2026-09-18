@@ -1,0 +1,21 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  安怡物业管理系统 · 唯一版本真值（v1.1.1 起）
+  ==================================================================
+  改版本 = 只改本文件的 <AnyiVersion>，其余位置（程序集属性 / 界面文案 /
+  健康检查 / 安装包向导图 / 安装包文件名与属性）全部由此推导。
+  打包时可用：build-setup.ps1 -Version 1.1.1（命令行属性覆盖本文件）。
+  ==================================================================
+-->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <!-- 三位展示串：界面 / 接口 / 安装包文件名 -->
+    <AnyiVersion>1.1.1</AnyiVersion>
+    <!-- 四位程序集版本：AssemblyVersion 与 AssemblyFileVersion -->
+    <AnyiVersionQuad>$(AnyiVersion).0</AnyiVersionQuad>
+    <!-- 产品名与公司名：写入程序集属性与安装包属性 -->
+    <AnyiProduct>安怡物业管理系统</AnyiProduct>
+    <AnyiCompany>安怡物业</AnyiCompany>
+    <AnyiCopyright>Copyright © 2026 安怡物业</AnyiCopyright>
+  </PropertyGroup>
+</Project>

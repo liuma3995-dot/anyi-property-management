@@ -47,7 +47,7 @@ function Resolve-MSBuildPath([string]$Explicit) {
 $msbuild = Resolve-MSBuildPath $MSBuildPath
 $runner = Join-Path $repoRoot 'packages\xunit.runner.console.2.4.2\tools\net472\xunit.console.exe'
 $testDll = Join-Path $testsDir "bin\$Configuration\PropertyManagement.Tests.dll"
-$resultXml = Join-Path $repoRoot 'tmp\unit_test_result.xml'
+$resultXml = Join-Path $repoRoot 'tmp\测试目录\单元测试\unit_test_result.xml'
 $tempRoot = Join-Path $env:TEMP 'pm-tests'
 
 Write-Host '== M7 阶段① 单元测试 ==' -ForegroundColor Cyan
@@ -59,9 +59,9 @@ if ($Clean) {
 
 if (-not (Test-Path $runner)) {
     Write-Host '未找到 xunit.runner.console，执行 nuget restore ...' -ForegroundColor Yellow
-    $nuget = Join-Path $repoRoot 'tmp\tools\nuget.exe'
+    $nuget = Join-Path $repoRoot 'tmp\测试目录\测试工具\nuget.exe'
     if (Test-Path $nuget) { & $nuget restore $solution | Out-Null }
-    else { throw '缺少 xunit.runner.console 且未找到 tmp\tools\nuget.exe，请先执行 nuget restore PropertyManagement.sln' }
+    else { throw '缺少 xunit.runner.console 且未找到 tmp\测试目录\测试工具\nuget.exe，请先执行 nuget restore PropertyManagement.sln' }
 }
 
 if (-not $SkipBuild) {
@@ -93,7 +93,7 @@ if (Test-Path $resultXml) {
     Write-Host ''
     Write-Host ("用例总数：{0}；失败：{1}；跳过：{2}" -f $total, $failed, $skipped) -ForegroundColor Green
     Write-Host ("结果留档：" + $resultXml)
-    Write-Host 'BR 覆盖校验：执行 python tmp\gen_mapping.py 可重建《M7-阶段①单元测试覆盖矩阵与执行记录（v0.1）.md》'
+    Write-Host 'BR 覆盖校验：执行 python tmp\测试目录\单元测试\gen_mapping.py 可重建《M7-阶段①单元测试覆盖矩阵与执行记录.md》'
 
     # 验收标准 §七-4：运行后临时目录清理干净（失败时保留现场供排查）
     $leftover = Get-ChildItem $tempRoot -Directory -ErrorAction SilentlyContinue

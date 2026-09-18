@@ -139,9 +139,10 @@ namespace PropertyManagement.Client.ViewModels
             private set { SetProperty(ref _todoDetail, value); }
         }
 
+        /// <summary>界面版本串（v1.1.1 起改为同源读取：值来自程序集特性 ← Build\Version.props）。</summary>
         public string VersionText
         {
-            get { return "ANYI  V1.1.0"; }
+            get { return AppVersionInfo.BrandLine; }
         }
 
         /// <summary>侧栏系统状态条（原型：在线点 + 状态 + 数据更新时间）。</summary>

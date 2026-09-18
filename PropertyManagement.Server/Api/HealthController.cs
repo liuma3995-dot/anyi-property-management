@@ -15,7 +15,8 @@ namespace PropertyManagement.Server.Api
             var data = new HealthResponse
             {
                 Service = "PropertyManagement.Server",
-                Version = "0.2.0-m2",
+                // v1.1.1 版本元数据同源治理：原硬编码 "0.2.0-m2"（M2 骨架期残留）改为同源读取
+                Version = AppVersionInfo.Display,
                 Status = "ok",
                 ServerTime = DateTime.Now
             };

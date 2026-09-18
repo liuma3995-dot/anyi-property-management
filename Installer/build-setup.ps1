@@ -18,10 +18,11 @@
     powershell -NoProfile -ExecutionPolicy Bypass -File Installer\build-setup.ps1 -Rehearsal
 #>
 param(
-    [string]$Version = '1.0.0',
+    [string]$Version = '',
     [string]$Configuration = 'Release',
     [switch]$Rehearsal,
-    [switch]$SkipBuild
+    [switch]$SkipBuild,
+    [switch]$AllowVersionOverride
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,6 +40,35 @@ function Fail([string]$t) {
     Write-Host ('ERROR  ' + $t) -ForegroundColor Red
     exit 1
 }
+
+# ------------------------------------------------- 版本真值（单一来源，v1.1.1 起）
+# 唯一版本源：Build\Version.props。未显式传 -Version 时取该文件的值；
+# 显式传值与文件不一致时直接失败（防止「安装包 1.1.1、里面装的却是别的版本」）。
+$versionPropsPath = Join-Path $root 'Build\Version.props'
+if (-not (Test-Path -LiteralPath $versionPropsPath)) {
+    Fail ('缺少版本真值文件（v1.1.1 起）：' + $versionPropsPath)
+}
+$propsXml = [xml](Get-Content -LiteralPath $versionPropsPath -Raw -Encoding UTF8)
+$propsVersion = [string]($propsXml.Project.PropertyGroup | Select-Object -First 1).AnyiVersion
+if ($propsVersion) { $propsVersion = $propsVersion.Trim() }
+if (-not $propsVersion) { Fail ('版本真值文件未定义 AnyiVersion：' + $versionPropsPath) }
+
+if (-not $Version) {
+    $Version = $propsVersion
+    Say ('版本来源     : Build\Version.props → ' + $Version)
+}
+elseif ($Version -ne $propsVersion) {
+    if (-not $AllowVersionOverride) {
+        Fail ('-Version ' + $Version + ' 与版本真值 Build\Version.props（' + $propsVersion +
+              '）不一致。请改为修改 Build\Version.props，或显式加 -AllowVersionOverride 覆盖。')
+    }
+    Say ('版本来源     : -Version 参数覆盖 Build\Version.props（' + $propsVersion + ' → ' + $Version + '）')
+}
+else {
+    Say ('版本来源     : Build\Version.props → ' + $Version)
+}
+
+$assemblyVersion = $Version + '.0'
 
 # ---------------------------------------------------------------- ISCC 解析
 function Resolve-Iscc {
@@ -92,7 +122,7 @@ if (-not $SkipBuild) {
     Say ('===== 编译 ' + $Configuration + ' 产物 =====')
     $msbuild = 'F:\.NET\MSBuild\Current\Bin\MSBuild.exe'
     if (-not (Test-Path -LiteralPath $msbuild)) { $msbuild = 'MSBuild.exe' }
-    & $msbuild (Join-Path $root 'PropertyManagement.sln') ('/p:Configuration=' + $Configuration) /m /v:m /nologo
+    & $msbuild (Join-Path $root 'PropertyManagement.sln') ('/p:Configuration=' + $Configuration) ('/p:AnyiVersion=' + $Version) /m /v:m /nologo
     if ($LASTEXITCODE -ne 0) { Fail ($Configuration + ' 编译失败') }
 }
 
@@ -134,6 +164,35 @@ foreach ($item in $freshness) {
          ' ≥ 最新源码 ' + $srcTime.ToString('yyyy-MM-dd HH:mm:ss') + '）')
 }
 
+# ------------------------------------------------- 版本元数据闸门（v1.1.1 起）
+# 教训（2026-09-18）：曾发布既无文件版本、又无产品名称的安装包。
+# 此处强制校验编译产物已写入版本元数据，且与本次打包版本完全一致，不一致即中断打包。
+function Assert-VersionMetadata {
+    param([string]$Path, [string]$Name)
+
+    if (-not (Test-Path -LiteralPath $Path)) { Fail ('缺少待校验产物：' + $Path) }
+    $info = (Get-Item -LiteralPath $Path).VersionInfo
+    # Inno 等工具写入的是定长字段（尾带空格填充），比较前统一 Trim
+    $fileVersion = ([string]$info.FileVersion).Trim()
+    $productVersion = ([string]$info.ProductVersion).Trim()
+    $productName = ([string]$info.ProductName).Trim()
+    if ($productName -ne '安怡物业管理系统') {
+        Fail ($Name + ' 缺少产品名称（实际「' + $productName + '」）：' + $Path + ' → 检查 Build\ProductInfo.targets 是否被工程导入')
+    }
+    if ($fileVersion -ne $assemblyVersion) {
+        Fail ($Name + ' 文件版本不一致（期望 ' + $assemblyVersion + '，实际 ' + $fileVersion + '）：' + $Path)
+    }
+    if ($productVersion -ne $Version) {
+        Fail ($Name + ' 产品版本不一致（期望 ' + $Version + '，实际 ' + $productVersion + '）：' + $Path)
+    }
+    Say ('版本元数据  : ' + $Name + ' OK（文件 ' + $fileVersion + ' / 产品 ' + $productVersion +
+         ' / ' + $productName + '）')
+}
+
+Assert-VersionMetadata (Join-Path $clientBin 'PropertyManagement.Client.exe') 'Client'
+Assert-VersionMetadata (Join-Path $serverBin 'PropertyManagement.Server.exe') 'Server'
+Assert-VersionMetadata (Join-Path $root ('PropertyManagement.Contract\bin\' + $Configuration + '\PropertyManagement.Contract.dll')) 'Contract'
+
 $clientFiles = @(Get-ChildItem -LiteralPath $clientBin -Recurse -File)
 $serverFiles = @(Get-ChildItem -LiteralPath $serverBin -Recurse -File)
 Say ''
@@ -145,9 +204,9 @@ if (-not (Test-Path -LiteralPath $buildDir)) { New-Item -ItemType Directory -For
 
 function New-WizardImages {
     Add-Type -AssemblyName System.Drawing
-    $badge = Join-Path $root 'docs\brand\anyi-logo-square-color-512.png'
-    if (-not (Test-Path -LiteralPath $badge)) { $badge = Join-Path $root 'docs\brand\anyi-logo-square-color-256.png' }
-    if (-not (Test-Path -LiteralPath $badge)) { Fail '缺少品牌徽记资产 docs\brand\anyi-logo-square-color-*.png' }
+    $badge = Join-Path $root 'docs\prototypes\品牌logo\brand\anyi-logo-square-color-512.png'
+    if (-not (Test-Path -LiteralPath $badge)) { $badge = Join-Path $root 'docs\prototypes\品牌logo\brand\anyi-logo-square-color-256.png' }
+    if (-not (Test-Path -LiteralPath $badge)) { Fail '缺少品牌徽记资产 docs\prototypes\品牌logo\brand\anyi-logo-square-color-*.png' }
 
     $pageBg = [System.Drawing.ColorTranslator]::FromHtml('#FAF8F4')
     $ink = [System.Drawing.ColorTranslator]::FromHtml('#1F4B43')
@@ -219,7 +278,7 @@ $outBase = '安怡物业管理系统-Setup-' + $Version
 
 if ($Rehearsal) {
     # 彩排版：非提权 + 装到 tmp + 不写 Run 键 + 独立 AppId，仅用于构建机端到端验证
-    $workIss = Join-Path $root 'tmp\setup-rehearsal.iss'
+    $workIss = Join-Path $root 'tmp\测试目录\验收测试\setup-rehearsal.iss'
     $rehearsalDir = Join-Path $root 'tmp\rehearsal-install'
     $text = [IO.File]::ReadAllText($issPath)
     $text = $text.Replace('PrivilegesRequired=admin', 'PrivilegesRequired=lowest')
@@ -321,6 +380,8 @@ $record = Join-Path $outputDir ($outBase + '-构建记录.txt')
 @(
     '产品名称     : 安怡物业管理系统',
     ('版本         : ' + $Version),
+    ('程序集版本   : ' + $assemblyVersion),
+    ('版本真值文件 : ' + $versionPropsPath),
     ('构建时间     : ' + (Get-Date -Format 'yyyy-MM-dd HH:mm:ss')),
     ('ISCC         : ' + $iscc),
     ('安装包       : ' + $setupExe),

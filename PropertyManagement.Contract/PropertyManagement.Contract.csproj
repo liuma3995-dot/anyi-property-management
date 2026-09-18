@@ -61,4 +61,6 @@
     <Compile Include="PhoneBook\PhoneBookDtos.cs" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+  <!-- v1.1.1 版本元数据同源治理：程序集版本特性由 Build\Version.props 统一生成 -->
+  <Import Project="..\Build\ProductInfo.targets" />
 </Project>

@@ -1,0 +1,64 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!--
+  安怡物业管理系统 · 程序集版本元数据生成目标（v1.1.1 起）
+  ==================================================================
+  由 Client / Server / Contract 三个工程各一行 <Import ... /> 共享引入；
+  工程内不重复任何版本常量，唯一真值为同目录 Version.props。
+  运行期读取入口见同目录 AppVersionInfo.cs。
+  ==================================================================
+-->
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+
+  <!-- 唯一版本真值（打包脚本可用 /p:AnyiVersion= 覆盖） -->
+  <Import Project="$(MSBuildThisFileDirectory)Version.props" />
+
+  <PropertyGroup>
+    <ProductInfoFile>$(IntermediateOutputPath)ProductInfo.g.cs</ProductInfoFile>
+  </PropertyGroup>
+
+  <!-- 组件名：按程序集名映射，业务工程无需声明 -->
+  <PropertyGroup>
+    <AnyiComponent Condition="'$(AnyiComponent)' == '' and '$(AssemblyName)' == 'PropertyManagement.Client'">客户端</AnyiComponent>
+    <AnyiComponent Condition="'$(AnyiComponent)' == '' and '$(AssemblyName)' == 'PropertyManagement.Server'">服务端</AnyiComponent>
+    <AnyiComponent Condition="'$(AnyiComponent)' == '' and '$(AssemblyName)' == 'PropertyManagement.Contract'">契约库</AnyiComponent>
+    <AnyiComponent Condition="'$(AnyiComponent)' == ''">组件</AnyiComponent>
+    <!-- 文件说明（FileDescription）与程序集说明：如「安怡物业管理系统 客户端」 -->
+    <AnyiTitle>$(AnyiProduct) $(AnyiComponent)</AnyiTitle>
+    <AnyiDescription>$(AnyiProduct) · $(AnyiComponent)</AnyiDescription>
+  </PropertyGroup>
+
+  <!-- ① 生成程序集特性源文件（增量：仅当 Version.props 变化时重写） -->
+  <Target Name="GenerateProductInfoFile"
+          Inputs="$(MSBuildThisFileDirectory)Version.props;$(MSBuildThisFileDirectory)ProductInfo.targets"
+          Outputs="$(ProductInfoFile)">
+    <ItemGroup>
+      <_ProductInfoLines Include="// &lt;auto-generated&gt; 本文件由 Build\ProductInfo.targets 按 Build\Version.props 生成，请勿手工修改。&lt;/auto-generated&gt;" />
+      <_ProductInfoLines Include="using System.Reflection%3B" />
+      <_ProductInfoLines Include="[assembly: AssemblyTitle(&quot;$(AnyiTitle)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyDescription(&quot;$(AnyiDescription)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyCompany(&quot;$(AnyiCompany)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyProduct(&quot;$(AnyiProduct)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyCopyright(&quot;$(AnyiCopyright)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyTrademark(&quot;&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyCulture(&quot;&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyVersion(&quot;$(AnyiVersionQuad)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyFileVersion(&quot;$(AnyiVersionQuad)&quot;)]" />
+      <_ProductInfoLines Include="[assembly: AssemblyInformationalVersion(&quot;$(AnyiVersion)&quot;)]" />
+    </ItemGroup>
+    <WriteLinesToFile File="$(ProductInfoFile)"
+                      Lines="@(_ProductInfoLines)"
+                      Overwrite="true"
+                      Encoding="UTF-8" />
+  </Target>
+
+  <!-- ② 挂进编译输入（每次编译都执行：增量构建时生成目标会被跳过，挂载不能跳过） -->
+  <Target Name="IncludeProductInfo"
+          BeforeTargets="BeforeCompile"
+          DependsOnTargets="GenerateProductInfoFile">
+    <ItemGroup>
+      <Compile Include="$(ProductInfoFile)" />
+      <FileWrites Include="$(ProductInfoFile)" />
+    </ItemGroup>
+  </Target>
+
+</Project>
