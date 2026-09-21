@@ -225,9 +225,9 @@ namespace PropertyManagement.Server.Services
             WithTransaction((c, tx) =>
             {
                 if (request == null) throw ApiException.ValidationFailed("请求不能为空");
-                if (request.SceneId <= 0) throw ApiException.ValidationFailed("请选择应急场景（BR-EMG-01）");
+            if (request.SceneId <= 0) throw ApiException.ValidationFailed("请选择应急场景");
                 var scene = _repo.GetScene(c, request.SceneId) ?? throw ApiException.NotFound("应急场景不存在");
-                if (scene.Status != 0) throw ApiException.Conflict("场景已停用，不可发起应急事件（BR-EMG-01）");
+            if (scene.Status != 0) throw ApiException.Conflict("场景已停用，不可发起应急事件");
                 if (request.Level < 1 || request.Level > 3) throw ApiException.ValidationFailed("事件级别无效（1=Ⅰ 级、2=Ⅱ 级、3=Ⅲ 级）");
                 var evt = new EmergencyEventDto
                 {
@@ -301,11 +301,11 @@ namespace PropertyManagement.Server.Services
                 {
                     // BR-EMG-06：归档后不得删除，只能补录（补录通道须带 IsSupplement 标记）
                     if (!isSupplement)
-                        throw ApiException.Conflict("已结案事件不可新增处置记录，请使用补录（BR-EMG-06）");
+                throw ApiException.Conflict("已结案事件不可新增处置记录，请使用补录");
                     isSupplement = true;
                 }
-                if (string.IsNullOrWhiteSpace(request.Content)) throw ApiException.ValidationFailed("处置记录内容不能为空（BR-EMG-04）");
-                if (string.IsNullOrWhiteSpace(request.Result)) throw ApiException.ValidationFailed("处置结果不能为空（BR-EMG-04：记录必含时间/操作/结果）");
+            if (string.IsNullOrWhiteSpace(request.Content)) throw ApiException.ValidationFailed("处置记录内容不能为空");
+            if (string.IsNullOrWhiteSpace(request.Result)) throw ApiException.ValidationFailed("处置结果不能为空（记录必含时间/操作/结果）");
                 var dto = new EmergencyRecordDto
                 {
                     EventId = id,
@@ -333,10 +333,10 @@ namespace PropertyManagement.Server.Services
                 if (evt.Status == EmergencyEventStatus.Closed || evt.Status == EmergencyEventStatus.Reviewed)
                     throw ApiException.Conflict("该事件已结案（归档后不可删除，只可补录）");
                 if (request == null || string.IsNullOrWhiteSpace(request.Summary))
-                    throw ApiException.ValidationFailed("结案必填处置结果与物资消耗（BR-EMG-02）");
+                throw ApiException.ValidationFailed("结案必填处置结果与物资消耗");
                 int records = _repo.ListRecords(c, id).Count;
                 if (records < 1)
-                    throw ApiException.Conflict("处置完成方可结案（BR-EMG-02），至少需一条处置记录");
+                throw ApiException.Conflict("处置完成方可结案，至少需一条处置记录");
                 _repo.SetCloseSummary(c, tx, id, request.Summary.Trim());
                 _repo.UpdateEventStatus(c, tx, id, EmergencyEventStatus.Closed, false);
                 _repo.InsertStatusLog(c, tx, id, (int)evt.Status, (int)EmergencyEventStatus.Closed, "结案", operatorName);
@@ -363,7 +363,7 @@ namespace PropertyManagement.Server.Services
             {
                 var evt = _repo.GetEvent(c, id) ?? throw ApiException.NotFound("应急事件不存在");
                 if (evt.Status != EmergencyEventStatus.Closed && evt.Status != EmergencyEventStatus.Reviewed)
-                    throw ApiException.Conflict("仅已结案事件可录入复盘（BR-EMG-02：处置完成结案后方可复盘，归档后可补录复盘）");
+                throw ApiException.Conflict("仅已结案事件可录入复盘（处置完成结案后方可复盘，归档后可补录复盘）");
                 if (request == null) throw ApiException.ValidationFailed("请求不能为空");
                 if (request.Items != null && request.Items.Any(i => i != null && string.IsNullOrWhiteSpace(i.Content)))
                     throw ApiException.ValidationFailed("改进措施内容不能为空");

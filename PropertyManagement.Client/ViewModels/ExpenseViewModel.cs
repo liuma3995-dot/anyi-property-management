@@ -304,7 +304,7 @@ namespace PropertyManagement.Client.ViewModels
             }
             decimal amount = selected.Sum(x => x.Dto.Amount);
             BatchConfirmText = "将删除所选 " + selected.Count + " 笔支出（合计 ¥" + amount.ToString("N2") +
-                               "）。删除为软删留痕，历史记录保留（BR-FIN-10），可在「备份与恢复」页一键清理。确认删除？";
+                               "）。删除为软删留痕，历史记录保留，可在「备份与恢复」页一键清理。确认删除？";
             IsBatchConfirmVisible = true;
         }
 
@@ -591,7 +591,7 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (SelectedCategory == null)
             {
-                ErrorText = "请选择支出分类（BR-FIN-04）";
+                ErrorText = "请选择支出分类";
                 return;
             }
             if (Amount <= 0)
@@ -616,7 +616,7 @@ namespace PropertyManagement.Client.ViewModels
                 Note = string.Empty;
                 Payee = string.Empty;
                 await LoadAsync();
-            }, "支出已登记（登记即生效，联动流水 PG-FIN-08）");
+            }, "支出已登记（登记即生效，已联动收支明细流水）");
         }
 
         private void RequestDelete(ExpenseRow row)
@@ -636,7 +636,7 @@ namespace PropertyManagement.Client.ViewModels
                 ConfirmRow = null;
                 IsConfirmVisible = false;
                 await LoadAsync();
-            }, "支出已删除（软删除留痕 BR-FIN-10）");
+            }, "支出已删除（软删除留痕）");
         }
     }
 }

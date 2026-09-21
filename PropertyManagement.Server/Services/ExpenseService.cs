@@ -131,7 +131,7 @@ namespace PropertyManagement.Server.Services
         {
             if (request == null || request.CategoryId <= 0)
             {
-                throw ApiException.BadRequest("必须选择支出分类（BR-FIN-04）");
+                throw ApiException.BadRequest("必须选择支出分类");
             }
             if (request.Amount <= 0)
             {
@@ -178,7 +178,7 @@ namespace PropertyManagement.Server.Services
         {
             if (request == null || request.CategoryId <= 0)
             {
-                throw ApiException.BadRequest("必须选择支出分类（BR-FIN-04）");
+                throw ApiException.BadRequest("必须选择支出分类");
             }
             if (request.Amount <= 0)
             {
@@ -229,7 +229,7 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_DELETE", "expense", id.ToString(),
-                    "删除支出：" + existing.Amount.ToString("0.00") + " 元（软删除 BR-FIN-10）",
+                    "删除支出：" + existing.Amount.ToString("0.00") + " 元（软删除留痕）",
                     userName: operatorName, ip: ip, result: "成功");
             }
         }
@@ -263,7 +263,7 @@ namespace PropertyManagement.Server.Services
             }
 
             _audit.Write("EXPENSE_BATCH_DELETE", "expense", string.Join(",", ids),
-                "支出记录批量删除（软删，" + affected + " 条，BR-FIN-10；可在「备份与恢复」页一键清理留痕）",
+                    "支出记录批量删除（软删，" + affected + " 条；可在「备份与恢复」页一键清理留痕）",
                 userName: operatorName, ip: ip, result: "成功");
             return new RecordBatchDeleteResultDto { Deleted = affected };
         }

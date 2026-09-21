@@ -120,7 +120,9 @@
                     <DataGridTextColumn Header="批次号" Width="90" Binding="{Binding BatchNo}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="数据类型" Width="110" Binding="{Binding ModuleText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="总行数" Width="70" Binding="{Binding Total}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="成功" Width="70" Binding="{Binding Success}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="新增" Width="70" Binding="{Binding Success}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.2-01：重复数据做覆盖处理 → 批次列表单独展示覆盖条数 -->
+                    <DataGridTextColumn Header="覆盖" Width="70" Binding="{Binding Updated}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="失败" Width="70" Binding="{Binding Fail}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="状态" Width="100">
                         <DataGridTemplateColumn.CellTemplate>

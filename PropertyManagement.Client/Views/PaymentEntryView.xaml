@@ -2,12 +2,27 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
+             xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <!-- CHG-v1.1.0-24：账单期间紧凑显示 + 悬停查看完整期间（应缴明细列宽有限，原日期被裁切） -->
         <Style x:Key="GridCellTextWithTip" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
             <Setter Property="ToolTip" Value="{Binding CyclePeriodFull}" />
+        </Style>
+        <!-- CHG-v1.1.2-16：应缴明细表头基样式（供 DataGrid 与勾选列表头共用）——
+             勾选列单独设置 HeaderStyle 时会脱离 DataGrid.ColumnHeaderStyle，
+             若不带 BasedOn 会丢掉表头底色/分隔线，出现「全选框背景被调色」的观感差异 -->
+        <Style x:Key="BillHeaderStyle" TargetType="DataGridColumnHeader">
+            <Setter Property="Background" Value="#FAF8F4" />
+            <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="Padding" Value="12,0" />
+            <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
         <Style x:Key="GridStyle" TargetType="DataGrid">
             <Setter Property="AutoGenerateColumns" Value="False" />
@@ -28,17 +43,7 @@
             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
             <Setter Property="ColumnHeaderStyle">
                 <Setter.Value>
-                    <Style TargetType="DataGridColumnHeader">
-                        <Setter Property="Background" Value="#FAF8F4" />
-                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-                        <Setter Property="FontSize" Value="11" />
-                        <Setter Property="FontWeight" Value="SemiBold" />
-                        <Setter Property="Height" Value="36" />
-                        <Setter Property="Padding" Value="12,0" />
-                        <Setter Property="BorderBrush" Value="{StaticResource BorderBrushColor}" />
-                        <Setter Property="BorderThickness" Value="0,0,0,1" />
-                        <Setter Property="VerticalContentAlignment" Value="Center" />
-                    </Style>
+                    <StaticResource ResourceKey="BillHeaderStyle" />
                 </Setter.Value>
             </Setter>
             <Setter Property="RowStyle">
@@ -130,7 +135,7 @@
                                   VerticalAlignment="Center" />
                             <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
                                      Text="{Binding PropertySearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                     hc:InfoElement.Placeholder="快捷搜索：姓名 / 楼栋 / 房号（如 张伟 或 101）"
+                                     hc:InfoElement.Placeholder="快捷搜索：姓名 / 楼栋 / 房号 / 车位编号（如 张伟、101、B1-001）"
                                      Margin="8,0,0,0" />
                         </Grid>
                     </Border>
@@ -173,22 +178,24 @@
                             <TextBlock Grid.Column="0" Text="¥" FontSize="17" FontWeight="Bold"
                                        Foreground="{StaticResource PrimaryBrush}" Margin="14,0,0,0"
                                        VerticalAlignment="Center" />
-                            <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                            <!-- CHG-v1.1.2-08：改用 DecimalTextBox —— 输入 12.12 不再被格式化成 12.12.00 -->
+                            <controls:DecimalTextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
                                      FontSize="17" FontWeight="Bold" Foreground="{StaticResource PrimaryBrush}"
-                                     Text="{Binding PayAmount, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}"
+                                     Value="{Binding PayAmount, UpdateSourceTrigger=PropertyChanged}"
                                      Margin="6,0,14,0" />
                         </Grid>
                     </Border>
                     <!-- CHG-v1.1.0-12：金额口径提示（单张可改 / 多张按勾选合计锁定） -->
                     <TextBlock Text="{Binding PayAmountHintText}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
                                TextWrapping="Wrap" Margin="2,4,0,0" />
-                    <TextBlock Text="{Binding PreDepositHintText}" FontSize="10" Foreground="#B76E00"
+                    <!-- CHG-v1.1.2-51：原「多缴自动转入预存账户」提示已下线，此处改为「收款金额超限」止付提示 -->
+                    <TextBlock Text="{Binding AmountWarnText}" FontSize="10" Foreground="#B76E00"
                                TextWrapping="Wrap" Margin="2,4,0,0">
                         <TextBlock.Style>
                             <Style TargetType="TextBlock">
                                 <Setter Property="Visibility" Value="Visible" />
                                 <Style.Triggers>
-                                    <DataTrigger Binding="{Binding PreDepositHintText}" Value="">
+                                    <DataTrigger Binding="{Binding AmountWarnText}" Value="">
                                         <Setter Property="Visibility" Value="Collapsed" />
                                     </DataTrigger>
                                 </Style.Triggers>
@@ -307,23 +314,34 @@
                 <!-- 应缴明细表 -->
                 <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0">
                     <!-- CHG-v1.1.0-24：列宽受 MinWidth 约束，窗口较窄时改为横向滚动（而非压缩列导致日期/金额被裁切） -->
+                    <!-- CHG-v1.1.2-15：勾选列冻结（FrozenColumnCount=1）—— 应缴明细列宽超出副面板时会出现横向滚动，
+                         原实现下滚动后「全选框」与行勾选框会被滚出可视区（负责人反馈的遮挡）；冻结后始终可见 -->
                     <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Bills}" IsReadOnly="True"
+                              FrozenColumnCount="1"
                               ScrollViewer.HorizontalScrollBarVisibility="Auto"
                               SelectionChanged="BillsGrid_SelectionChanged"
                               SelectedItem="{Binding SelectedBill}" RowHeight="34">
                         <DataGrid.Columns>
-                            <!-- CHG-v1.1.0-14：加宽勾选列并留出左内边距，修复勾选框被卡片边缘裁切 -->
-                            <DataGridTemplateColumn Width="56">
+                            <!-- CHG-v1.1.0-14 / CHG-v1.1.2-09：勾选列改用已验证的 GridCheckCell + GridCheckBox
+                                 （与「备份与恢复」「审计日志」同一套写法）；表头去掉内边距并居中，勾选框不再贴边 -->
+                            <DataGridTemplateColumn Width="60" MinWidth="60" CellStyle="{StaticResource GridCheckCell}">
+                                <DataGridTemplateColumn.HeaderStyle>
+                                    <!-- CHG-v1.1.2-16：BasedOn 表头基样式，保持与其它表头同底色/同分隔线 -->
+                                    <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource BillHeaderStyle}">
+                                        <Setter Property="Padding" Value="0" />
+                                        <Setter Property="HorizontalContentAlignment" Value="Center" />
+                                    </Style>
+                                </DataGridTemplateColumn.HeaderStyle>
                                 <DataGridTemplateColumn.HeaderTemplate>
                                     <DataTemplate>
                                         <CheckBox IsChecked="{Binding DataContext.IsSelectAllBills, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                  Style="{StaticResource GridCheckBox}" ToolTip="全选 / 取消全选" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.HeaderTemplate>
                                 <DataGridTemplateColumn.CellTemplate>
                                     <DataTemplate>
                                         <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="BillCheckBox_Click"
-                                                  HorizontalAlignment="Center" VerticalAlignment="Center" Margin="6,0,0,0" />
+                                                  Style="{StaticResource GridCheckBox}" />
                                     </DataTemplate>
                                 </DataGridTemplateColumn.CellTemplate>
                             </DataGridTemplateColumn>
@@ -444,8 +462,11 @@
         </Grid>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="2" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="2" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器，长提示不再被右侧裁切 -->
+        <StackPanel Grid.Row="2">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <!-- ============ 确认收款弹窗 ============ -->
         <Grid Grid.RowSpan="3" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">

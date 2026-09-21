@@ -9,7 +9,7 @@
     <StackPanel Margin="28,22">
         <TextBlock Text="个人信息设置" FontSize="18" FontWeight="Bold"
                    Foreground="{StaticResource TextPrimaryBrush}" />
-        <TextBlock Text="以下内容均为选填，仅用于本机客户端展示（R17）" FontSize="12"
+        <TextBlock Text="以下内容均为选填，仅用于本机客户端展示" FontSize="12"
                    Foreground="{StaticResource TextHintBrush}" Margin="0,4,0,16" />
 
         <Grid>

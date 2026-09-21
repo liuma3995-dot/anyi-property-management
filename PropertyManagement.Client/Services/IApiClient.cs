@@ -64,6 +64,27 @@ namespace PropertyManagement.Client.Services
         Task<ChargeItemDto> CreateChargeItemAsync(ChargeItemRequest request);
         Task<ChargeItemDto> UpdateChargeItemAsync(int id, ChargeItemRequest request);
         Task DeleteChargeItemAsync(int id);
+
+        // ---------- CHG-v1.1.2-26：收费项目「价目表 + 计量变量」 ----------
+        Task<List<ChargeStandardDto>> GetChargeStandardsAsync(string keyword = null, string category = null, bool includeDisabled = true);
+        Task<ChargeStandardDto> GetChargeStandardAsync(int id);
+        Task<ChargeStandardDto> CreateChargeStandardAsync(ChargeStandardRequest request);
+        Task<ChargeStandardDto> UpdateChargeStandardAsync(int id, ChargeStandardRequest request);
+        Task DeleteChargeStandardAsync(int id);
+        Task<ChargeStandardDto> ToggleChargeStandardAsync(int id, int status);
+        Task<ChargeStandardSpecDto> CreateChargeSpecAsync(int standardId, ChargeStandardSpecRequest request);
+        Task<ChargeStandardSpecDto> UpdateChargeSpecAsync(int id, ChargeStandardSpecRequest request);
+        Task DeleteChargeSpecAsync(int id);
+        Task ToggleChargeSpecAsync(int id, int status);
+        Task<List<ChargeVariableDto>> GetChargeVariablesAsync(string keyword = null, bool includeDisabled = true);
+        Task<ChargeVariableDto> CreateChargeVariableAsync(ChargeVariableRequest request);
+        Task<ChargeVariableDto> UpdateChargeVariableAsync(int id, ChargeVariableRequest request);
+        Task DeleteChargeVariableAsync(int id);
+        Task ToggleChargeVariableAsync(int id, int status);
+        /// <summary>出账试算（只读）：按价目表规格自动匹配并试算金额。</summary>
+        Task<BillPreviewResult> PreviewBillsAsync(BillPreviewRequest request);
+        /// <summary>CHG-v1.1.2-33：收费项目清单导出（PDF / Excel），返回导出日志（含文件路径）。</summary>
+        Task<ReportLogDto> ExportChargeItemsAsync(ChargeItemExportRequest request);
         Task<List<BillingCycleDto>> GetCyclesAsync();
         Task<BillingCycleDto> CreateCycleAsync(BillingCycleRequest request);
         /// <summary>CHG-v1.1.0-17：删除自定义计费周期（内置周期或被账单引用的周期由服务端拦截）。</summary>
@@ -83,7 +104,17 @@ namespace PropertyManagement.Client.Services
         Task<PageResult<BillListItemDto>> QueryBillsAsync(BillQueryRequest request);
         Task<PageResult<ArrearDto>> QueryArrearsAsync(BillQueryRequest request);
         Task RecordRemindAsync(ArrearRemindRequest request);
+        /// <summary>单张账单删除（口径同批次删除：下游记录同步不再显示）。欠费台账已改用「移出台账」。</summary>
         Task DeleteArrearAsync(int billId);
+
+        /// <summary>CHG-v1.1.2-03：移出台账（只影响欠费台账可见性，可恢复）。</summary>
+        Task<int> DismissArrearsAsync(ArrearDismissRequest request);
+
+        /// <summary>CHG-v1.1.2-03：已移出台账的记录。</summary>
+        Task<List<ArrearDismissDto>> QueryDismissedArrearsAsync();
+
+        /// <summary>CHG-v1.1.2-03：恢复台账。</summary>
+        Task<int> RestoreArrearsAsync(ArrearDismissRequest request);
         Task<PaymentStatisticsDto> GetPaymentStatisticsAsync();
         Task<PaymentDto> CreatePaymentAsync(PaymentCreateRequest request);
 
@@ -112,11 +143,19 @@ namespace PropertyManagement.Client.Services
         /// <summary>支出记录批量删除（v1.1.0-⑤）：软删留痕（BR-FIN-10）。</summary>
         Task<RecordBatchDeleteResultDto> BatchDeleteExpensesAsync(RecordBatchDeleteRequest request);
         Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request);
+
+        /// <summary>CHG-v1.1.2-05：收支明细流水导出（Excel/PDF）。</summary>
+        Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request);
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);
 
         /// <summary>CHG-v1.1.0-14：导出收据打印模板（含逐项收款明细）。</summary>
         Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request);
+
+        /// <summary>
+        /// CHG-v1.1.2-41：导出「退款/减免/调整单据」PDF（按单据主键，服务端回查金额与账单口径）。
+        /// </summary>
+        Task<ReportLogDto> ExportRefundRecordAsync(RefundRecordExportRequest request);
 
         // ==================== M5 基础信息与导入（PG-INF-01~05） ====================
         Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null);

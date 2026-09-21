@@ -20,7 +20,9 @@
     </UserControl.Resources>
     <Grid Margin="16,12,16,12">
         <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="0.96*" />
+            <!-- CHG-v1.1.2-55：左栏分类列表固定宽度并收窄 —— 原来左右各占 ~48%（右表仅 660px），
+                 计量变量表 10 列被压缩：单位/类型/来源/默认值/状态 表头与内容被裁、引用列塌成 20px。 -->
+            <ColumnDefinition Width="330" />
             <ColumnDefinition Width="20" />
             <ColumnDefinition Width="*" />
         </Grid.ColumnDefinitions>
@@ -107,19 +109,44 @@
                         Padding="14,4" Margin="0,0,10,0" Height="32" ToolTip="点击后显示勾选框列；仅已停用的字典项可删除">
                     <TextBlock Text="{Binding BatchDeleteButtonText}" FontSize="13" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}" />
                 </Button>
+                <!-- CHG-v1.1.2-26：计量变量分类的批量删除（点击后显示勾选框列；内置变量不可删） -->
+                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Command="{Binding VariableBatchDeleteCommand}"
+                        Padding="14,4" Margin="0,0,10,0" Height="32" ToolTip="点击后显示勾选框列；内置变量不可删除，仍被引用的变量不可删除"
+                        Visibility="{Binding IsVariableType, Converter={StaticResource BoolToVis}}">
+                    <TextBlock Text="{Binding VariableBatchDeleteText}" FontSize="13" VerticalAlignment="Center" Foreground="{StaticResource DangerBrush}" />
+                </Button>
                 <Button DockPanel.Dock="Right" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelSelectionCommand}"
                         Padding="14,4" Margin="0,0,10,0" Height="32" FontSize="13"
                         Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolToVis}}" />
-                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonPrimary}" Command="{Binding NewCommand}" Padding="14,4" Height="32">
+                <Button DockPanel.Dock="Right" Command="{Binding NewCommand}" Padding="14,4" Height="32">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.Plus}" Style="{StaticResource IconStroke}" Stroke="White" Width="13" Height="13" VerticalAlignment="Center" />
                         <TextBlock Text="新增字典项" Margin="6,0,0,0" VerticalAlignment="Center" FontSize="13" />
+                    </StackPanel>
+                    <Button.Style>
+                        <Style TargetType="Button" BasedOn="{StaticResource ButtonPrimary}">
+                            <Setter Property="Visibility" Value="Visible" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsVariableType}" Value="True">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button DockPanel.Dock="Right" Style="{StaticResource ButtonPrimary}" Command="{Binding NewVariableCommand}" Padding="14,4" Height="32"
+                        Visibility="{Binding IsVariableType, Converter={StaticResource BoolToVis}}">
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Plus}" Style="{StaticResource IconStroke}" Stroke="White" Width="13" Height="13" VerticalAlignment="Center" />
+                        <TextBlock Text="新增变量" Margin="6,0,0,0" VerticalAlignment="Center" FontSize="13" />
                     </StackPanel>
                 </Button>
             </DockPanel>
 
             <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0" VerticalAlignment="Top">
-                <DataGrid x:Name="DictItemsGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True" MaxHeight="560">
+                <Grid>
+                <DataGrid x:Name="DictItemsGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True" MaxHeight="560"
+                          Visibility="{Binding IsNotVariableType, Converter={StaticResource BoolToVis}}">
                     <DataGrid.Columns>
                         <!-- R13：勾选框列（表头可全选，支持单选） -->
                         <DataGridTemplateColumn Width="56" MinWidth="56" CellStyle="{StaticResource GridCheckCell}"
@@ -164,6 +191,66 @@
                         </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
+                <!-- CHG-v1.1.2-26：计量变量（定义侧）—— 单位 / 类型 / 来源 / 默认值 / 适用对象 -->
+                <DataGrid x:Name="ChargeVariableGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding VariableItems}" IsReadOnly="True" MaxHeight="560"
+                          Visibility="{Binding IsVariableType, Converter={StaticResource BoolToVis}}">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="56" MinWidth="56" CellStyle="{StaticResource GridCheckCell}"
+                                                Visibility="{Binding Data.IsSelectionMode, Source={StaticResource VmProxy}, Converter={StaticResource BoolToVis}}">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}" Style="{StaticResource GridCheckBox}"
+                                              Click="ChargeVariableCheck_Click" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <!-- CHG-v1.1.2-55：列宽按「右表可用宽 ≈ 980 − 纵向滚动条」重排：
+                             固定列合计 872 → 引用列（*）仍有 ~95px，彻底消除表头/标签被裁与引用列塌陷。 -->
+                        <DataGridTextColumn Header="编码" Width="72" Binding="{Binding VarCode}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="变量名" Width="96" Binding="{Binding VarName}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="单位" Width="66" Binding="{Binding UnitText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="类型" Width="66" Binding="{Binding TypeText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="来源" Width="88" Binding="{Binding SourceText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="默认值" Width="78" Binding="{Binding DefaultText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="适用对象" Width="82" Binding="{Binding ScopeText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="引用" Width="*" MinWidth="90" Binding="{Binding UsedText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTemplateColumn Header="状态" Width="76">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Border Background="{Binding StatusBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
+                                        <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold" Foreground="{Binding StatusBrush}" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="操作" Width="160">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal">
+                                        <TextBlock Text="{Binding BuiltinText}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                                                   VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <Button Style="{StaticResource LinkButton}" Padding="4,2"
+                                                Command="{Binding DataContext.EditVariableCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="编辑" FontSize="12" Foreground="{StaticResource PrimaryBrush}" />
+                                        </Button>
+                                        <Button Style="{StaticResource LinkButton}" Padding="4,2" Margin="4,0,0,0"
+                                                Command="{Binding DataContext.ToggleVariableCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding ToggleText}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                                        </Button>
+                                        <Button Style="{StaticResource LinkButton}" Padding="4,2" Margin="4,0,0,0"
+                                                Command="{Binding DataContext.DeleteVariableCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="删除" FontSize="12" Foreground="{StaticResource DangerBrush}" />
+                                        </Button>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+                </Grid>
             </Border>
 
             <!-- 交互标注（原型 PG-COM-01） -->
@@ -174,7 +261,7 @@
                         <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
                     </StackPanel>
                     <TextBlock Text="· 编辑字典项 → 确认弹窗“修改将影响相关业务展示，确认保存？”→ 写审计日志" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
-                    <TextBlock Text="· 停用需二次确认（可随时恢复）；批量删除仅支持已停用字典项，未停用时弹窗提示无法删除（软删，UC-COM-004）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                    <TextBlock Text="· 停用需二次确认（可随时恢复）；批量删除仅支持已停用字典项，未停用时弹窗提示无法删除（软删）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
                 </StackPanel>
             </Border>
         </Grid>
@@ -205,6 +292,84 @@
         </Border>
 
         <!-- 编辑保存 / 停用 二次确认弹层 -->
+        <!-- CHG-v1.1.2-26：计量变量新增 / 编辑（名称 / 单位 / 类型 / 来源 / 默认值 / 适用对象） -->
+        <Border Grid.ColumnSpan="3" Background="#66000000" Visibility="{Binding IsVariableFormVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="{Binding VariableFormTitle}" FontSize="16" FontWeight="Bold" Margin="0,0,0,6" />
+                    <TextBlock Text="计量变量是价目表公式的计量维度：单价单位与出账输入项均由变量自动生成" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" Margin="0,0,0,14" TextWrapping="Wrap" />
+
+                    <TextBlock Text="变量名称" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <TextBox Text="{Binding FormVariableName, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0"
+                             hc:InfoElement.Placeholder="如：桶数 / 台数 / 人次（仅中文或字母，不可含数字与符号）" />
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="单位" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Text="{Binding FormVariableUnit, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0"
+                                     hc:InfoElement.Placeholder="桶 / 台 / 人次 / 度" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="值类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox Height="32" Margin="0,6,0,0" SelectedIndex="{Binding FormVariableTypeIndex}">
+                                <ComboBoxItem Content="整数" />
+                                <ComboBoxItem Content="小数" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="取值来源" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <ComboBox Height="32" Margin="0,6,0,0" SelectedIndex="{Binding FormVariableSourceIndex}">
+                        <ComboBoxItem Content="手填（出账时输入）" />
+                        <ComboBoxItem Content="固定值（不显示输入项）" />
+                    </ComboBox>
+                    <TextBlock Text="{Binding FormVariableSourceHint}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                               Margin="0,4,0,0" TextWrapping="Wrap" />
+                    <TextBlock Text="「档案自动 / 周期派生」为系统内置专用（与档案字段强绑定），自建变量不开放" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" Margin="0,2,0,0" TextWrapping="Wrap" />
+
+                    <Grid Margin="0,10,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="默认值（选填）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <TextBox Text="{Binding FormVariableDefault, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0"
+                                     hc:InfoElement.Placeholder="如 1（按次计价）" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="适用对象" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                            <ComboBox Height="32" Margin="0,6,0,0" SelectedIndex="{Binding FormVariableScopeIndex}">
+                                <ComboBoxItem Content="房产" />
+                                <ComboBoxItem Content="车位" />
+                                <ComboBoxItem Content="业主" />
+                                <ComboBoxItem Content="自定义缴费对象" />
+                                <ComboBoxItem Content="不限" />
+                            </ComboBox>
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="备注" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,10,0,0" />
+                    <TextBox Text="{Binding FormVariableRemark, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0"
+                             hc:InfoElement.Placeholder="典型场景说明（选填）" />
+
+                    <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,12,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelVariableCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveVariableCommand}" Margin="10,0,0,0" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Border>
+
         <Border Grid.ColumnSpan="3" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>

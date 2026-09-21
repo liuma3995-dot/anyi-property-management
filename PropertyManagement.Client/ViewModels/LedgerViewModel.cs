@@ -7,6 +7,7 @@ using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
@@ -49,6 +50,9 @@ namespace PropertyManagement.Client.ViewModels
         public string OperatorName { get { return string.IsNullOrEmpty(Dto.OperatorName) ? "—" : Dto.OperatorName; } }
 
         public string OwnerNameText { get { return string.IsNullOrEmpty(Dto.OwnerName) ? "—" : Dto.OwnerName; } }
+
+        /// <summary>CHG-v1.1.2-05：楼栋/房号（车位显示车位编号，支出行为空）。</summary>
+        public string ObjectText { get { return string.IsNullOrEmpty(Dto.ObjectText) ? "—" : Dto.ObjectText; } }
 
         public string BizTypeText
         {
@@ -94,6 +98,8 @@ namespace PropertyManagement.Client.ViewModels
         {
             SearchCommand = new AsyncRelayCommand(LoadAsync);
             CloseDetailCommand = new RelayCommand(() => IsDetailVisible = false);
+            ExportExcelCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Excel));
+            ExportPdfCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Pdf));
             _ = LoadSubjectsAsync();
             _ = LoadAsync();
         }
@@ -124,6 +130,55 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand SearchCommand { get; }
 
         public IRelayCommand CloseDetailCommand { get; }
+
+        /// <summary>CHG-v1.1.2-05：导出当前筛选条件下的收支明细流水（Excel / PDF）。</summary>
+        public IAsyncRelayCommand ExportExcelCommand { get; }
+        public IAsyncRelayCommand ExportPdfCommand { get; }
+
+        private async Task ExportAsync(ExportFormat format)
+        {
+            await RunAsync(async () =>
+            {
+                string type = format == ExportFormat.Excel ? "Excel" : "PDF";
+                string bizType = BizTypeFilter >= 0 && BizTypeFilter < BizTypes.Length ? BizTypes[BizTypeFilter] : string.Empty;
+                string subject = SubjectFilter > 0 && SubjectFilter < Subjects.Count ? Subjects[SubjectFilter] : null;
+
+                ReportLogDto log = await Api.ExportLedgerAsync(new LedgerExportRequest
+                {
+                    Format = format,
+                    Query = new LedgerQueryRequest
+                    {
+                        From = From,
+                        To = To,
+                        BizType = string.IsNullOrEmpty(bizType) ? null : bizType,
+                        Subject = subject,
+                        Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim()
+                    }
+                });
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException(type + " 导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存收支明细流水（" + type + "）",
+                    Filter = format == ExportFormat.Excel ? "Excel 文件|*.xlsx" : "PDF 文件|*.pdf",
+                    FileName = "收支明细流水_" + DateTime.Now.ToString("yyyyMMddHHmm") +
+                        (format == ExportFormat.Excel ? ".xlsx" : ".pdf")
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 流水已在服务端生成（导出日志 " + log.Id + "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 流水已导出：" + dialog.FileName;
+                System.Windows.MessageBox.Show(type + " 流水已导出到：" + dialog.FileName, "导出成功",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }, null);
+        }
 
         public void OpenDetail(LedgerRow row)
         {

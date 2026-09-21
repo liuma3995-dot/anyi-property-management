@@ -89,6 +89,16 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<BillGenerateLogDto>.Ok(_billing.GenerateBill(request, GetUsername(), GetIp()));
         }
 
+        /// <summary>
+        /// CHG-v1.1.2-26：出账试算（只读）—— 按价目表规格自动匹配并试算金额，供「出账预演」。
+        /// </summary>
+        [HttpPost]
+        [Route("bills/preview")]
+        public ApiResponse<BillPreviewResult> PreviewBills(BillPreviewRequest request)
+        {
+            return ApiResponse<BillPreviewResult>.Ok(_billing.PreviewBills(request));
+        }
+
         [HttpPost]
         [Route("bills/publish")]
         public ApiResponse<BillGenerateLogDto> PublishBills(BillPublishRequest request)
@@ -201,6 +211,25 @@ namespace PropertyManagement.Server.Api
             _billing.DeleteArrearBill(id, GetUsername(), GetIp());
             return ApiResponse<object>.Ok(null);
         }
+
+        // ---------- 欠费台账「移出台账」（CHG-v1.1.2-03） ----------
+        /// <summary>移出台账（单条/批量）：只影响欠费台账可见性，不软删账单、不影响其它模块。</summary>
+        [HttpPost]
+        [Route("bills/arrears/dismiss")]
+        public ApiResponse<int> DismissArrears(ArrearDismissRequest request) =>
+            ApiResponse<int>.Ok(_billing.DismissArrears(request, GetUsername(), GetIp()));
+
+        /// <summary>已移出台账的记录（可恢复）。</summary>
+        [HttpGet]
+        [Route("bills/arrears/dismissed")]
+        public ApiResponse<List<ArrearDismissDto>> QueryDismissedArrears() =>
+            ApiResponse<List<ArrearDismissDto>>.Ok(_billing.QueryDismissedArrears());
+
+        /// <summary>恢复台账：删除剔除记录，账单重新出现在欠费台账。</summary>
+        [HttpPost]
+        [Route("bills/arrears/restore")]
+        public ApiResponse<int> RestoreArrears(ArrearDismissRequest request) =>
+            ApiResponse<int>.Ok(_billing.RestoreArrears(request, GetUsername(), GetIp()));
 
         /// <summary>操作人（BR-COM-01 / DM-07 §三 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
         private string GetUsername()

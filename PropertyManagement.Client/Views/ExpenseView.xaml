@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -180,8 +181,11 @@
         </Border>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="6" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="6" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器，长提示不再被右侧裁切 -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <!-- ============ 登记表单浮层 ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
@@ -189,7 +193,8 @@
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="登记支出" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="支出分类必选、可在表单内新增/删除；登记即支付并联动流水 PG-FIN-08（UC-FIN-005/006）"
+                    <!-- CHG-v1.1.2-10：清除用户可见的 mock 编号 -->
+                    <TextBlock Text="支出分类必选、可在表单内新增/删除；登记即支付并联动收支明细流水"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,18" TextWrapping="Wrap" />
 
                     <TextBlock Text="支出分类" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
@@ -224,8 +229,9 @@
                     <TextBlock Text="金额（元）" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <Border Height="34" Margin="0,8,0,14" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="6">
-                        <TextBox Style="{StaticResource SearchTextBox}"
-                                 Text="{Binding Amount, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}" />
+                        <!-- CHG-v1.1.2-08：改用 DecimalTextBox（原 StringFormat 绑定会边输边格式化） -->
+                        <controls:DecimalTextBox Style="{StaticResource SearchTextBox}"
+                                 Value="{Binding Amount, UpdateSourceTrigger=PropertyChanged}" />
                     </Border>
 
                     <TextBlock Text="支出日期" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
@@ -314,7 +320,7 @@
                 <StackPanel>
                     <TextBlock Text="确认删除" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="确认删除这笔支出（" /><Run Text="{Binding ConfirmRow.NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ConfirmRow.AmountText, Mode=OneWay}" /><Run Text="）？删除为软删除，保留记录轨迹（BR-FIN-10）。" />
+                        <Run Text="确认删除这笔支出（" /><Run Text="{Binding ConfirmRow.NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ConfirmRow.AmountText, Mode=OneWay}" /><Run Text="）？删除为软删除，保留记录轨迹。" />
                     </TextBlock>
                     <Grid Margin="0,20,0,0">
                         <Grid.ColumnDefinitions>
@@ -357,7 +363,7 @@
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="设置本月预算" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="月度支出预算用于「本月预算」卡片展示已用进度；填 0 表示清除预算（UC-FIN-005 辅助信息）。"
+                    <TextBlock Text="月度支出预算用于「本月预算」卡片展示已用进度；填 0 表示清除预算。"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,16" />
 
                     <TextBlock Text="月度预算（元）" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />

@@ -28,6 +28,147 @@ namespace PropertyManagement.Contract.Finance
         public string MethodName { get; set; }    // 计价方式显示名（按建筑面积/按户/按车位…）
         public string PriceUnit { get; set; }     // 单价单位（㎡/户/车位/张…）
         public string CycleName { get; set; }     // 自定义计费周期名（如 每季/每半年）；内置周期为空
+
+        /// <summary>
+        /// CHG-v1.1.2-06：用户自定义计价公式；为空 = 沿用内置计价方式口径。
+        /// 生成账单时优先按公式计算金额（可用变量：单价 / 面积 / 月数 / 天数 / 数量）。
+        /// </summary>
+        public string Formula { get; set; }
+
+        /// <summary>CHG-v1.1.2-26：绑定的收费标准（价目表主体）；为空 = 未搬迁的历史项目。</summary>
+        public int? StandardId { get; set; }
+        /// <summary>CHG-v1.1.2-26：收费标准名称（列表展示用）。</summary>
+        public string StandardName { get; set; }
+        /// <summary>CHG-v1.1.2-26：该收费标准下的启用规格数与总规格数。</summary>
+        public int SpecCount { get; set; }
+        /// <summary>FIX-v1.1.2-03：启用中的规格数（默认单价列「起」标注依据）。</summary>
+        public int EnabledSpecCount { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时可改价（仅一次性 / 自定义项目可开启）。</summary>
+        public bool AllowPriceOverride { get; set; }
+        /// <summary>CHG-v1.1.2-26：规格价格概览（如「住宅 ¥1.50 · 商铺 ¥3.00」）。</summary>
+        public string SpecPriceText { get; set; }
+    }
+
+    /// <summary>
+    /// CHG-v1.1.2-26：计量变量（t_charge_variable）。
+    /// 计量单位与计算规则统一由变量驱动：单价单位 = 元 / 公式中变量的单位组合。
+    /// </summary>
+    public class ChargeVariableDto
+    {
+        public int Id { get; set; }
+        public string VarCode { get; set; }
+        public string VarName { get; set; }
+        public string Unit { get; set; }
+        public ChargeVariableValueType ValueType { get; set; }
+        public ChargeVariableSource Source { get; set; }
+        public decimal? DefaultValue { get; set; }
+        public ChargeVariableScope ObjectScope { get; set; }
+        /// <summary>档案自动类变量绑定的档案字段（内置专用，如 property.area）。</summary>
+        public string FieldKey { get; set; }
+        /// <summary>内置变量可停用、不可删除。</summary>
+        public bool IsBuiltin { get; set; }
+        public string Remark { get; set; }
+        public int Status { get; set; }
+        public int Sort { get; set; }
+        /// <summary>被多少个收费标准的公式引用（删除 / 停用校验用）。</summary>
+        public int UsedCount { get; set; }
+        /// <summary>该变量在所属收费标准中是否为用户自建（额度校验与界面标识用）。</summary>
+        public bool IsCustom { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：公式变量引用（落库使用 ID + 名称快照，改名不影响历史公式）。</summary>
+    public class ChargeFormulaVarDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Unit { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：收费标准规格明细（t_charge_standard_spec）。</summary>
+    public class ChargeStandardSpecDto
+    {
+        public int Id { get; set; }
+        public int StandardId { get; set; }
+        public string SpecName { get; set; }
+        /// <summary>匹配维度：房产用途 0 住宅 1 商铺；NULL = 不限。</summary>
+        public int? MatchUsage { get; set; }
+        /// <summary>匹配维度：房产状态 0 空置 1 入住 2 装修中；NULL = 不限。</summary>
+        public int? MatchStatus { get; set; }
+        /// <summary>匹配维度：车位类型 0 产权 1 人防 2 临时；NULL = 不限。</summary>
+        public int? MatchSpaceType { get; set; }
+        /// <summary>匹配维度：楼栋号；NULL = 不限。</summary>
+        public string MatchBuilding { get; set; }
+        /// <summary>兜底规格（其它规格都未命中时使用）。</summary>
+        public bool IsFallback { get; set; }
+        public decimal UnitPrice { get; set; }
+        public string Formula { get; set; }
+        /// <summary>公式引用的变量（ID + 名称快照）。</summary>
+        public List<ChargeFormulaVarDto> FormulaVars { get; set; }
+        public string PriceUnit { get; set; }
+        public string CycleName { get; set; }
+        public string EffectiveFrom { get; set; }
+        public string Remark { get; set; }
+        public int Status { get; set; }
+        /// <summary>公式变量引用的持久化形态（JSON，落库用；对外读取请用 <see cref="FormulaVars"/>）。</summary>
+        public string FormulaVarsJson { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：收费标准（价目表主体，t_charge_standard）。</summary>
+    public class ChargeStandardDto
+    {
+        public int Id { get; set; }
+        public string Name { get; set; }
+        public string Category { get; set; }
+        public string Remark { get; set; }
+        public int Status { get; set; }
+        public List<ChargeStandardSpecDto> Specs { get; set; }
+        /// <summary>该收费标准引用的计量变量。</summary>
+        public List<ChargeVariableDto> Variables { get; set; }
+        /// <summary>被多少个收费项目引用。</summary>
+        public int ItemCount { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：规格匹配结果（出账试算与生成共用）。</summary>
+    public class ChargeSpecMatchDto
+    {
+        public int SpecId { get; set; }
+        public string SpecName { get; set; }
+        public bool IsFallback { get; set; }
+        public decimal UnitPrice { get; set; }
+        public string Formula { get; set; }
+        public string PriceUnit { get; set; }
+        /// <summary>未命中任何规格且无兜底时为 false，该行进入失败明细。</summary>
+        public bool Matched { get; set; }
+        public string Reason { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：出账试算行（账单工作台「出账预演」：规格自动匹配 + 金额试算）。</summary>
+    public class BillPreviewRowDto
+    {
+        public string ObjectKey { get; set; }
+        public string ObjectText { get; set; }
+        public string SpecName { get; set; }
+        public decimal UnitPrice { get; set; }
+        public string PriceUnit { get; set; }
+        /// <summary>CHG-v1.1.2-50：本次出账行是否使用「出账时可改价」的单价（界面据此标注「改价」）。</summary>
+        public bool UnitPriceOverridden { get; set; }
+        public string Formula { get; set; }
+        /// <summary>计量取值展示文本（如「面积 24㎡ · 月数 3」）。</summary>
+        public string MeasureText { get; set; }
+        public decimal Amount { get; set; }
+        public bool Matched { get; set; }
+        public bool IsFallback { get; set; }
+        public string Reason { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：出账试算结果。</summary>
+    public class BillPreviewResult
+    {
+        public List<BillPreviewRowDto> Rows { get; set; }
+        public int MatchedCount { get; set; }
+        public int FallbackCount { get; set; }
+        public int FailedCount { get; set; }
+        public decimal TotalAmount { get; set; }
     }
 
 
@@ -44,6 +185,14 @@ namespace PropertyManagement.Contract.Finance
         public string PayerName { get; set; }
         public string No { get; set; }
         public string Reason { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-50：失败行重推（FL-FIN-01）所需的本行出账输入快照
+        /// —— 规格 / 手填计量参数 / 出账改价单价。
+        /// 不记录的话，重推会丢失用户填写的规格与改后单价，按价目表默认价重出，金额与用户本意不符。
+        /// </summary>
+        public int? SpecId { get; set; }
+        public Dictionary<int, decimal> Measures { get; set; }
+        public decimal? UnitPriceOverride { get; set; }
     }
     /// <summary>账单列表行（CHG-M4-07：含业主/房产/收费项目/周期展示字段，PG-FIN-02/03 使用）。</summary>
     public class BillListItemDto
@@ -81,6 +230,14 @@ namespace PropertyManagement.Contract.Finance
         public DateTime DueAt { get; set; }
         public int? GenerateBatchId { get; set; }
         public bool DelFlag { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账命中的规格（历史账单为空）。</summary>
+        public int? ChargeSpecId { get; set; }
+        /// <summary>CHG-v1.1.2-26：计量取值快照（JSON，键为变量名）。</summary>
+        public string MeasureSnapshot { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时使用的单价快照。</summary>
+        public decimal? UnitPriceSnapshot { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时使用的公式快照。</summary>
+        public string FormulaSnapshot { get; set; }
     }
     /// <summary>计费周期（t_billing_cycle）。</summary>
     public class BillingCycleDto
@@ -112,6 +269,14 @@ namespace PropertyManagement.Contract.Finance
         public DateTime DueAt { get; set; }
         public int? GenerateBatchId { get; set; }
         public bool DelFlag { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账命中的规格（历史账单为空）。</summary>
+        public int? ChargeSpecId { get; set; }
+        /// <summary>CHG-v1.1.2-26：计量取值快照（JSON，键为变量名）。</summary>
+        public string MeasureSnapshot { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时使用的单价快照。</summary>
+        public decimal? UnitPriceSnapshot { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时使用的公式快照。</summary>
+        public string FormulaSnapshot { get; set; }
     }
 
     /// <summary>缴费记录（t_payment，UC-FIN-003，BR-FIN-02）。</summary>
@@ -172,12 +337,52 @@ namespace PropertyManagement.Contract.Finance
         public decimal Amount { get; set; }
         public string Reason { get; set; }
         public string RefNo { get; set; }
+        /// <summary>CHG-v1.1.2-12：处理方式文本（落库留痕）。</summary>
+        public string Method { get; set; }
+        /// <summary>CHG-v1.1.2-12：调整方向 —— 0 非调整/未指定、1 调增补收（＋）、2 调减冲正（−）。</summary>
+        public int AdjustDir { get; set; }
         public DateTime CreatedAt { get; set; }
+        /// <summary>CHG-v1.1.2-41：登记经办人（落库 t_payment_refund.operator_name，供单据 PDF 与审计追溯）。</summary>
+        public string OperatorName { get; set; }
 
         // T4F-4-1（CHG-M4-13）：附件 + 关联房产（记录表展示）
         public string AttachmentName { get; set; }
         public string AttachmentPath { get; set; }
         public string PropertyNo { get; set; }
+    }
+
+    /// <summary>
+    /// 退款/减免/调整单据详情（CHG-v1.1.2-41）：导出 PDF 留档用，
+    /// 金额与账单口径**由服务端按单据主键回查**（不采信客户端传值），保证 PDF 与库内数据一致。
+    /// </summary>
+    public class RefundRecordDetailDto
+    {
+        public int Id { get; set; }
+        public string RefNo { get; set; }
+        public RefundType RefundType { get; set; }
+        /// <summary>调整方向（0 非调整/未指定、1 调增补收、2 调减冲正）。</summary>
+        public int AdjustDir { get; set; }
+        public decimal Amount { get; set; }
+        public string Reason { get; set; }
+        public string Method { get; set; }
+        public string OperatorName { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public string AttachmentName { get; set; }
+
+        /// <summary>关联账单主键；0 表示无关联账单的冲正/补收。</summary>
+        public int BillId { get; set; }
+        public decimal? BillAmount { get; set; }
+        public decimal? BillPaidAmount { get; set; }
+        public BillStatus? BillStatus { get; set; }
+        public string ChargeItemName { get; set; }
+        public string CyclePeriod { get; set; }
+
+        // 缴费对象四件套（由 ReportService 组合成展示文本）
+        public string PayerName { get; set; }
+        public string OwnerName { get; set; }
+        public string BuildingNo { get; set; }
+        public string RoomNo { get; set; }
+        public string SpaceNo { get; set; }
     }
 
     /// <summary>预存款（t_pre_deposit，P-06 简单版：多缴转存 + 自动抵扣 + 余额退还）。</summary>
@@ -352,6 +557,8 @@ namespace PropertyManagement.Contract.Finance
         public string OperatorName { get; set; } // T4F-7-1：经手人（来源单据操作人）
         public string Subject { get; set; }      // T4F-7-1：科目（收款→收费项目名、支出→支出分类名、退款→冲销）
         public string OwnerName { get; set; }    // T4F-7-1：付款户主信息（收款/退款/红冲按账单解析房产或车位业主，支出为空）
+        /// <summary>CHG-v1.1.2-05：楼栋/房号（车位显示车位编号，自定义缴费对象显示名称，支出为空）。</summary>
+        public string ObjectText { get; set; }
     }
 
     /// <summary>欠费台账行（UC-FIN-007，账龄>90天标红）。</summary>
@@ -368,6 +575,31 @@ namespace PropertyManagement.Contract.Finance
         public int AgingDays { get; set; }
         public string RemindChannel { get; set; }
         public string BuildingNo { get; set; }  // T4F-6-1：楼栋（筛选用，来源 t_building.building_no）
+        /// <summary>
+        /// CHG-v1.1.2-54：账单期间起止（账单真实账期，来源 t_billing_cycle）。
+        /// 台账「欠费期间」列改为直接引用该账期 —— 原实现按到期日倒推一个月推算，
+        /// 按月账单看似正确，按年 / 一次性账单会显示成错误区间。
+        /// </summary>
+        public string CycleStart { get; set; }
+        public string CycleEnd { get; set; }
+    }
+
+    /// <summary>
+    /// 已移出欠费台账的记录（CHG-v1.1.2-03）。
+    /// 语义：账单本身仍在（账单工作台/收款登记/退款/报表/流水一切不变），只是不再出现在欠费台账列表；
+    /// 删除该剔除记录即「恢复台账」。
+    /// </summary>
+    public class ArrearDismissDto
+    {
+        public int Id { get; set; }
+        public int BillId { get; set; }
+        public string OwnerName { get; set; }
+        public string PropertyNo { get; set; }
+        public string ChargeItemName { get; set; }
+        public decimal ArrearAmount { get; set; }
+        public string Reason { get; set; }
+        public string Operator { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 
     /// <summary>账单生成批次行（CHG-M4-10：PG-FIN-02 批次列表，状态由明细派生）。</summary>

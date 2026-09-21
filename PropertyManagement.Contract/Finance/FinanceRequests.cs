@@ -29,6 +29,132 @@ namespace PropertyManagement.Contract.Finance
         public string MethodName { get; set; }
         public string PriceUnit { get; set; }
         public string CycleName { get; set; }
+
+        /// <summary>
+        /// CHG-v1.1.2-06：用户自定义计价公式（如「单价 * 面积 * 月数」）。
+        /// 为空 = 沿用内置计价方式口径（按建筑面积 = 单价 × 面积，其余 = 单价）。
+        /// 可用变量：单价 / 面积 / 月数 / 天数 / 数量，运算符仅 + - * / ( )。
+        /// </summary>
+        public string Formula { get; set; }
+
+        /// <summary>CHG-v1.1.2-26：绑定的收费标准（新增 / 编辑时的唯一价格来源）。</summary>
+        public int? StandardId { get; set; }
+        /// <summary>CHG-v1.1.2-26：出账时可改价（仅一次性 / 自定义项目允许开启）。</summary>
+        public bool AllowPriceOverride { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：计量变量新增 / 编辑请求。</summary>
+    public class ChargeVariableRequest
+    {
+        public string VarName { get; set; }
+        public string Unit { get; set; }
+        public ChargeVariableValueType ValueType { get; set; }
+        /// <summary>用户自建仅允许 Manual / Fixed（负责人裁定 ⑨）。</summary>
+        public ChargeVariableSource Source { get; set; }
+        public decimal? DefaultValue { get; set; }
+        public ChargeVariableScope ObjectScope { get; set; }
+        public string Remark { get; set; }
+        public int? Status { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：收费标准新增 / 编辑请求。</summary>
+    public class ChargeStandardRequest
+    {
+        public string Name { get; set; }
+        public string Category { get; set; }
+        public string Remark { get; set; }
+        public int? Status { get; set; }
+        /// <summary>引用的计量变量 ID 列表（内置不占额度，用户自建 ≤ 5 个）。</summary>
+        public List<int> VariableIds { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：规格明细新增 / 编辑请求。</summary>
+    public class ChargeStandardSpecRequest
+    {
+        public string SpecName { get; set; }
+        public int? MatchUsage { get; set; }
+        public int? MatchStatus { get; set; }
+        public int? MatchSpaceType { get; set; }
+        public string MatchBuilding { get; set; }
+        public bool IsFallback { get; set; }
+        public decimal UnitPrice { get; set; }
+        /// <summary>计算公式，变量以 {v:ID} 记号引用；为空 = 单价 × 数量。</summary>
+        public string Formula { get; set; }
+        public string CycleName { get; set; }
+        public string EffectiveFrom { get; set; }
+        public string Remark { get; set; }
+        public int? Status { get; set; }
+        /// <summary>
+        /// 改价专用：为 true 时保存新规格并自动把同一标准下「同名旧规格」置为停用（不原地改价）。
+        /// </summary>
+        public bool DeprecateSameName { get; set; }
+        /// <summary>变更原因（改价必填，写入审计日志）。</summary>
+        public string ChangeReason { get; set; }
+    }
+
+    /// <summary>
+    /// CHG-v1.1.2-26：自定义缴费对象的出账行（无档案对象：规格手选 + 计量参数手填）。
+    /// </summary>
+    public class BillCustomPayerRequest
+    {
+        /// <summary>缴费对象名称（租户 / 广告商 / 外部单位，手工填写）。</summary>
+        public string PayerName { get; set; }
+        /// <summary>合同 / 备注编号（选填，用于区分同名对象）。</summary>
+        public string ContractNo { get; set; }
+        /// <summary>手工指定的规格 ID（收费标准下的某条规格）；为空时取该标准唯一启用规格。</summary>
+        public int? SpecId { get; set; }
+        /// <summary>计量取值：键 = 计量变量 ID，值 = 用户填写或系统带出的数值。</summary>
+        public Dictionary<int, decimal> Measures { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-50：出账时改价（仅「出账时可改价」开启的收费项目可提交）。
+        /// 为空＝按价目表规格单价计价（默认）；有值＝本次出账按该单价计价并写入账单快照。
+        /// </summary>
+        public decimal? UnitPriceOverride { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：出账试算请求（只读，不落库；与生成账单同口径）。</summary>
+    public class BillPreviewRequest
+    {
+        public int ChargeItemId { get; set; }
+        public int CycleId { get; set; }
+        public List<int> PropertyIds { get; set; }
+        public List<int> ParkingIds { get; set; }
+        public List<int> OwnerIds { get; set; }
+        public List<BillCustomPayerRequest> CustomPayers { get; set; }
+        /// <summary>CHG-v1.1.2-34：档案对象（房产 / 车位 / 业主）出账行手填的计量参数。</summary>
+        public List<BillObjectMeasureRequest> ObjectMeasures { get; set; }
+    }
+
+    /// <summary>
+    /// CHG-v1.1.2-34：档案对象的出账计量参数（价目表口径：来源=手填 的变量在出账表单按对象逐行填写）。
+    /// 与自定义缴费对象的 <see cref="BillCustomPayerRequest.Measures"/> 同口径，仅键不同（按对象类型 + ID）。
+    /// </summary>
+    public class BillObjectMeasureRequest
+    {
+        /// <summary>缴费对象类型：property（房产）｜parking（车位）｜owner（业主）。</summary>
+        public string Kind { get; set; }
+        public int ObjectId { get; set; }
+        /// <summary>计量取值：键 = 计量变量 ID，值 = 出账行手填值（未填的变量不提交）。</summary>
+        public Dictionary<int, decimal> Measures { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-50：出账时改价（仅「出账时可改价」开启的收费项目可提交）。
+        /// 为空＝按价目表规格单价计价（默认）；有值＝该缴费对象本次出账按此单价计价并写入账单快照。
+        /// </summary>
+        public decimal? UnitPriceOverride { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-26：启停请求（0 启用 / 1 停用），收费标准、规格、计量变量共用。</summary>
+    public class ChargeStandardStatusRequest
+    {
+        public int Status { get; set; }
+    }
+
+    /// <summary>CHG-v1.1.2-33：收费项目清单导出请求（PDF / Excel）。</summary>
+    public class ChargeItemExportRequest
+    {
+        public ExportFormat Format { get; set; }
+        public string Keyword { get; set; }
+        public string Category { get; set; }
     }
 
     /// <summary>轻量字典项新增请求（T4F-1-5：自定义类别/计价方式/计费周期，CHG-M4-11）。</summary>
@@ -62,6 +188,16 @@ namespace PropertyManagement.Contract.Finance
         /// 仅当收费项目的缴费对象为自定义时使用：一行名称生成一张账单，property/parking/owner 三类 ID 全为空。
         /// </summary>
         public List<string> CustomPayerNames { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-26：自定义缴费对象的出账明细（规格 + 计量参数）。
+        /// 为空时回落到 CustomPayerNames 的旧口径（单价 × 公式默认值）。
+        /// </summary>
+        public List<BillCustomPayerRequest> CustomPayers { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-34：档案对象（房产 / 车位 / 业主）出账行手填的计量参数。
+        /// 价目表公式引用的「手填」变量在档案对象下没有取值来源，由用户在生成账单表单逐行填写。
+        /// </summary>
+        public List<BillObjectMeasureRequest> ObjectMeasures { get; set; }
     }
 
     /// <summary>
@@ -192,6 +328,13 @@ namespace PropertyManagement.Contract.Finance
         public decimal Amount { get; set; }
         public string Reason { get; set; }
 
+        /// <summary>
+        /// CHG-v1.1.2-12：处理方式（退款＝「原路退回」等；减免＝「直接调减账单应收」；
+        /// 账务调整＝「调增补收」「调减冲正」）。
+        /// 账务调整时该字段决定 +/−：调增补收 = 收入方向，调减冲正 = 冲减方向。
+        /// </summary>
+        public string Method { get; set; }
+
         /// <summary>BR-FIN-10：大额退款需负责人确认标记（当前单角色下前端弹窗确认后置 true）。</summary>
         public bool ConfirmedByManager { get; set; }
 
@@ -199,6 +342,20 @@ namespace PropertyManagement.Contract.Finance
         public string AttachmentName { get; set; }
 
         public string AttachmentPath { get; set; }
+    }
+
+    /// <summary>
+    /// 退款/减免/调整单据导出请求（CHG-v1.1.2-41）。
+    /// 口径：只传单据主键 —— 金额、账单口径、经办人一律由服务端按主键回查，
+    /// 保证导出的 PDF 与库内记录一致（不采信客户端传值）。
+    /// </summary>
+    public class RefundRecordExportRequest
+    {
+        /// <summary>退款/减免/调整记录主键（记录表行）。</summary>
+        public int RefundId { get; set; }
+
+        /// <summary>导出备注（可选，如「用于业委会备案」；写入 PDF 备注栏）。</summary>
+        public string Remark { get; set; }
     }
 
     /// <summary>预存款余额退还请求（P-06 简单版）。</summary>
@@ -262,5 +419,27 @@ namespace PropertyManagement.Contract.Finance
         public int BillId { get; set; }
         public string Channel { get; set; }
         public string Note { get; set; }
+    }
+
+    /// <summary>
+    /// 欠费台账「移出台账」请求（CHG-v1.1.2-03）。
+    /// 语义：只把该账单行移出台账可见范围，不软删账单、不影响其它模块；可「恢复台账」。
+    /// </summary>
+    public class ArrearDismissRequest
+    {
+        /// <summary>移出台账的账单 id 列表（移出台账 / 批量移出）。</summary>
+        public List<int> BillIds { get; set; }
+        /// <summary>恢复台账：已移出记录的 id 列表（t_arrear_dismiss.id）。</summary>
+        public List<int> DismissIds { get; set; }
+        public string Reason { get; set; }
+    }
+
+    /// <summary>
+    /// 收支明细流水导出请求（CHG-v1.1.2-05）：沿用财务报表导出通道（ClosedXML / PDFsharp），留痕 t_report_log。
+    /// </summary>
+    public class LedgerExportRequest
+    {
+        public LedgerQueryRequest Query { get; set; }
+        public ExportFormat Format { get; set; }
     }
 }

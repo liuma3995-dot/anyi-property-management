@@ -89,7 +89,7 @@
                 <ComboBox Height="32" Width="120" Margin="8,0,0,0" SelectedIndex="{Binding TypeFilter, Mode=TwoWay}">
                     <ComboBoxItem Content="类型：全部" />
                     <ComboBoxItem Content="类型：产权" />
-                    <ComboBoxItem Content="类型：人防" />
+                    <ComboBoxItem Content="类型：普通" />
                     <ComboBoxItem Content="类型：临时" />
                 </ComboBox>
                 <ComboBox Height="32" Width="120" Margin="8,0,0,0" SelectedIndex="{Binding StatusFilter, Mode=TwoWay}">
@@ -124,7 +124,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="车位编号" Width="72" Binding="{Binding SpaceNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.2-48：编号列 72→84（长编号如「B1-001-2」不再被省略号截断） -->
+                    <DataGridTextColumn Header="车位编号" Width="84" Binding="{Binding SpaceNo}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="区域" Width="64" Binding="{Binding Area}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="类型" Width="56" Binding="{Binding TypeText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="状态" Width="72">
@@ -139,7 +140,9 @@
                     <DataGridTextColumn Header="绑定房产" Width="*" Binding="{Binding BindProperty}" ElementStyle="{StaticResource GridCellText}" />
                     <!-- CHG-v1.1.0-11：租金/租期至下线（车位不再承载计费规则，定价统一由收费项目维护） -->
                     <DataGridTextColumn Header="绑定业主" Width="120" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTemplateColumn Header="操作" Width="132">
+                    <!-- CHG-v1.1.2-48：操作列 132→150 —— 「查看 / 编辑 / 删除」三个行内按钮需要约 140px，
+                         原宽把「删除」截成「删」（列宽从自适应的「绑定房产」列让出）。 -->
+                    <DataGridTemplateColumn Header="操作" Width="150">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
@@ -170,7 +173,7 @@
                     <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
                         <ComboBox x:Name="ParkingTypeCombo" SelectedValue="{Binding FormType}" SelectedValuePath="Tag" Width="170">
                             <ComboBoxItem Content="产权" Tag="PropertyRight" />
-                            <ComboBoxItem Content="人防" Tag="CivilDefense" />
+                            <ComboBoxItem Content="普通" Tag="CivilDefense" />
                             <ComboBoxItem Content="临时" Tag="Temporary" />
                         </ComboBox>
                         <ComboBox SelectedValue="{Binding FormStatus}" SelectedValuePath="Tag" Width="170" Margin="10,0,0,0">

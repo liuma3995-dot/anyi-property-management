@@ -4,18 +4,22 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
+             xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <conv:IntEqualsConverter x:Key="IntEquals" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
 
-    <Grid Margin="24,20">
+    <!-- CHG-v1.1.2-45：不再套外层 ScrollViewer —— 宿主对页面高度无约束时，ScrollViewer 的
+         「视口高＝内容高」会与记录表高度计算形成自反馈（实测行数一路涨到 13 行）。
+         页面高度一律以宿主（Parent）的真实高度为准（见代码后置 ApplyRecordsTableHeight）。 -->
+    <Grid x:Name="PageGrid" Margin="24,10" SizeChanged="PageGrid_SizeChanged" Loaded="PageGrid_Loaded">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="14" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="10" />
+            <RowDefinition Height="8" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="6" />
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
@@ -28,10 +32,12 @@
             </Grid.ColumnDefinitions>
 
             <!-- 表单卡片 -->
-            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="20,16">
+            <!-- CHG-v1.1.2-44：纵向收口 —— 1366×768 真机下页面可用高度仅 670px，原表单内边距/行距偏松，
+                 挤压了下方「最近申请记录」表格（只剩表头）。此处统一收紧 6~8px 级间距，让记录表稳定显示 2 整行。 -->
+            <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="18,12">
                 <StackPanel>
                     <!-- 三页签 -->
-                    <Border Height="34" Background="#F1F3F7" CornerRadius="8">
+                    <Border Height="30" Background="#F1F3F7" CornerRadius="8">
                         <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
@@ -48,7 +54,7 @@
                 </Border>
 
                     <TextBlock Text="{Binding FormTitle}" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
-                               Margin="0,14,0,12" />
+                               Margin="0,8,0,6" />
 
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -57,15 +63,15 @@
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
+                            <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
+                            <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
+                            <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
-                            <RowDefinition Height="12" />
+                            <RowDefinition Height="8" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
@@ -107,7 +113,8 @@
                                                         <TextBlock TextTrimming="CharacterEllipsis" MaxWidth="380">
                                                             <Run Text="{Binding NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ObjectText, Mode=OneWay}" />
                                                             <Run Text=" · " /><Run Text="{Binding Dto.ChargeItemName, Mode=OneWay}" />
-                                                            <Run Text=" · 实缴 " /><Run Text="{Binding Dto.PaidAmount, StringFormat=¥{0:N2}, Mode=OneWay}" />
+                                                            <!-- CHG-v1.1.2-40：金额提示随页签口径（退款/调整＝实缴；减免＝未收余额） -->
+                                                            <Run Text=" · " /><Run Text="{Binding PickerMoneyText, Mode=OneWay}" />
                                                         </TextBlock>
                                                     </CheckBox>
                                                 </DataTemplate>
@@ -127,19 +134,26 @@
                                    VerticalAlignment="Center" />
                         <Border Grid.Row="4" Grid.Column="1" Height="36" Background="#F7F4EE"
                                 BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
-                            <TextBox Style="{StaticResource SearchTextBox}" FontSize="15" FontWeight="SemiBold"
+                            <!-- CHG-v1.1.2-08：改用 DecimalTextBox（原 StringFormat 绑定会边输边格式化，12.12 变 12.12.00） -->
+                            <controls:DecimalTextBox Style="{StaticResource SearchTextBox}" FontSize="15" FontWeight="SemiBold"
                                      Foreground="{StaticResource DangerBrush}"
-                                     Text="{Binding Amount, StringFormat={}{0:0.00}, UpdateSourceTrigger=PropertyChanged}" />
+                                     Value="{Binding Amount, UpdateSourceTrigger=PropertyChanged}" />
                         </Border>
 
                         <TextBlock Grid.Row="6" Grid.Column="0" Text="方式" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
-                        <ComboBox Grid.Row="6" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
-                                  ItemsSource="{Binding MethodOptions}" SelectedIndex="{Binding MethodIndex}" />
+                        <!-- CHG-v1.1.2-12：账务调整的 +/− 由「方式」决定（补收＝＋ / 冲正＝−）
+                             CHG-v1.1.2-19：提示文字与下拉框同格堆叠（原放在下方 12px 间隔行，被压缩遮挡） -->
+                        <StackPanel Grid.Row="6" Grid.Column="1">
+                            <ComboBox Height="32" FontSize="12" VerticalContentAlignment="Center"
+                                      ItemsSource="{Binding MethodOptions}" SelectedIndex="{Binding MethodIndex}" />
+                            <TextBlock Text="{Binding DirectionHint}" FontSize="10"
+                                       Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,4,0,0" />
+                        </StackPanel>
 
                         <TextBlock Grid.Row="8" Grid.Column="0" Text="原因" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                                   VerticalAlignment="Top" Margin="0,6,0,0" />
-                        <Border Grid.Row="8" Grid.Column="1" Height="64" Background="#F7F4EE"
+                                   VerticalAlignment="Top" Margin="0,4,0,0" />
+                        <Border Grid.Row="8" Grid.Column="1" Height="38" Background="#F7F4EE"
                                 BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
                             <TextBox Style="{StaticResource SearchTextBox}" FontSize="12" TextWrapping="Wrap"
                                      VerticalContentAlignment="Top" Padding="8,5"
@@ -166,25 +180,28 @@
                         </StackPanel>
                     </Grid>
 
-                    <!-- 大额提示 + 负责人确认 -->
-                    <Border Background="#FFF5DC" CornerRadius="6" Padding="10,6" Margin="0,12,0,0"
+                    <!-- 大额提示 + 负责人确认（CHG-v1.1.2-44：由上下两行合并为一行，省出 ~26px 纵向空间，
+                         避免大额场景把下方记录表挤出可视区） -->
+                    <Border Background="#FFF5DC" CornerRadius="6" Padding="10,6" Margin="0,10,0,0"
                             Visibility="{Binding HasLargeHint, Converter={StaticResource BoolToVis}}">
-                        <TextBlock Text="{Binding LargeHint}" FontSize="11" Foreground="#B76E00" TextWrapping="Wrap" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding LargeHint}" FontSize="11" Foreground="#B76E00"
+                                       TextWrapping="Wrap" VerticalAlignment="Center" />
+                            <CheckBox Grid.Column="1" Content="负责人已确认" IsChecked="{Binding Confirmed}" FontSize="12"
+                                      Foreground="{StaticResource TextPrimaryBrush}" Margin="12,0,0,0"
+                                      VerticalAlignment="Center" />
+                        </Grid>
                     </Border>
-                    <CheckBox Content="负责人已确认（BR-FIN-10）" IsChecked="{Binding Confirmed}" FontSize="12"
-                              Foreground="{StaticResource TextPrimaryBrush}" Margin="0,10,0,0"
-                              Visibility="{Binding HasLargeHint, Converter={StaticResource BoolToVis}}" />
 
-                    <Grid Margin="0,18,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="10" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="提交审批"
-                                Command="{Binding SubmitCommand}" />
-                        <Button Grid.Column="2" Content="暂存" FontSize="13" Command="{Binding SaveDraftCommand}" />
-                    </Grid>
+                    <!-- CHG-v1.1.2-43：「暂存」按钮下线 —— 原实现是「假暂存」（清空表单 + 提示已暂存，
+                         无任何持久化，还会丢掉刚填的内容）；本模块登记即落账，无草稿业务需求。
+                         下线后主操作整行铺满，避免右侧留空。 -->
+                    <Button Margin="0,10,0,0" Style="{StaticResource ButtonPrimary}" Content="提交审批"
+                            Command="{Binding SubmitCommand}" />
                 </StackPanel>
             </Border>
 
@@ -221,10 +238,10 @@
 
                     <Rectangle Height="1" Fill="{StaticResource BorderBrushColor}" Margin="0,18,0,14" />
                     <TextBlock Text="节点说明" FontSize="11" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="提交申请 → 客服主管审核 → 财务复核 → 负责人审批 → 原路退回（UC-FIN-004 全程留痕）"
+                    <TextBlock Text="提交申请 → 客服主管审核 → 财务复核 → 负责人审批 → 原路退回（全程留痕）"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
                     <Border Background="#F7F5FE" CornerRadius="6" Padding="10,8" Margin="0,12,0,0">
-                        <TextBlock Text="本期单角色（系统管理员）：退款/减免 &gt; ¥1,000 或调整涉及已结清账单 → 勾选负责人确认后提交（BR-FIN-10）；驳回/短信通知等审批流能力在多人协作版提供。"
+                        <TextBlock Text="本期单角色（系统管理员）：退款/减免/调整 &gt; ¥1,000 → 勾选负责人确认后提交；驳回/短信通知等审批流能力在多人协作版提供。"
                                    FontSize="10" Foreground="#4A3AB0" TextWrapping="Wrap" />
                     </Border>
                 </StackPanel>
@@ -232,17 +249,25 @@
         </Grid>
 
         <!-- ============ 最近申请记录 ============ -->
-        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0">
+        <Border x:Name="RecordsCard" Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0" VerticalAlignment="Top">
             <Grid>
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="42" />
+                    <RowDefinition Height="32" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
                 <TextBlock Grid.Row="0" Text="最近申请记录" FontSize="13" FontWeight="Bold"
                            Foreground="{StaticResource TextPrimaryBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
-                <DataGrid Grid.Row="1" ItemsSource="{Binding Records}" IsReadOnly="True" AutoGenerateColumns="False">
+                <!-- CHG-v1.1.2-44/-45：记录表高度按可用高度**自动排整行**（代码后置 PageGrid_SizeChanged 计算），
+                     口径：表头 36 + N × 行高 44，N = 可用高度能放下的完整行数，下限 2 行（1366×768 下即 2 行）。
+                     保证 ① 小分辨率下至少 2 整行完整可见；② 窗口最大化时把可用高度用满、能放几行就展示几行；
+                     ③ 永不出现「只露表头 / 半截行」的遮挡。 -->
+                <DataGrid x:Name="RecordsGrid" Grid.Row="1" ItemsSource="{Binding Records}" IsReadOnly="True" AutoGenerateColumns="False"
+                          VerticalAlignment="Top">
                     <DataGrid.Columns>
-                        <DataGridTextColumn Header="申请编号" Width="130" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.2-43：申请编号完整展示（形如 RF-20260920145402758-35，共 23 字符）——
+                             原宽 130px 会被省略号截断，单据编号是导出 PDF / 审计反查的凭据，不得裁切；
+                             宽度从「原因」列（自适应 *）让出，不影响其它列。 -->
+                        <DataGridTextColumn Header="申请编号" Width="230" Binding="{Binding NoText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTemplateColumn Header="类型" Width="80">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -256,6 +281,8 @@
                         <DataGridTextColumn Header="关联房产" Width="100" Binding="{Binding PropertyNoText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="原因" Width="*" Binding="{Binding Reason}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.2-41：经办人随单据落库（导出 PDF 的必备要素，旧数据为 —） -->
+                        <DataGridTextColumn Header="经办人" Width="90" Binding="{Binding OperatorText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTemplateColumn Header="状态" Width="90">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
@@ -266,14 +293,29 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="当前节点" Width="100" Binding="{Binding NodeText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.2-12：原「当前节点」为开发期 mock 列，改为展示已落库的「方式」 -->
+                        <DataGridTextColumn Header="方式" Width="120" Binding="{Binding MethodText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.2-41：提交后可导出单据 PDF（退款申请/费用减免/财务调整详情），用于留档与审计追溯 -->
+                        <DataGridTemplateColumn Header="操作" Width="96">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Content="导出PDF" FontSize="11" Padding="10,2" Margin="4,0"
+                                            Style="{StaticResource LinkButton}"
+                                            Command="{Binding ExportCommand}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
         </Border>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="4" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="4" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器 ——
+             原为单行 TextBlock，像「账单已冲正，不能重复退款…」这类长提示会被右侧裁切（负责人反馈的遮挡问题） -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
     </Grid>
 </UserControl>

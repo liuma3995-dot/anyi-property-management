@@ -207,7 +207,7 @@ namespace PropertyManagement.Server.Services
                 if (!AllowedTransitions.TryGetValue(existing.Status, out DeviceStatus[] allowed) || !allowed.Contains(newStatus))
                 {
                     if (newStatus == existing.Status) throw ApiException.Conflict("设备已处于该状态，无需变更");
-                    throw ApiException.Conflict("不允许的状态变更：" + StatusText(existing.Status) + " → " + StatusText(newStatus) + "（BR-EQP-01）");
+                throw ApiException.Conflict("不允许的状态变更：" + StatusText(existing.Status) + " → " + StatusText(newStatus));
                 }
                 if ((newStatus == DeviceStatus.Disabled || newStatus == DeviceStatus.Scrapped) && string.IsNullOrWhiteSpace(request.Reason))
                     throw ApiException.ValidationFailed(newStatus == DeviceStatus.Scrapped ? "报废必须填写原因" : "停用必须填写原因");
@@ -279,7 +279,7 @@ namespace PropertyManagement.Server.Services
                 };
                 bool unqualified = IsNotQualified(dto.Result);
                 if (unqualified && string.IsNullOrEmpty(dto.FailReason))
-                    throw ApiException.ValidationFailed("检测结果不合格时必须填写不合格说明（BR-EQP-03）");
+                throw ApiException.ValidationFailed("检测结果不合格时必须填写不合格说明");
                 dto.Id = _repo.InsertMaintenance(c, tx, dto);
                 if (unqualified) dto.FaultNo = ToRepairingWithFault(c, tx, dev, "保养不合格：" + dto.FailReason, "保养不合格转维修");
                 else CloseDueReminder(c, tx, "maint_due", dev, dto.MDate, dev.MaintenanceCycle);
@@ -308,7 +308,7 @@ namespace PropertyManagement.Server.Services
                 };
                 bool unqualified = IsNotQualified(dto.Result);
                 if (unqualified && string.IsNullOrEmpty(dto.FailReason))
-                    throw ApiException.ValidationFailed("检测结果不合格时必须填写不合格说明（BR-EQP-03）");
+                throw ApiException.ValidationFailed("检测结果不合格时必须填写不合格说明");
                 dto.Id = _repo.InsertInspection(c, tx, dto);
                 if (unqualified) dto.FaultNo = ToRepairingWithFault(c, tx, dev, "年检不合格：" + dto.FailReason, "年检不合格转维修");
                 else CloseDueReminder(c, tx, "inspect_due", dev, dto.IDate, 365);
@@ -374,7 +374,7 @@ namespace PropertyManagement.Server.Services
             {
                 if (request == null) throw ApiException.ValidationFailed("请求体不能为空");
                 if (_repo.GetDevice(c, request.DeviceId) == null) throw ApiException.NotFound("设备不存在");
-                if (string.IsNullOrWhiteSpace(request.Symptom)) throw ApiException.ValidationFailed("故障现象不能为空（BR-EQP-04）");
+            if (string.IsNullOrWhiteSpace(request.Symptom)) throw ApiException.ValidationFailed("故障现象不能为空");
                 var dto = new FaultRecordDto
                 {
                     DeviceId = request.DeviceId, EventId = request.EventId,
@@ -411,7 +411,7 @@ namespace PropertyManagement.Server.Services
                 string handle = (request.Handle ?? string.Empty).Trim();
                 if (status == 0) status = string.IsNullOrEmpty(handle) ? 1 : 2; // 未显式指定时按处理结果推断
                 if (status == 2 && string.IsNullOrEmpty(handle))
-                    throw ApiException.ValidationFailed("处理结果不能为空（BR-EQP-04）");
+                throw ApiException.ValidationFailed("处理结果不能为空");
                 _repo.UpdateFaultHandle(c, tx, id, (request.Cause ?? string.Empty).Trim(), handle, status);
                 // R5 闭环：故障状态与设备台账状态同步（维修中 ↔ 在用），设备列表随即可见（BR-EQP-01/04）
                 var dev = _repo.GetDevice(c, fault.DeviceId);
@@ -575,7 +575,7 @@ namespace PropertyManagement.Server.Services
                 int referenced = _repo.CountVendorReferences(c, id);
                 if (referenced > 0)
                     throw ApiException.Conflict(
-                        "该维保单位已被 " + referenced + " 条保养/年检/自定义记录或支出引用，不可删除（BR-EQP-06）；" +
+                "该维保单位已被 " + referenced + " 条保养/年检/自定义记录或支出引用，不可删除；" +
                         "如不再合作请先解除相关记录的关联");
                 _repo.SoftDeleteVendor(c, tx, id);
             });

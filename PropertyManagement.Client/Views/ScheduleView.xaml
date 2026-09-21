@@ -260,7 +260,7 @@
                     <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
                 </StackPanel>
                 <TextBlock Text="· 【保存排班】→ 冲突检查不通过则阻断并列出冲突清单；通过后推送员工确认" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
-                <TextBlock Text="· 晚班 00:00-08:00 计入次日考勤（UC-ORG-003/004）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
+                <TextBlock Text="· 晚班 00:00-08:00 计入次日考勤" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>
         </Border>
 

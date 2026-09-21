@@ -53,7 +53,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.Conflict, ex.Code);
-            Assert.Contains("BR-DIS-01", ex.Message);
+            Assert.Contains("须先受理为调解中", ex.Message);
         }
 
         // ===================== BR-DIS-02 结案必须至少一条处理方案记录 =====================
@@ -70,7 +70,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.Conflict, ex.Code);
-            Assert.Contains("BR-DIS-02", ex.Message);
+            Assert.Contains("结案前必须存在至少一条处理方案记录", ex.Message);
             Assert.Equal((int)DisputeCaseStatus.Handling,
                 ScalarInt("SELECT status FROM t_dispute_case WHERE id = @id", new { id = caseId }));
         }

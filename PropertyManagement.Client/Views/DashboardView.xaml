@@ -527,10 +527,22 @@
                                    VerticalAlignment="Bottom" Margin="8,0,0,4" />
                     </Grid>
 
-                    <Border Height="9" Background="#EAE5DA" CornerRadius="5" Margin="0,12,0,0">
-                        <Border Width="245" Height="9" Background="{StaticResource PrimaryBrush}"
-                                   CornerRadius="5" HorizontalAlignment="Left" />
-                    </Border>
+                    <!-- CHG-v1.1.2-56：进度条按收缴率显示（原填充宽度写死 245px，与 100%/30% 无关） -->
+                    <ProgressBar Height="9" Margin="0,12,0,0" Minimum="0" Maximum="100"
+                                 Value="{Binding CollectionRateValue, Mode=OneWay}"
+                                 Background="#EAE5DA" Foreground="{StaticResource PrimaryBrush}"
+                                 BorderThickness="0">
+                        <ProgressBar.Template>
+                            <ControlTemplate TargetType="ProgressBar">
+                                <Grid>
+                                    <Border Background="{TemplateBinding Background}" CornerRadius="5" />
+                                    <Border x:Name="PART_Track" />
+                                    <Border x:Name="PART_Indicator" Background="{TemplateBinding Foreground}"
+                                            CornerRadius="5" HorizontalAlignment="Left" />
+                                </Grid>
+                            </ControlTemplate>
+                        </ProgressBar.Template>
+                    </ProgressBar>
 
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                         <StackPanel Orientation="Horizontal">

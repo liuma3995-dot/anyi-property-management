@@ -132,7 +132,7 @@ namespace PropertyManagement.Client.ViewModels
     /// 缴费对象候选行（CHG-v1.1.0-10：生成账单选择器）。
     /// 只承载「显示 + 勾选」，不认识收费项目与计费周期。
     /// </summary>
-    public class BillObjectRow : ObservableObject
+    public partial class BillObjectRow : ObservableObject
     {
         private bool _isChecked;
 
@@ -172,7 +172,7 @@ namespace PropertyManagement.Client.ViewModels
     /// 自定义缴费对象手工填写行（CHG-v1.1.0-18）：租户/广告商/外部单位等无档案对象，
     /// 用户在生成账单表单中直接填写名称，一行生成一张账单。
     /// </summary>
-    public class BillCustomPayerRow : ObservableObject
+    public partial class BillCustomPayerRow : ObservableObject
     {
         private string _name = string.Empty;
 
@@ -181,7 +181,7 @@ namespace PropertyManagement.Client.ViewModels
     }
 
     /// <summary>账单工作台（PG-FIN-02，UC-FIN-002，FL-FIN-01，BR-FIN-01/03；T4F-2-1 统计卡/筛选/派生操作/发布确认）。</summary>
-    public class BillWorkbenchViewModel : FinancePageViewModel
+    public partial class BillWorkbenchViewModel : FinancePageViewModel
     {
         private const string AllPeriods = "全部期间";
 
@@ -239,6 +239,8 @@ namespace PropertyManagement.Client.ViewModels
         public BillWorkbenchViewModel(IApiClient api, Action<string> navigateToPage = null) : base(api)
         {
             _navigateToPage = navigateToPage;
+            // CHG-v1.1.2-26：出账预演（规格自动匹配 + 金额试算）与自定义对象计量卡
+            InitBillingPreview();
             GenerateCommand = new AsyncRelayCommand(GenerateAsync);
             OpenGenerateCommand = new AsyncRelayCommand(OpenGenerateAsync);
             CloseGenerateCommand = new RelayCommand(() => IsGenerateVisible = false);
@@ -361,7 +363,7 @@ namespace PropertyManagement.Client.ViewModels
                 if (SetProperty(ref _selectedItem, value) && IsGenerateVisible)
                 {
                     ApplyDefaultObjectKind();
-                    _ = ReloadBillObjectsAsync();
+                    _ = ReloadObjectsAndMeasuresAsync();
                 }
             }
         }
@@ -381,6 +383,25 @@ namespace PropertyManagement.Client.ViewModels
                 if (SetProperty(ref _objectKindIndex, value) && IsGenerateVisible)
                 {
                     _ = ReloadBillObjectsAsync();
+                }
+                // CHG-v1.1.2-49：搜索框引导提示随「缴费对象」类型变化（房产/车位/业主各给对应提示）
+                OnPropertyChanged(nameof(ObjectSearchPlaceholder));
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-49：缴费对象搜索框的引导提示 —— 按当前选择的缴费对象类型给出对应口径，
+        /// 不再三种对象共用一句「房产搜楼栋/房号 · 车位搜编号 · 业主搜姓名/手机」。
+        /// </summary>
+        public string ObjectSearchPlaceholder
+        {
+            get
+            {
+                switch (_objectKindIndex)
+                {
+                    case 1: return "搜索车位编号，如 B1-001";
+                    case 2: return "搜索业主姓名 / 手机号（同名业主看楼栋/房号）";
+                    default: return "搜索楼栋 / 房号，如 1栋101";
                 }
             }
         }
@@ -659,11 +680,18 @@ namespace PropertyManagement.Client.ViewModels
             // CHG-v1.1.0-17：每次进入生成弹窗都是干净状态（勾选集合一并清空）
             _checkedObjectKeys.Clear();
             CustomPayers.Clear();   // CHG-v1.1.0-18：自定义缴费对象手工行同样清空
+            ClearObjectMeasures();  // CHG-v1.1.2-34：档案对象的行内手填计量参数同样清空
+            ClearPriceOverrides();  // CHG-v1.1.2-50：出账改价同样清空（每次进入弹窗从价目表单价起步）
             _objectKeyword = string.Empty;
             OnPropertyChanged(nameof(ObjectKeyword));
             ApplyDefaultObjectKind();
             IsGenerateVisible = true;
             await ReloadBillObjectsAsync();
+            // CHG-v1.1.2-26：自定义缴费对象按收费标准铺「规格候选 + 计量参数」；
+            // CHG-v1.1.2-34：档案对象铺「手填」变量输入行（计划 T-10：手填 → 输入框）；随后做一次出账预演
+            if (IsCustomChargeObject) { await ReloadCustomPayerTemplateAsync(); }
+            else { await ReloadMeasureTemplateAsync(); }
+            await PreviewAsync();
         }
 
         /// <summary>
@@ -694,12 +722,36 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(IsStandardChargeObject));
             OnPropertyChanged(nameof(CustomObjectName));
             OnPropertyChanged(nameof(SelectedObjectCountText));
-            // CHG-v1.1.0-18：切到自定义缴费对象项目时，保证手工填写表格至少有一行
-            if (IsCustomChargeObject) { EnsureCustomPayerRow(); }
+            // CHG-v1.1.2-50：收费项目切换 → 「出账时可改价」开关与提示同步刷新
+            NotifyPriceOverrideStateChanged();
+            // CHG-v1.1.2-38：自定义缴费对象行的创建统一放到 ReloadCustomPayerTemplateAsync ——
+            // 先把价目表（收费标准）取回来再建行，避免「先建空行 → 再补规格」被下拉框回写打断。
         }
 
         /// <summary>加载缴费对象候选（只读查询；房产侧隐藏未绑定业主的房产）。</summary>
         private async Task ReloadBillObjectsAsync()
+        {
+            await ReloadBillObjectsCoreAsync();
+            // CHG-v1.1.2-34：候选列表重算后重新铺「手填」计量参数输入行
+            ApplyMeasureTemplateToRows();
+        }
+
+        /// <summary>收费项目切换：先解析手填变量，再拉候选并铺参数（避免用旧变量集渲染）。</summary>
+        private async Task ReloadObjectsAndMeasuresAsync()
+        {
+            // CHG-v1.1.2-38：自定义缴费对象切项目时同样要重取价目表（此前只刷新候选，规格会停留在上一条标准）
+            if (IsCustomChargeObject)
+            {
+                ClearPriceOverrides();   // CHG-v1.1.2-50：切换收费项目不沿用上一个项目的改后价
+                await ReloadCustomPayerTemplateAsync();
+                return;
+            }
+            ClearPriceOverrides();   // CHG-v1.1.2-50：切换收费项目不沿用上一个项目的改后价
+            await LoadStandardMeasureVarsAsync();
+            await ReloadBillObjectsAsync();
+        }
+
+        private async Task ReloadBillObjectsCoreAsync()
         {
             // CHG-v1.1.0-18：自定义缴费对象（租户/广告商/外部单位）无基础信息档案，改为手工填写名称
             if (IsCustomChargeObject && IsGenerateVisible)
@@ -764,6 +816,15 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 NotifyObjectSelectionChanged();
             }
+            else if (e.PropertyName == nameof(BillObjectRow.UnitPriceOverrideText))
+            {
+                // CHG-v1.1.2-50：出账改价输入 → 写回「类型:ID」并重新试算
+                var row = sender as BillObjectRow;
+                if (row != null && row.Dto != null)
+                {
+                    OnPriceOverrideTextChanged(ObjectKey(row.Dto.Id), row.UnitPriceOverrideText);
+                }
+            }
         }
 
         private void NotifyObjectSelectionChanged()
@@ -771,6 +832,8 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(SelectedObjectCountText));
             OnPropertyChanged(nameof(HasSelectedObjects));
             OnPropertyChanged(nameof(IsAllObjectsChecked));
+            // CHG-v1.1.2-26：勾选变化后自动试算（规格命中 + 预估金额）
+            SchedulePreview();
         }
 
         private List<int> SelectedObjectIds()
@@ -809,7 +872,14 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>CHG-v1.1.0-18：新增一行自定义缴费对象。</summary>
         private void AddCustomPayerRow()
         {
-            CustomPayers.Add(new BillCustomPayerRow());
+            var row = new BillCustomPayerRow();
+            row.PropertyChanged += OnCustomPayerRowChanged;
+            // CHG-v1.1.2-36：手填计量参数变化 → 重算出账预演
+            row.MeasuresChanged += (s, e) => SchedulePreview();
+            // CHG-v1.1.2-50：自定义缴费对象的出账改价输入（随收费项目开关显示）
+            row.IsPriceEditable = IsPriceOverrideEnabled;
+            row.ApplyStandard(_customStandard);
+            CustomPayers.Add(row);
         }
 
         /// <summary>CHG-v1.1.0-18：删除一行（至少保留一行空白行，便于继续填写）。</summary>
@@ -821,7 +891,7 @@ namespace PropertyManagement.Client.ViewModels
 
         private void EnsureCustomPayerRow()
         {
-            if (CustomPayers.Count == 0) { CustomPayers.Add(new BillCustomPayerRow()); }
+            if (CustomPayers.Count == 0) { AddCustomPayerRow(); }
         }
 
         private async Task GenerateAsync()
@@ -897,7 +967,11 @@ namespace PropertyManagement.Client.ViewModels
                     PropertyIds = !IsCustomChargeObject && ObjectKindIndex == 0 ? selectedObjectIds : new List<int>(),
                     ParkingIds = !IsCustomChargeObject && ObjectKindIndex == 1 ? selectedObjectIds : new List<int>(),
                     OwnerIds = !IsCustomChargeObject && ObjectKindIndex == 2 ? selectedObjectIds : new List<int>(),
-                    CustomPayerNames = customPayerNames
+                    CustomPayerNames = customPayerNames,
+                    // CHG-v1.1.2-26：自定义缴费对象的规格手选与计量参数一并提交（服务端按此计价并落快照）
+                    CustomPayers = IsCustomChargeObject ? BuildCustomPayerRequests() : null,
+                    // CHG-v1.1.2-34：档案对象（房产/车位/业主）的行内手填计量参数一并提交
+                    ObjectMeasures = IsCustomChargeObject ? null : BuildObjectMeasures()
                 });
                 await RefreshBatchesAsync();
                 await RefreshSummaryAsync();
@@ -966,7 +1040,7 @@ namespace PropertyManagement.Client.ViewModels
                 var log = await Api.PublishBillsAsync(new BillPublishRequest { BatchId = row.Dto.Id });
                 await RefreshBatchesAsync();
                 await RefreshSummaryAsync();
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + log.Id + " 已发布（FL-FIN-01）";
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + log.Id + " 已发布";
             }, null);
         }
 
@@ -1087,7 +1161,13 @@ namespace PropertyManagement.Client.ViewModels
             if (row == null || !row.CanDelete) { return; }
             _pendingDelete = row;
             DeleteConfirmTitle = "确认删除批次";
-            DeleteConfirmText = "将删除批次 " + row.BatchNoText + "（" + row.ChargeItemName + "，户数 " + row.HouseCountText + "）。删除将连同批次下账单一并软删并保留操作轨迹；已缴/部分缴金额对应流水不做回退，请谨慎操作。确认删除？";
+            // CHG-v1.1.2-02：删除口径更新 —— 下游模块（收款登记/退款记录/欠费台账/财务报表/收支明细流水）
+            // 对该批次账单的记录将同步不再计入，避免「删了账单、报表还照算」的账实不一致。
+            int paidHouseholds = (row.Dto == null ? 0 : row.Dto.PaidCount) + (row.Dto == null ? 0 : row.Dto.PartialCount);
+            DeleteConfirmText = "将删除批次 " + row.BatchNoText + "（" + row.ChargeItemName + "，户数 " + row.HouseCountText +
+                (paidHouseholds > 0 ? "，其中已缴/部分缴 " + paidHouseholds + " 户" : string.Empty) + "）。\n" +
+                "删除后：该批次账单，以及它在收款登记、退款记录、欠费台账、财务报表、收支明细流水中的记录会同步不再显示（原始流水数据保留留痕，不做物理销毁）。\n" +
+                "请确认后再删除。";
             IsDeleteConfirmVisible = true;
         }
 
@@ -1142,7 +1222,9 @@ namespace PropertyManagement.Client.ViewModels
             _batchDeleteRows = rows;
             _pendingDelete = null;
             DeleteConfirmTitle = "确认删除批次";
-            DeleteConfirmText = "将批量删除 " + rows.Count + " 个批次（含批次下账单一并软删并保留操作轨迹；已缴/部分缴金额对应流水不做回退）。请谨慎操作。确认删除？";
+            DeleteConfirmText = "将批量删除 " + rows.Count + " 个批次。\n" +
+                "删除后：这些批次账单，以及它们在收款登记、退款记录、欠费台账、财务报表、收支明细流水中的记录会同步不再显示（原始流水数据保留留痕）。\n" +
+                "请确认后再删除。";
             IsDeleteConfirmVisible = true;
         }
         private async Task RetryAsync(BillBatchRow row)

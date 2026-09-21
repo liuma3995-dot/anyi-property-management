@@ -1,3 +1,4 @@
+using System;
 using System.Windows;
 using System.Windows.Controls;
 using PropertyManagement.Client.ViewModels;
@@ -27,6 +28,38 @@ namespace PropertyManagement.Client.Views
             if (sender is CheckBox cb && cb.DataContext is BillObjectRow row)
             {
                 row.IsChecked = cb.IsChecked == true;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-34：缴费对象行内「手填」计量参数写回。
+        /// 只读 DataGrid 中的模板控件不参与数据网格编辑，故与勾选框同口径显式同步到行对象。
+        /// </summary>
+        private void MeasureTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var box = sender as TextBox;
+            var input = box == null ? null : box.DataContext as BillMeasureInputRow;
+            if (input == null) { return; }
+            string text = box.Text ?? string.Empty;
+            if (!string.Equals(input.ValueText ?? string.Empty, text, StringComparison.Ordinal))
+            {
+                input.ValueText = text;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-50：缴费对象行「出账改价」输入写回。
+        /// 与「手填计量」同口径 —— 只读 DataGrid 的模板控件不参与数据网格编辑，故显式同步到行对象。
+        /// </summary>
+        private void PriceOverrideTextBox_TextChanged(object sender, TextChangedEventArgs e)
+        {
+            var box = sender as TextBox;
+            var row = box == null ? null : box.DataContext as BillObjectRow;
+            if (row == null) { return; }
+            string text = box.Text ?? string.Empty;
+            if (!string.Equals(row.UnitPriceOverrideText ?? string.Empty, text, StringComparison.Ordinal))
+            {
+                row.UnitPriceOverrideText = text;
             }
         }
     }

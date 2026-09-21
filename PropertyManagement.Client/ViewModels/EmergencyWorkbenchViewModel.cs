@@ -356,8 +356,8 @@ namespace PropertyManagement.Client.ViewModels
         private async Task AddRecordAsync()
         {
             if (Detail == null || Detail.Event == null) return;
-            if (string.IsNullOrWhiteSpace(RecordContent)) { ErrorText = "请填写操作内容（BR-EMG-04）"; return; }
-            if (string.IsNullOrWhiteSpace(RecordResult)) { ErrorText = "请填写处置结果（BR-EMG-04：记录必含时间/操作/结果）"; return; }
+            if (string.IsNullOrWhiteSpace(RecordContent)) { ErrorText = "请填写操作内容"; return; }
+            if (string.IsNullOrWhiteSpace(RecordResult)) { ErrorText = "请填写处置结果（记录必含时间/操作/结果）"; return; }
             int eventId = Detail.Event.Id;
             await RunAsync(async () =>
             {
@@ -387,7 +387,7 @@ namespace PropertyManagement.Client.ViewModels
         private async Task ConfirmCloseAsync()
         {
             if (_closeTarget == null) return;
-            if (string.IsNullOrWhiteSpace(CloseSummary)) { ErrorText = "结案必填处置结果与物资消耗（BR-EMG-02）"; return; }
+            if (string.IsNullOrWhiteSpace(CloseSummary)) { ErrorText = "结案必填处置结果与物资消耗"; return; }
             var target = _closeTarget;
             var answer = System.Windows.MessageBox.Show(
                 "确认结案事件 " + target.EventNo + "？\n结案后事件归档，仅可补录处置记录与复盘。",
@@ -427,7 +427,7 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (SupplementTarget == null) { ErrorText = "请选择已结案事件"; return; }
             if (string.IsNullOrWhiteSpace(SupplementContent)) { ErrorText = "请填写操作内容"; return; }
-            if (string.IsNullOrWhiteSpace(SupplementResult)) { ErrorText = "请填写处置结果（BR-EMG-04）"; return; }
+            if (string.IsNullOrWhiteSpace(SupplementResult)) { ErrorText = "请填写处置结果"; return; }
             var target = SupplementTarget;
             await RunAsync(async () =>
             {

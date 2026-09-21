@@ -28,6 +28,37 @@ namespace PropertyManagement.Client.ViewModels
 
         public string Name { get { return Dto.Name; } }
 
+        /// <summary>CHG-v1.1.2-26：收费标准名（价目表重构后列表以「收费标准 + 规格」呈现价格口径）。</summary>
+        public string StandardText { get { return string.IsNullOrWhiteSpace(Dto.StandardName) ? "—" : Dto.StandardName; } }
+
+        /// <summary>CHG-v1.1.2-26：规格条数（同项目多规格 = 差异化收费不再多建项目）。</summary>
+        public string SpecText { get { return Dto.SpecCount > 0 ? Dto.SpecCount + " 条规格" : "统一价"; } }
+
+        /// <summary>
+        /// CHG-v1.1.2-26 / FIX-v1.1.2-03：默认单价列**只展示一条规格**（多条时以「起」标注），
+        /// 避免同一单元格塞进多档价格造成拥挤与视觉遮挡；完整价目表见「价目表」页签。
+        /// </summary>
+        public string SpecPriceText
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(Dto.SpecPriceText))
+                {
+                    return PriceText;
+                }
+                var parts = Dto.SpecPriceText.Split(new[] { " · " }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(x =>
+                    {
+                        int idx = x.LastIndexOf(' ');
+                        return idx > 0 ? x.Substring(0, idx) + " ¥" + x.Substring(idx + 1) : x;
+                    })
+                    .ToList();
+                if (parts.Count == 0) { return PriceText; }
+                string first = parts[0];
+                return Dto.SpecCount > 1 ? first + " 起" : first;
+            }
+        }
+
         public string CategoryText { get { return string.IsNullOrEmpty(Dto.Category) ? "未分类" : Dto.Category; } }
 
         public string MethodText
@@ -51,7 +82,9 @@ namespace PropertyManagement.Client.ViewModels
                 string unit = string.IsNullOrEmpty(Dto.PriceUnit) ? string.Empty : Dto.PriceUnit;
                 string baseText = "¥" + Dto.UnitPrice.ToString("0.00") + "/" + unit;
                 string suffix = CycleSuffix();
-                return string.IsNullOrEmpty(suffix) ? baseText : baseText + "·" + suffix;
+                string text = string.IsNullOrEmpty(suffix) ? baseText : baseText + "·" + suffix;
+                // CHG-v1.1.2-06：配置了自定义公式的项目，列表直接标注公式，避免「看不到实际计费口径」
+                return string.IsNullOrWhiteSpace(Dto.Formula) ? text : text + " · 公式：" + Dto.Formula;
             }
         }
 
@@ -126,7 +159,7 @@ namespace PropertyManagement.Client.ViewModels
     }
 
     /// <summary>收费项目维护页（PG-FIN-01，T4F-1-1~1-4：搜索占位/类别字典/表格对齐/表单重建+业务联动）。</summary>
-    public class ChargeItemsViewModel : FinancePageViewModel
+    public partial class ChargeItemsViewModel : FinancePageViewModel
     {
         private static readonly DictItemDto AllFilter = new DictItemDto { Id = 0, ItemName = "全部" };
 
@@ -145,6 +178,16 @@ namespace PropertyManagement.Client.ViewModels
         private DictItemDto _formObject;
         private DictItemDto _formCycle;
         private bool _formEnabled = true;
+        private string _formFormula = string.Empty;
+        private ChargeFormulaTemplate _formFormulaTemplate;
+
+        /// <summary>CHG-v1.1.2-06：计价公式模板（选中即回填公式文本，可继续手改）。</summary>
+        public class ChargeFormulaTemplate
+        {
+            public string Name { get; set; }
+            public string Formula { get; set; }
+            public string Description { get; set; }
+        }
 
         private bool _isCustomDialogVisible;
         private string _customDialogTitle = string.Empty;
@@ -156,10 +199,10 @@ namespace PropertyManagement.Client.ViewModels
         private readonly DispatcherTimer _searchDebounce;
         private bool _isConfirmVisible;
         private ChargeItemRow _confirmRow;
-        private bool _isBatchConfirmVisible;
-        private string _batchConfirmMessage = string.Empty;
-        private List<ChargeItemRow> _batchRows;
         private bool _isSelectAll;
+        /// <summary>FIX-v1.1.2-01：并发加载保护（序号令牌 + 写入锁）。</summary>
+        private int _itemsLoadSeq;
+        private readonly object _itemsLoadSync = new object();
         private string _customInputRemark = string.Empty;
 
         public ChargeItemsViewModel(IApiClient api) : base(api)
@@ -185,9 +228,8 @@ namespace PropertyManagement.Client.ViewModels
             DeleteCommand = new RelayCommand<ChargeItemRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => { ConfirmRow = null; IsConfirmVisible = false; });
-            BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
-            ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
-            CancelBatchDeleteCommand = new RelayCommand(() => { IsBatchConfirmVisible = false; _batchRows = null; });
+            // CHG-v1.1.2-26：价目表 / 规格 / 计量变量的命令装配
+            InitPriceList();
             _ = InitAsync();
         }
 
@@ -294,10 +336,27 @@ namespace PropertyManagement.Client.ViewModels
             get
             {
                 if (FormObject == null) { return "缴费对象决定该项目可对哪类对象出账"; }
-                return IsCustomObjectSelected
+                string baseHint = IsCustomObjectSelected
                     ? "自定义缴费对象：适用于租户、广告商等无房产/车位/业主档案的缴费方；出账时在账单工作台手工填写缴费对象名称"
                     : "缴费对象决定该项目向哪类对象出账（与生成账单表单一致）";
+                // CHG-v1.1.2-06：计价方式与缴费对象的匹配由「硬拦」改为「提示建议」（可自写公式覆盖）
+                string advice = ObjectMethodAdvice();
+                return string.IsNullOrEmpty(advice) ? baseHint : baseHint + "\n提示：" + advice;
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-06：计价方式与缴费对象的搭配建议（不再阻断保存）。
+        /// 例：选了「按建筑面积」却把缴费对象选成车位/业主时，按面积取值将为空 —— 提示改用房产或自写公式。
+        /// </summary>
+        private string ObjectMethodAdvice()
+        {
+            if (FormObject == null || FormMethod == null) { return null; }
+            bool usesArea = string.Equals(FormMethod.ItemCode, "area", StringComparison.OrdinalIgnoreCase) ||
+                            (FormFormula != null && FormFormula.Contains("面积"));
+            if (!usesArea) { return null; }
+            if (string.Equals(FormObject.ItemCode, "property", StringComparison.OrdinalIgnoreCase)) { return null; }
+            return "当前口径要用到「建筑面积」，建议把缴费对象改为「房产」；若确实要对车位/业主计费，请改用固定金额或自写公式";
         }
 
         /// <summary>CHG-v1.1.0-17：当前是否选择了自定义缴费对象。</summary>
@@ -318,6 +377,92 @@ namespace PropertyManagement.Client.ViewModels
 
         public bool FormEnabled { get { return _formEnabled; } set { SetProperty(ref _formEnabled, value); } }
 
+        // ---------- CHG-v1.1.2-06：自定义计价公式 ----------
+
+        /// <summary>计价公式模板（按建筑面积/按面积×月数/按户/按车位/按张/自定义）。</summary>
+        public ObservableCollection<ChargeFormulaTemplate> FormulaTemplates { get; } = new ObservableCollection<ChargeFormulaTemplate>
+        {
+            new ChargeFormulaTemplate { Name = "按建筑面积（月缴）", Formula = "单价 * 面积", Description = "适合按月收取的物业费：单价（元/㎡）× 建筑面积" },
+            new ChargeFormulaTemplate { Name = "按建筑面积 × 月数（年缴/季缴）", Formula = "单价 * 面积 * 月数", Description = "适合按年/季预收的物业费：系统按计费周期自动折算月数" },
+            new ChargeFormulaTemplate { Name = "按户", Formula = "单价", Description = "每户一笔固定金额" },
+            new ChargeFormulaTemplate { Name = "按车位", Formula = "单价", Description = "每个车位一笔固定金额" },
+            new ChargeFormulaTemplate { Name = "按张", Formula = "单价 * 数量", Description = "按张/按次计费（数量默认 1）" },
+            new ChargeFormulaTemplate { Name = "自定义", Formula = "", Description = "自行书写公式，可用变量：单价、面积、月数、天数、数量" }
+        };
+
+        /// <summary>计价公式（选填）。留空 = 按所选计价方式的内置口径计算。</summary>
+        public string FormFormula
+        {
+            get { return _formFormula; }
+            set
+            {
+                if (SetProperty(ref _formFormula, value))
+                {
+                    OnPropertyChanged(nameof(FormulaHint));
+                    OnPropertyChanged(nameof(HasFormulaError));
+                    OnPropertyChanged(nameof(FormObjectHint));
+                }
+            }
+        }
+
+        /// <summary>公式模板选择：选中即把模板公式写入公式框（「自定义」清空，交给用户手写）。</summary>
+        public ChargeFormulaTemplate FormFormulaTemplate
+        {
+            get { return _formFormulaTemplate; }
+            set
+            {
+                if (SetProperty(ref _formFormulaTemplate, value) && value != null)
+                {
+                    FormFormula = value.Formula ?? string.Empty;
+                }
+            }
+        }
+
+        /// <summary>公式实时校验：合法（或留空）显示口径说明，非法显示中文原因。</summary>
+        public string FormulaHint
+        {
+            get
+            {
+                string error = ValidateFormula(_formFormula);
+                if (error != null) { return error; }
+                return string.IsNullOrWhiteSpace(_formFormula)
+                    ? "留空：按所选计价方式计算（按建筑面积 = 单价 × 面积，其余 = 单价）"
+                    : "生效口径：出账时按该公式计算金额。可用变量：单价 / 面积 / 月数 / 天数 / 数量，运算符仅 + - * / ( )";
+            }
+        }
+
+        public bool HasFormulaError { get { return ValidateFormula(_formFormula) != null; } }
+
+        /// <summary>公式合法性（与画布同口径的轻量校验；服务端仍会二次校验）。</summary>
+        private static string ValidateFormula(string formula)
+        {
+            if (string.IsNullOrWhiteSpace(formula)) { return null; }
+            string text = formula.Trim();
+            string[] variables = { "单价", "面积", "月数", "天数", "数量" };
+            int depth = 0;
+            for (int i = 0; i < text.Length; i++)
+            {
+                char c = text[i];
+                if (c == '(') { depth++; continue; }
+                if (c == ')') { depth--; if (depth < 0) { return "公式括号不匹配：多了一个右括号"; } continue; }
+                if (char.IsDigit(c) || c == '.' || c == '+' || c == '-' || c == '*' || c == '/' || char.IsWhiteSpace(c)) { continue; }
+                if (char.IsLetter(c))
+                {
+                    int start = i;
+                    while (i < text.Length && char.IsLetter(text[i])) { i++; }
+                    string token = text.Substring(start, i - start);
+                    i--;
+                    bool known = false;
+                    foreach (string v in variables) { if (v == token) { known = true; break; } }
+                    if (!known) { return "公式中的变量「" + token + "」无效，可用变量：" + string.Join("、", variables); }
+                    continue;
+                }
+                return "公式中存在无法识别的字符「" + c + "」";
+            }
+            if (depth != 0) { return "公式括号不匹配：缺少右括号"; }
+            return null;
+        }
+
         /// <summary>单价单位提示（随计价方式联动：按建筑面积→元/㎡；按户→元/户…）。</summary>
         public string PriceUnitHint
         {
@@ -332,8 +477,6 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsConfirmVisible { get { return _isConfirmVisible; } private set { SetProperty(ref _isConfirmVisible, value); } }
 
         public ChargeItemRow ConfirmRow { get { return _confirmRow; } private set { SetProperty(ref _confirmRow, value); } }
-        public bool IsBatchConfirmVisible { get { return _isBatchConfirmVisible; } private set { SetProperty(ref _isBatchConfirmVisible, value); } }
-        public string BatchConfirmMessage { get { return _batchConfirmMessage; } private set { SetProperty(ref _batchConfirmMessage, value); } }
         /// <summary>全选：勾选/取消勾选当前列表全部行。</summary>
         public bool IsSelectAll
         {
@@ -376,9 +519,6 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<ChargeItemRow> DeleteCommand { get; }
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
         public IRelayCommand CancelDeleteCommand { get; }
-        public IRelayCommand BatchDeleteCommand { get; }
-        public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
-        public IRelayCommand CancelBatchDeleteCommand { get; }
 
         private async Task InitAsync()
         {
@@ -387,24 +527,41 @@ namespace PropertyManagement.Client.ViewModels
                 await EnsureDictsAsync();
                 _inited = true;
                 await LoadItemsCoreAsync();
+                // CHG-v1.1.2-26：价目表页签与「新增项目」步骤一共享同一份收费标准缓存
+                await LoadStandardsCoreAsync();
             }, "收费项目已加载");
         }
 
         public async Task LoadAsync()
         {
-            await RunAsync(LoadItemsCoreAsync, "收费项目已加载");
+            await RunAsync(async () =>
+            {
+                await LoadItemsCoreAsync();
+                await LoadStandardsCoreAsync();
+            }, "收费项目已加载");
         }
 
         private async Task LoadItemsCoreAsync()
         {
-            Items.Clear();
+            // FIX-v1.1.2-01（负责人反馈「新增项目会多出一条重复项目」）：
+            // 根因＝并发加载：页面存在多处加载入口（搜索防抖、保存/删除后刷新、页签切换），
+            // 原实现「先 Items.Clear() 再 await 取数」，两次加载会在清空与追加之间交错，把同一批行追加两遍。
+            // 处置＝① 先取数后替换（消除空表中间态）；② 序号令牌＋写入锁，保证只有最后一次加载能写回，
+            //        且「清空 + 追加」在同一临界区内原子完成（不依赖调用线程是 UI 线程）。
+            int seq = ++_itemsLoadSeq;
             var list = await Api.GetChargeItemsAsync(Keyword, CategoryFilterName);
             IEnumerable<ChargeItemDto> query = list;
             if (StatusFilter == 1) { query = query.Where(x => x.Status == 0); }
             else if (StatusFilter == 2) { query = query.Where(x => x.Status != 0); }
-            foreach (ChargeItemDto dto in query.OrderBy(x => x.Id))
+            List<ChargeItemRow> rows = query.OrderBy(x => x.Id).Select(x => new ChargeItemRow { Dto = x }).ToList();
+            lock (_itemsLoadSync)
             {
-                Items.Add(new ChargeItemRow { Dto = dto });
+                if (seq != _itemsLoadSeq) { return; }   // 已有更新的加载在途，本次结果作废
+                Items.Clear();
+                foreach (ChargeItemRow row in rows)
+                {
+                    Items.Add(row);
+                }
             }
             _isSelectAll = false;
             OnPropertyChanged(nameof(IsSelectAll));
@@ -526,6 +683,7 @@ namespace PropertyManagement.Client.ViewModels
             FormCycle = Cycles.FirstOrDefault(x => x.ItemCode == "monthly") ?? Cycles.FirstOrDefault();
             FormEnabled = true;
             FormObject = ResolveObject("property");   // 默认房产，用户可按计价方式调整
+            FormFormulaTemplate = FormulaTemplates.FirstOrDefault();   // 默认「按建筑面积（月缴）」
             IsFormVisible = true;
         }
 
@@ -547,6 +705,10 @@ namespace PropertyManagement.Client.ViewModels
             FormCycle = ResolveCycle(row.Dto.CycleType == BillingCycleType.Custom ? row.Dto.CycleName : null);
             FormEnabled = row.Dto.Status == 0;
             FormObject = ResolveObject(ResolveObjectCode(row.Dto));
+            // CHG-v1.1.2-06：回显已保存的计价公式（存量项目为空 = 沿用内置口径）
+            _formFormulaTemplate = null;
+            OnPropertyChanged(nameof(FormFormulaTemplate));
+            FormFormula = row.Dto.Formula ?? string.Empty;
             IsFormVisible = true;
         }
 
@@ -595,6 +757,12 @@ namespace PropertyManagement.Client.ViewModels
                 ErrorText = "请选择缴费对象";
                 return;
             }
+            string formulaError = ValidateFormula(FormFormula);
+            if (formulaError != null)
+            {
+                ErrorText = "计价公式不合法：" + formulaError;
+                return;
+            }
 
             BillingCycleType cycleType = ResolveFormCycleType();
             if (cycleType == BillingCycleType.Custom && string.IsNullOrWhiteSpace(FormCycle.ItemName))
@@ -618,6 +786,8 @@ namespace PropertyManagement.Client.ViewModels
                                  : (cycleType == BillingCycleType.OneTime ? "一次性" : string.Empty),
                     Status = FormEnabled ? 0 : 1,
                     PayMode = MapPayMode(cycleType),
+                    // CHG-v1.1.2-06：自定义计价公式（留空则按计价方式内置口径计算）
+                    Formula = string.IsNullOrWhiteSpace(FormFormula) ? null : FormFormula.Trim(),
                     // CHG-v1.1.0-16/17：缴费对象由表单显式选择（与生成账单的缴费对象一致；以字典编码为准）
                     ObjectCode = FormObject.ItemCode,
                     ObjectType = IsFixedObjectCode(FormObject.ItemCode)
@@ -682,7 +852,7 @@ namespace PropertyManagement.Client.ViewModels
                     Status = row.Dto.Status == 0 ? 1 : 0
                 });
                 await LoadItemsCoreAsync();
-            }, row.IsEnabled ? "收费项目已停用（不影响已出账单 BR-FIN-03）" : "收费项目已启用");
+            }, row.IsEnabled ? "收费项目已停用（不影响已出账单）" : "收费项目已启用");
         }
 
         private void RequestDelete(ChargeItemRow row)
@@ -696,37 +866,15 @@ namespace PropertyManagement.Client.ViewModels
         {
             ChargeItemRow row = ConfirmRow;
             if (row == null) { return; }
-            await RunAsync(async () =>
+            // CHG-v1.1.2-35：已被账单引用的收费项目不能删除 —— 服务端原因用弹窗明确告知
+            await RunDeleteAsync(async () =>
             {
                 await Api.DeleteChargeItemAsync(row.Id);
                 ConfirmRow = null;
                 IsConfirmVisible = false;
                 await LoadItemsCoreAsync();
-            }, "收费项目已删除（软删除，历史账单与流水不受影响 BR-FIN-03）");
-        }
-
-        private void RequestBatchDelete()
-        {
-            var rows = Items.Where(x => x.IsChecked).ToList();
-            if (rows.Count == 0) { ErrorText = "请先勾选要删除的收费项目"; return; }
-            string desc = string.Join("、", rows.Take(3).Select(r => r.Name));
-            if (rows.Count > 3) { desc += " 等 " + rows.Count + " 项"; }
-            _batchRows = rows;
-            BatchConfirmMessage = "将删除 " + rows.Count + " 项收费项目（软删除，历史账单与流水不受影响）：\n" + desc;
-            IsBatchConfirmVisible = true;
-        }
-
-        private async Task ConfirmBatchDeleteAsync()
-        {
-            var rows = _batchRows;
-            IsBatchConfirmVisible = false;
-            if (rows == null || rows.Count == 0) { return; }
-            await RunAsync(async () =>
-            {
-                foreach (var r in rows) { await Api.DeleteChargeItemAsync(r.Id); }
-                _batchRows = null;
-                await LoadItemsCoreAsync();
-            }, "已批量删除 " + rows.Count + " 项收费项目（软删除 BR-FIN-03）");
+                return "收费项目已删除（软删除，历史账单与流水不受影响）";
+            }, "收费项目未能删除");
         }
 
         private void OpenCustomDialog(string typeCode, string title, bool showRemark)

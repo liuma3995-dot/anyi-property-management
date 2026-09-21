@@ -17,8 +17,19 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             string sql = "SELECT id, name, pay_mode AS PayMode, unit_price AS UnitPrice, " +
                          "cycle_type AS CycleType, object_type AS ObjectType, status, del_flag AS DelFlag, " +
-                         "category, method_code AS MethodCode, method_name AS MethodName, " +
+                         "category, method_code AS MethodCode, method_name AS MethodName, formula, " +
                          "price_unit AS PriceUnit, cycle_name AS CycleName, object_code AS ObjectCode, " +
+                         "standard_id AS StandardId, allow_price_override AS AllowPriceOverride, " +
+                         // CHG-v1.1.2-26：收费标准名 + 规格数/启用数 + 价格概览（列表「收费标准/规格」两列）
+                         "(SELECT s.name FROM t_charge_standard s WHERE s.id = t_charge_item.standard_id AND s.del_flag = 0) AS StandardName, " +
+                         "(SELECT COUNT(1) FROM t_charge_standard_spec sp WHERE sp.standard_id = t_charge_item.standard_id AND sp.del_flag = 0) AS SpecCount, " +
+                         // FIX-v1.1.2-03：默认单价列只展示**一条**启用规格（非兜底优先、id 升序，结果确定），
+                         // 完整价目表在「价目表」页签查看；另返回启用规格数供「起」标注使用。
+                         "(SELECT sp.spec_name || ' ' || printf('%.2f', sp.unit_price) FROM t_charge_standard_spec sp " +
+                         " WHERE sp.standard_id = t_charge_item.standard_id AND sp.del_flag = 0 AND sp.status = 0 " +
+                         " ORDER BY sp.is_fallback, sp.id LIMIT 1) AS SpecPriceText, " +
+                         "(SELECT COUNT(1) FROM t_charge_standard_spec sp WHERE sp.standard_id = t_charge_item.standard_id " +
+                         " AND sp.del_flag = 0 AND sp.status = 0) AS EnabledSpecCount, " +
                          // CHG-v1.1.0-17：缴费对象显示名取自 charge_object 字典（自定义项改名后项目列表同步刷新）
                          "(SELECT di.item_name FROM t_dict_item di WHERE di.type_code = 'charge_object' " +
                          " AND di.item_code = t_charge_item.object_code AND di.del_flag = 0 LIMIT 1) AS ObjectName " +
@@ -42,8 +53,16 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.QueryFirstOrDefault<ChargeItemDto>(
                 "SELECT id, name, pay_mode AS PayMode, unit_price AS UnitPrice, " +
                 "cycle_type AS CycleType, object_type AS ObjectType, status, del_flag AS DelFlag, " +
-                "category, method_code AS MethodCode, method_name AS MethodName, " +
+                "category, method_code AS MethodCode, method_name AS MethodName, formula, " +
                 "price_unit AS PriceUnit, cycle_name AS CycleName, object_code AS ObjectCode, " +
+                "standard_id AS StandardId, allow_price_override AS AllowPriceOverride, " +
+                "(SELECT s.name FROM t_charge_standard s WHERE s.id = t_charge_item.standard_id AND s.del_flag = 0) AS StandardName, " +
+                "(SELECT COUNT(1) FROM t_charge_standard_spec sp WHERE sp.standard_id = t_charge_item.standard_id AND sp.del_flag = 0) AS SpecCount, " +
+                "(SELECT sp.spec_name || ' ' || printf('%.2f', sp.unit_price) FROM t_charge_standard_spec sp " +
+                " WHERE sp.standard_id = t_charge_item.standard_id AND sp.del_flag = 0 AND sp.status = 0 " +
+                " ORDER BY sp.is_fallback, sp.id LIMIT 1) AS SpecPriceText, " +
+                "(SELECT COUNT(1) FROM t_charge_standard_spec sp WHERE sp.standard_id = t_charge_item.standard_id " +
+                " AND sp.del_flag = 0 AND sp.status = 0) AS EnabledSpecCount, " +
                 "(SELECT di.item_name FROM t_dict_item di WHERE di.type_code = 'charge_object' " +
                 " AND di.item_code = t_charge_item.object_code AND di.del_flag = 0 LIMIT 1) AS ObjectName " +
                 "FROM t_charge_item WHERE id = @id AND del_flag = 0", new { id });
@@ -53,9 +72,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.QueryFirstOrDefault<ChargeItemDto>(
                 "SELECT id, name, pay_mode AS PayMode, unit_price AS UnitPrice, cycle_type AS CycleType, " +
-                "object_type AS ObjectType, status, del_flag AS DelFlag, category, method_code AS MethodCode, " +
+                "object_type AS ObjectType, status, del_flag AS DelFlag, category, method_code AS MethodCode, formula, " +
                 "method_name AS MethodName, price_unit AS PriceUnit, cycle_name AS CycleName, " +
-                "object_code AS ObjectCode, " +
+                "object_code AS ObjectCode, standard_id AS StandardId, allow_price_override AS AllowPriceOverride, " +
+                "(SELECT s.name FROM t_charge_standard s WHERE s.id = t_charge_item.standard_id AND s.del_flag = 0) AS StandardName, " +
+                "(SELECT COUNT(1) FROM t_charge_standard_spec sp WHERE sp.standard_id = t_charge_item.standard_id AND sp.del_flag = 0) AS SpecCount, " +
                 "(SELECT di.item_name FROM t_dict_item di WHERE di.type_code = 'charge_object' " +
                 " AND di.item_code = t_charge_item.object_code AND di.del_flag = 0 LIMIT 1) AS ObjectName " +
                 "FROM t_charge_item WHERE name = @name AND del_flag = 0 LIMIT 1", new { name });
@@ -65,10 +86,12 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.ExecuteScalar<int>(
                 "INSERT INTO t_charge_item (name, pay_mode, unit_price, cycle_type, object_type, status, del_flag, " +
-                "category, method_code, method_name, price_unit, cycle_name, object_code) " +
+                "category, method_code, method_name, price_unit, cycle_name, object_code, formula, " +
+                "standard_id, allow_price_override) " +
                 "VALUES (@Name, @PayMode, @UnitPrice, @CycleType, @ObjectType, @Status, 0, " +
-                "@Category, @MethodCode, @MethodName, @PriceUnit, @CycleName, @ObjectCode); SELECT last_insert_rowid();",
-                new { item.Name, item.PayMode, item.UnitPrice, item.CycleType, item.ObjectType, item.Status, item.Category, item.MethodCode, item.MethodName, item.PriceUnit, item.CycleName, item.ObjectCode }, transaction);
+                "@Category, @MethodCode, @MethodName, @PriceUnit, @CycleName, @ObjectCode, @Formula, " +
+                "@StandardId, @AllowPriceOverrideInt); SELECT last_insert_rowid();",
+                new { item.Name, item.PayMode, item.UnitPrice, item.CycleType, item.ObjectType, item.Status, item.Category, item.MethodCode, item.MethodName, item.PriceUnit, item.CycleName, item.ObjectCode, item.Formula, item.StandardId, AllowPriceOverrideInt = item.AllowPriceOverride ? 1 : 0 }, transaction);
         }
 
         public void UpdateChargeItem(IDbConnection connection, IDbTransaction transaction, ChargeItemDto item)
@@ -76,11 +99,12 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             connection.Execute(
                 "UPDATE t_charge_item SET name = @Name, pay_mode = @PayMode, unit_price = @UnitPrice, " +
                 "cycle_type = @CycleType, object_type = @ObjectType, status = @Status, " +
-                "category = @Category, method_code = @MethodCode, method_name = @MethodName, " +
+                "category = @Category, method_code = @MethodCode, method_name = @MethodName, formula = @Formula, " +
                 "price_unit = @PriceUnit, cycle_name = @CycleName, object_code = @ObjectCode, " +
+                "standard_id = @StandardId, allow_price_override = @AllowPriceOverrideInt, " +
                 "updated_at = datetime('now','localtime') " +
                 "WHERE id = @Id AND del_flag = 0",
-                new { item.Id, item.Name, item.PayMode, item.UnitPrice, item.CycleType, item.ObjectType, item.Status, item.Category, item.MethodCode, item.MethodName, item.PriceUnit, item.CycleName, item.ObjectCode }, transaction);
+                new { item.Id, item.Name, item.PayMode, item.UnitPrice, item.CycleType, item.ObjectType, item.Status, item.Category, item.MethodCode, item.MethodName, item.PriceUnit, item.CycleName, item.ObjectCode, item.Formula, item.StandardId, AllowPriceOverrideInt = item.AllowPriceOverride ? 1 : 0 }, transaction);
         }
 
         public void SoftDeleteChargeItem(IDbConnection connection, IDbTransaction transaction, int id)
@@ -88,6 +112,13 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             connection.Execute(
                 "UPDATE t_charge_item SET del_flag = 1, updated_at = datetime('now','localtime') " +
                 "WHERE id = @id AND del_flag = 0", new { id }, transaction);
+        }
+
+        /// <summary>CHG-v1.1.2-35：该项目被多少张未删除账单引用（含草稿；删除先拦，避免账单失去收费项目）。</summary>
+        public int CountChargeItemBills(IDbConnection connection, int id)
+        {
+            return connection.ExecuteScalar<int>(
+                "SELECT COUNT(1) FROM t_bill WHERE charge_item_id = @id AND del_flag = 0", new { id });
         }
 
         // ---------- 计费周期 ----------
@@ -130,20 +161,39 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         public IEnumerable<BillObjectCandidate> ListPropertyCandidates(IDbConnection connection)
         {
             return connection.Query<BillObjectCandidate>(
-                "SELECT id, room_no AS No, area AS Area FROM t_property WHERE del_flag = 0 ORDER BY room_no");
+                // CHG-v1.1.2-26：附带用途 / 状态 / 楼栋 —— 规格自动匹配的三维依据
+                "SELECT p.id, p.room_no AS No, p.area AS Area, p.usage AS Usage, p.status AS Status, " +
+                "COALESCE(b.building_no, '') AS BuildingNo " +
+                "FROM t_property p " +
+                "LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                "LEFT JOIN t_building b ON b.id = u.building_id " +
+                "WHERE p.del_flag = 0 ORDER BY p.room_no");
         }
 
         public IEnumerable<BillObjectCandidate> ListParkingCandidates(IDbConnection connection)
         {
             return connection.Query<BillObjectCandidate>(
-                "SELECT id, space_no AS No, NULL AS Area FROM t_parking_space WHERE del_flag = 0 ORDER BY space_no");
+                "SELECT id, space_no AS No, NULL AS Area, space_type AS SpaceType " +
+                "FROM t_parking_space WHERE del_flag = 0 ORDER BY space_no");
         }
 
-        /// <summary>CHG-v1.1.0-11：业主缴费对象候选（业主直缴）。</summary>
+        /// <summary>
+        /// CHG-v1.1.0-11：业主缴费对象候选（业主直缴）。
+        /// CHG-v1.1.2-49：带出业主名下主房产的「楼栋 单元 房号」（Address），供出账预演/失败明细区分同名业主。
+        /// </summary>
         public IEnumerable<BillObjectCandidate> ListOwnerCandidates(IDbConnection connection)
         {
             return connection.Query<BillObjectCandidate>(
-                "SELECT id, name AS No, NULL AS Area FROM t_owner WHERE del_flag = 0 ORDER BY id");
+                "SELECT o.id, o.name AS No, NULL AS Area, " +
+                // 楼栋/单元/房号三段拼接后压缩重复空格（单元可空时不留「1栋  101」这种双空格）
+                "  (SELECT TRIM(REPLACE(REPLACE(COALESCE(b.building_no,'') || ' ' || COALESCE(u.unit_no,'') || ' ' || COALESCE(p.room_no,''), '  ', ' '), '  ', ' ')) " +
+                "   FROM t_owner_property_rel r " +
+                "   JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                "   LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                "   LEFT JOIN t_building b ON b.id = p.building_id " +
+                "   WHERE r.owner_id = o.id AND r.del_flag = 0 AND r.rel_status <> 2 " +
+                "   ORDER BY r.id DESC LIMIT 1) AS Address " +
+                "FROM t_owner o WHERE o.del_flag = 0 ORDER BY o.id");
         }
 
         /// <summary>
@@ -175,7 +225,17 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                     ownerWhere += " AND ( COALESCE(o.name,'') LIKE @kwLike OR COALESCE(o.phone,'') LIKE @kwLike )";
                 }
                 string ownerSql =
-                    "SELECT o.id AS Id, 'owner' AS Kind, o.name AS No, " +
+                    // CHG-v1.1.2-49：业主「缴费对象」单元格改为「姓名 · 楼栋 单元 房号」（名下主房产）——
+                    // 同名业主据此区分需要缴费的对象；未绑定房产时明示「未绑定房产」。
+                    "SELECT o.id AS Id, 'owner' AS Kind, " +
+                    "  o.name || ' · ' || COALESCE(NULLIF((" +
+                    "     SELECT TRIM(REPLACE(REPLACE(COALESCE(b.building_no,'') || ' ' || COALESCE(u.unit_no,'') || ' ' || COALESCE(p.room_no,''), '  ', ' '), '  ', ' ')) " +
+                    "     FROM t_owner_property_rel r " +
+                    "     JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                    "     LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                    "     LEFT JOIN t_building b ON b.id = p.building_id " +
+                    "     WHERE r.owner_id = o.id AND r.del_flag = 0 AND r.rel_status <> 2 " +
+                    "     ORDER BY r.id DESC LIMIT 1), ''), '未绑定房产') AS No, " +
                     "  '手机 ' || COALESCE(NULLIF(o.phone,''), '未登记') || ' · 名下房产 ' || " +
                     "  (SELECT COUNT(1) FROM t_owner_property_rel r " +
                     "   WHERE r.owner_id = o.id AND r.del_flag = 0 AND r.rel_status <> 2) || ' 套' AS SubText, " +
@@ -231,7 +291,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             }
             string propSql =
                 "SELECT p.id AS Id, 'property' AS Kind, " +
-                "  TRIM(COALESCE(b.building_no,'') || ' ' || COALESCE(u.unit_no,'') || ' ' || p.room_no) AS No, " +
+                // 同口径压缩空格（单元可空时不留双空格）
+                "  TRIM(REPLACE(REPLACE(COALESCE(b.building_no,'') || ' ' || COALESCE(u.unit_no,'') || ' ' || p.room_no, '  ', ' '), '  ', ' ')) AS No, " +
                 "  (CASE WHEN p.area IS NULL OR p.area <= 0 THEN '建筑面积未填写' ELSE '建筑面积 ' || printf('%.2f', p.area) || ' ㎡' END) || " +
                 "  (CASE p.usage WHEN 1 THEN ' · 商铺' ELSE ' · 住宅' END) AS SubText, " +
                 "  COALESCE(o.name,'') AS OwnerName, 0 AS NoOwner, p.area AS Area " +
@@ -335,31 +396,38 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.ExecuteScalar<int>(
                 "INSERT INTO t_bill (charge_item_id, property_id, parking_id, owner_id, payer_name, cycle_id, amount, paid_amount, " +
-                "status, due_at, generate_batch_id, del_flag) " +
-                "VALUES (@ChargeItemId, @PropertyId, @ParkingId, @OwnerId, @PayerName, @CycleId, @Amount, 0, @Status, @DueAt, @GenerateBatchId, @DelFlag); " +
+                "status, due_at, generate_batch_id, del_flag, charge_spec_id, measure_snapshot, unit_price_snapshot, formula_snapshot) " +
+                "VALUES (@ChargeItemId, @PropertyId, @ParkingId, @OwnerId, @PayerName, @CycleId, @Amount, 0, @Status, @DueAt, @GenerateBatchId, @DelFlag, " +
+                "@ChargeSpecId, @MeasureSnapshot, @UnitPriceSnapshot, @FormulaSnapshot); " +
                 "SELECT last_insert_rowid();",
-                new { bill.ChargeItemId, bill.PropertyId, bill.ParkingId, bill.OwnerId, bill.PayerName, bill.CycleId, bill.Amount, bill.Status, bill.DueAt, bill.GenerateBatchId, bill.DelFlag },
+                new { bill.ChargeItemId, bill.PropertyId, bill.ParkingId, bill.OwnerId, bill.PayerName, bill.CycleId, bill.Amount, bill.Status, bill.DueAt, bill.GenerateBatchId, bill.DelFlag, bill.ChargeSpecId, bill.MeasureSnapshot, bill.UnitPriceSnapshot, bill.FormulaSnapshot },
                 transaction);
         }
 
-        public void UpdateBillPaidAmount(IDbConnection connection, IDbTransaction transaction, BillDto bill)
+        /// <summary>
+        /// CHG-v1.1.2-40：应收（amount）与实缴（paid_amount）一并回写 ——
+        /// 减免调减应收、退款/调减冲减实缴，账单工作台/收款登记/欠费台账同源于 t_bill，改这一处即全链路同步。
+        /// </summary>
+        public void UpdateBillAmountAndPaid(IDbConnection connection, IDbTransaction transaction, BillDto bill)
         {
             connection.Execute(
-                "UPDATE t_bill SET paid_amount = @PaidAmount, status = @Status, " +
+                "UPDATE t_bill SET amount = @Amount, paid_amount = @PaidAmount, status = @Status, " +
                 "updated_at = datetime('now','localtime') WHERE id = @Id",
-                new { bill.Id, bill.PaidAmount, bill.Status }, transaction);
+                new { bill.Id, bill.Amount, bill.PaidAmount, bill.Status }, transaction);
         }
 
         /// <summary>
-        /// 逾期判定（CHG-v1.1.0-17 修订）：只有**超过到期日一整天**才置为逾期。
-        /// 原口径 due_at &lt; now（含时分秒）导致「账单期间＝当天」的账单在当天即被标逾期；
-        /// 现口径按时间差 &gt; 1 天判定（到期当天与次日不逾期），并把此前被误标逾期的账单回正。
+        /// 逾期判定（CHG-v1.1.2-35 修订）：**到期当天不逾期、到期次日（第二天）同样不逾期**，
+        /// 从到期日之后的第二天（即第三天）起才算逾期 —— 按「自然日」比较，不掺时分秒。
+        /// 历史口径：原 due_at &lt; now 使「账期＝当天」的账单当天即逾期；CHG-v1.1.0-17 改为差值 &gt; 1 天，
+        /// 但按时间戳比较会让「到期次日 10:00」这类时点仍被判逾期；本次统一按日期差 &gt; 1 天。
+        /// 同时把此前被误标逾期的账单回正（保留状态流水）。
         /// </summary>
         public void MarkOverdue(IDbConnection connection, IDbTransaction transaction, DateTime now)
         {
             var overdue = connection.Query<int>(
                 "SELECT id FROM t_bill WHERE del_flag = 0 AND status IN (0,1) " +
-                "AND amount > paid_amount AND julianday(@now) - julianday(due_at) > 1",
+                "AND amount > paid_amount AND julianday(date(@now)) - julianday(date(due_at)) > 1",
                 new { now }, transaction).ToList();
 
             foreach (int id in overdue)
@@ -376,7 +444,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             // 口径回正：曾被误标「逾期」但到期日未超过一整天的账单，退回未缴/部分缴（保留状态流水）
             var corrected = connection.Query<int>(
                 "SELECT id FROM t_bill WHERE del_flag = 0 AND status = 2 AND amount > paid_amount " +
-                "AND julianday(@now) - julianday(due_at) <= 1",
+                "AND julianday(date(@now)) - julianday(date(due_at)) <= 1",
                 new { now }, transaction).ToList();
 
             foreach (int id in corrected)
@@ -490,19 +558,24 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             "CASE WHEN COALESCE(b.payer_name, '') <> '' THEN b.payer_name " +
             "     WHEN b.owner_id IS NOT NULL THEN '业主：' || COALESCE(bo.name, '') " +
             "     ELSE COALESCE(p.room_no, ps.space_no, '') END AS PropertyNo, " +
-            // CHG-v1.1.0-17：业主直缴账单（办卡费/清理费/维修费等）无房产行，楼栋/房号回落到业主名下主房产，
-            // 保证收款登记下拉「姓名 · 楼栋 · 房号 · 欠费 N 笔」四段口径在任何缴费对象下都完整。
+            // CHG-v1.1.0-17 / CHG-v1.1.2-53：业主直缴（办卡费/清理费/维修费等）与**车位账单**都没有房产行，
+            // 楼栋/房号一律回落到「该账单**缴费人**名下主房产」，保证收款登记下拉
+            // 「姓名 · 楼栋 · 房号 · 欠费 N 笔」四段口径在任何缴费对象下都完整。
+            // 原实现用 `b.owner_id IS NOT NULL` 作守卫 → 车位账单（owner_id 为空、缴费人经 ps.owner_id 解析）
+            // 取不到楼栋/房号，下拉只剩「姓名 · — · — · 欠费 N 笔」；现改用已解析的缴费人 `o.id`。
+            // 两段子查询用同一排序（楼栋 → 房号）取同一套房产，避免同一位业主的楼栋与房号来自不同房产。
             "COALESCE(bd.building_no, " +
             "  (SELECT bd2.building_no FROM t_owner_property_rel r2 " +
             "   JOIN t_property p2 ON p2.id = r2.property_id AND p2.del_flag = 0 " +
             "   JOIN t_building bd2 ON bd2.id = p2.building_id AND bd2.del_flag = 0 " +
-            "   WHERE b.owner_id IS NOT NULL AND r2.owner_id = b.owner_id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
-            "   ORDER BY r2.id DESC LIMIT 1), '') AS BuildingNo, " +
+            "   WHERE o.id IS NOT NULL AND r2.owner_id = o.id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
+            "   ORDER BY bd2.building_no, p2.room_no, r2.id LIMIT 1), '') AS BuildingNo, " +
             "COALESCE(p.room_no, " +
             "  (SELECT p2.room_no FROM t_owner_property_rel r2 " +
             "   JOIN t_property p2 ON p2.id = r2.property_id AND p2.del_flag = 0 " +
-            "   WHERE b.owner_id IS NOT NULL AND r2.owner_id = b.owner_id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
-            "   ORDER BY r2.id DESC LIMIT 1), '') AS RoomNo, COALESCE(ps.space_no, '') AS SpaceNo, " +
+            "   JOIN t_building bd2 ON bd2.id = p2.building_id AND bd2.del_flag = 0 " +
+            "   WHERE o.id IS NOT NULL AND r2.owner_id = o.id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
+            "   ORDER BY bd2.building_no, p2.room_no, r2.id LIMIT 1), '') AS RoomNo, COALESCE(ps.space_no, '') AS SpaceNo, " +
             // CHG-v1.1.0-18：缴费人取已 JOIN 的业主主键（而非 COALESCE 表达式）——
             // 表达式列在 System.Data.SQLite 中按「首行值类型」推断类型，若首行为 NULL（如自定义缴费对象账单）
             // 会把该列判为字符串，第二行出现 INTEGER 时 Dapper 反序列化抛 InvalidCastException
@@ -684,7 +757,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         // ---------- 欠费台账 ----------
         public PageResult<ArrearDto> QueryArrears(IDbConnection connection, BillQueryRequest query)
         {
-            string where = "WHERE b.del_flag = 0 AND b.amount > b.paid_amount AND b.status IN (0,1,2)";
+            // CHG-v1.1.2-03（负责人 2026-09-19 裁定 A）：台账「删除」= 移出台账 —— 只影响台账可见性，
+            // 不再软删 t_bill（原口径会连带删掉账单工作台账单、收款登记、退款、业主档案缴费概况）。
+            string where = "WHERE b.del_flag = 0 AND b.amount > b.paid_amount AND b.status IN (0,1,2) " +
+                "AND NOT EXISTS (SELECT 1 FROM t_arrear_dismiss d WHERE d.bill_id = b.id)";
             var parameters = new DynamicParameters();
 
             if (query.PropertyId.HasValue)
@@ -714,6 +790,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
             string from = "FROM t_bill b " +
                 "JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
+                // CHG-v1.1.2-54：台账「欠费期间」取账单真实账期（与收款登记 / 账单工作台同源）
+                "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
                 "LEFT JOIN t_property p ON p.id = b.property_id " +
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
                 "LEFT JOIN t_building bld ON bld.id = u.building_id " +
@@ -730,7 +808,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "CAST((b.amount - b.paid_amount) AS REAL) AS ArrearAmount, b.due_at AS DueAt, " +
                 "CAST(julianday('now','localtime') - julianday(b.due_at) AS INTEGER) AS AgingDays, " +
                 "COALESCE((SELECT r.channel FROM t_arrear_remind_log r WHERE r.bill_id = b.id ORDER BY r.id DESC LIMIT 1), '') AS RemindChannel, " +
-                "COALESCE(bld.building_no, '') AS BuildingNo " +
+                "COALESCE(bld.building_no, '') AS BuildingNo, " +
+                // CHG-v1.1.2-54：真实账期（原「欠费期间」按到期日倒推一个月推算，按年/一次性账单显示错误）
+                "COALESCE(substr(cy.start_date, 1, 10), '') AS CycleStart, " +
+                "COALESCE(substr(cy.end_date, 1, 10), '') AS CycleEnd " +
                 from + " " + where + " ORDER BY b.due_at, b.id LIMIT @limit OFFSET @offset";
             parameters.Add("limit", pageSize);
             parameters.Add("offset", offset);
@@ -746,6 +827,45 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "INSERT INTO t_arrear_remind_log (bill_id, channel, note, created_by) " +
                 "VALUES (@billId, @channel, @note, @userId)",
                 new { billId, channel, note, userId }, transaction);
+        }
+
+        // ---------- 欠费台账「移出台账」（CHG-v1.1.2-03） ----------
+        public int DismissArrearBills(IDbConnection connection, IDbTransaction transaction,
+            IEnumerable<int> billIds, string reason, string operatorName)
+        {
+            var list = (billIds ?? Enumerable.Empty<int>()).Distinct().Where(x => x > 0).ToList();
+            if (list.Count == 0) { return 0; }
+            return connection.Execute(
+                "INSERT OR IGNORE INTO t_arrear_dismiss (bill_id, reason, operator) " +
+                "SELECT id, @reason, @operatorName FROM t_bill WHERE id IN @ids AND del_flag = 0",
+                new { ids = list, reason, operatorName }, transaction);
+        }
+
+        public int RestoreArrearBills(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> dismissIds)
+        {
+            var list = (dismissIds ?? Enumerable.Empty<int>()).Distinct().Where(x => x > 0).ToList();
+            if (list.Count == 0) { return 0; }
+            return connection.Execute(
+                "DELETE FROM t_arrear_dismiss WHERE id IN @ids", new { ids = list }, transaction);
+        }
+
+        /// <summary>已移出台账的记录（按移出时间倒序）。账号数据仍完好，可随时「恢复台账」。</summary>
+        public List<ArrearDismissDto> QueryDismissedArrears(IDbConnection connection)
+        {
+            return connection.Query<ArrearDismissDto>(
+                "SELECT d.id, d.bill_id AS BillId, COALESCE(o.name, '') AS OwnerName, " +
+                "COALESCE(p.room_no, ps.space_no, '') AS PropertyNo, COALESCE(ci.name, '') AS ChargeItemName, " +
+                "CAST((b.amount - b.paid_amount) AS REAL) AS ArrearAmount, " +
+                "COALESCE(d.reason, '') AS Reason, COALESCE(d.operator, '') AS Operator, d.created_at AS CreatedAt " +
+                "FROM t_arrear_dismiss d " +
+                "JOIN t_bill b ON b.id = d.bill_id " +
+                "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
+                "LEFT JOIN t_property p ON p.id = b.property_id " +
+                "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
+                "LEFT JOIN t_owner o ON o.id = COALESCE(" +
+                "  (SELECT owner_id FROM t_owner_property_rel rel WHERE rel.property_id = b.property_id AND rel.del_flag = 0 ORDER BY rel.id DESC LIMIT 1), " +
+                "  ps.owner_id) " +
+                "ORDER BY d.id DESC LIMIT 500").ToList();
         }
 
         public void SoftDeleteBill(IDbConnection connection, IDbTransaction transaction, int id)
@@ -777,10 +897,14 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
             int offset = (pageIndex - 1) * pageSize;
-            total = connection.ExecuteScalar<int>("SELECT COUNT(1) FROM t_payment");
+            // CHG-v1.1.2-02：账单被删除（批次删除）后，其收款记录同步不再出现在收款登记记录列表，
+            // 与欠费台账/财务报表/收支流水口径一致；无关联账单（bill_id = 0，冲正或补收调整）的记录保留可见。
+            const string where = " WHERE NOT EXISTS (SELECT 1 FROM t_bill b WHERE b.id = p.bill_id AND b.del_flag = 1)";
+            total = connection.ExecuteScalar<int>("SELECT COUNT(1) FROM t_payment p" + where);
             return connection.Query<PaymentDto>(
-                "SELECT id, bill_id AS BillId, amount, pay_method AS PayMethod, paid_at AS PaidAt, " +
-                "status, to_pre_deposit AS ToPreDeposit, remark, batch_no AS BatchNo FROM t_payment ORDER BY paid_at DESC, id DESC LIMIT @limit OFFSET @offset",
+                "SELECT p.id, p.bill_id AS BillId, p.amount, p.pay_method AS PayMethod, p.paid_at AS PaidAt, " +
+                "p.status, p.to_pre_deposit AS ToPreDeposit, p.remark, p.batch_no AS BatchNo FROM t_payment p" + where +
+                " ORDER BY p.paid_at DESC, p.id DESC LIMIT @limit OFFSET @offset",
                 new { limit = pageSize, offset }).ToList();
         }
 
@@ -861,10 +985,14 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         // ---------- 退款/减免/调整 ----------
         public int InsertRefund(IDbConnection connection, IDbTransaction transaction, RefundAdjustmentDto refund)
         {
+            // CHG-v1.1.2-04：无关联账单的账务调整 → bill_id 存 NULL（migration_046 起允许为空；
+            // 原用哨兵值 0 会撞 Foreign Keys=True 的外键校验）
+            int? billId = refund.BillId > 0 ? (int?)refund.BillId : null;
             return connection.ExecuteScalar<int>(
-                "INSERT INTO t_payment_refund (bill_id, refund_type, amount, reason, ref_no, attachment_name, attachment_path) " +
-                "VALUES (@BillId, @RefundType, @Amount, @Reason, @RefNo, @AttachmentName, @AttachmentPath); SELECT last_insert_rowid();",
-                new { refund.BillId, refund.RefundType, refund.Amount, refund.Reason, refund.RefNo, refund.AttachmentName, refund.AttachmentPath }, transaction);
+                // CHG-v1.1.2-41：新增 operator_name —— 单据 PDF 与审计追溯需要「经办人」随单据落库
+                "INSERT INTO t_payment_refund (bill_id, refund_type, amount, reason, ref_no, attachment_name, attachment_path, method, adjust_dir, operator_name) " +
+                "VALUES (@BillId, @RefundType, @Amount, @Reason, @RefNo, @AttachmentName, @AttachmentPath, @Method, @AdjustDir, @OperatorName); SELECT last_insert_rowid();",
+                new { BillId = billId, refund.RefundType, refund.Amount, refund.Reason, refund.RefNo, refund.AttachmentName, refund.AttachmentPath, refund.Method, refund.AdjustDir, refund.OperatorName }, transaction);
         }
 
         public List<RefundAdjustmentDto> ListRefunds(IDbConnection connection, PageRequest query, out int total)
@@ -872,18 +1000,25 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
             int offset = (pageIndex - 1) * pageSize;
-            total = connection.ExecuteScalar<int>("SELECT COUNT(1) FROM t_payment_refund");
+            // CHG-v1.1.2-02：账单删除后其退款/减免/调整记录同步不再显示（口径与收款登记/报表/流水一致）；
+            // 无关联账单（bill_id = 0）的调整记录不因此被隐藏。
+            const string from = " FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id" +
+                " WHERE (rb.id IS NULL OR rb.del_flag = 0)";
+            total = connection.ExecuteScalar<int>("SELECT COUNT(1)" + from);
             return connection.Query<RefundAdjustmentDto>(
                 "SELECT pr.id, pr.bill_id AS BillId, pr.refund_type AS RefundType, pr.amount, pr.reason, " +
                 "pr.ref_no AS RefNo, pr.created_at AS CreatedAt, pr.attachment_name AS AttachmentName, " +
-                "pr.attachment_path AS AttachmentPath, " +
+                "pr.attachment_path AS AttachmentPath, pr.method AS Method, pr.adjust_dir AS AdjustDir, " +
+                "COALESCE(pr.operator_name, '') AS OperatorName, " +
                 "COALESCE(p.room_no, ps.space_no, '') AS PropertyNo " +
                 "FROM t_payment_refund pr " +
+                "LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
                 "LEFT JOIN t_bill b ON b.id = pr.bill_id " +
                 "LEFT JOIN t_property p ON p.id = b.property_id " +
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
                 "LEFT JOIN t_building bld ON bld.id = u.building_id " +
                 "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
+                "WHERE (rb.id IS NULL OR rb.del_flag = 0) " +
                 "ORDER BY pr.id DESC LIMIT @limit OFFSET @offset",
                 new { limit = pageSize, offset }).ToList();
         }
@@ -892,6 +1027,53 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.ExecuteScalar<decimal?>(
                 "SELECT paid_amount FROM t_bill WHERE id = @billId", new { billId }) ?? 0m;
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-41：单据详情（导出 PDF 用）—— 一次取齐单据本体 + 关联账单口径 + 缴费对象四要素。
+        /// 与账单列表同口径解析业主（直缴 → 本人；房产 → 有效业主关系；车位 → 绑定业主），
+        /// 与收款登记「姓名 · 楼栋 · 房号」展示保持一致。
+        /// </summary>
+        public RefundRecordDetailDto GetRefundRecord(IDbConnection connection, int id)
+        {
+            return connection.QueryFirstOrDefault<RefundRecordDetailDto>(
+                "SELECT pr.id, pr.ref_no AS RefNo, pr.refund_type AS RefundType, pr.adjust_dir AS AdjustDir, " +
+                "pr.amount, pr.reason, pr.method AS Method, COALESCE(pr.operator_name, '') AS OperatorName, " +
+                "pr.created_at AS CreatedAt, COALESCE(pr.attachment_name, '') AS AttachmentName, " +
+                "COALESCE(pr.bill_id, 0) AS BillId, " +
+                "b.amount AS BillAmount, b.paid_amount AS BillPaidAmount, b.status AS BillStatus, " +
+                "COALESCE(ci.name, '') AS ChargeItemName, " +
+                "CASE WHEN cy.id IS NULL THEN '' ELSE " +
+                "  COALESCE(substr(cy.start_date, 1, 10), '') || ' ~ ' || COALESCE(substr(cy.end_date, 1, 10), '') END AS CyclePeriod, " +
+                "COALESCE(b.payer_name, '') AS PayerName, COALESCE(o.name, '') AS OwnerName, " +
+                "COALESCE(bd.building_no, '') AS BuildingNo, COALESCE(p.room_no, '') AS RoomNo, " +
+                "COALESCE(ps.space_no, '') AS SpaceNo " +
+                "FROM t_payment_refund pr " +
+                "LEFT JOIN t_bill b ON b.id = pr.bill_id " +
+                "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
+                "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                "LEFT JOIN t_property p ON p.id = b.property_id " +
+                "LEFT JOIN t_building bd ON bd.id = p.building_id " +
+                "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
+                "LEFT JOIN t_owner o ON o.id = COALESCE(b.owner_id, " +
+                "  (SELECT rel.owner_id FROM t_owner_property_rel rel WHERE rel.property_id = b.property_id " +
+                "   AND rel.del_flag = 0 AND rel.rel_status <> 2 ORDER BY rel.id DESC LIMIT 1), " +
+                "  ps.owner_id) " +
+                "WHERE pr.id = @id", new { id });
+        }
+
+        /// <summary>
+        /// 某账单已冲减实缴的金额合计（CHG-v1.1.2-07，CHG-v1.1.2-40 收口）：
+        /// 计退款（0）与调减冲正（2 / adjust_dir = 2）；**不计**调增补收（adjust_dir = 1，本是增收）与
+        /// 减免（refund_type = 1，已改为调减应收 —— 其效果体现在 t_bill.amount）。
+        /// </summary>
+        public decimal SumPaidCutsByBill(IDbConnection connection, IDbTransaction transaction, int billId)
+        {
+            if (billId <= 0) { return 0m; }
+            return connection.ExecuteScalar<decimal?>(
+                "SELECT CAST(COALESCE(SUM(amount), 0) AS REAL) FROM t_payment_refund " +
+                "WHERE bill_id = @billId AND refund_type <> 1 AND NOT (refund_type = 2 AND adjust_dir = 1)",
+                new { billId }, transaction) ?? 0m;
         }
 
         // ---------- 支出 ----------
@@ -1052,25 +1234,61 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 " WHERE rel.property_id = b.property_id ORDER BY rel.id DESC LIMIT 1), " +
                 "(SELECT o.name FROM t_owner o JOIN t_parking_space ps ON ps.owner_id = o.id WHERE ps.id = b.parking_id LIMIT 1), '')";
 
+            // CHG-v1.1.2-05 / CHG-v1.1.2-13：新增「楼栋/房号/单元」列，跨模块引用基础信息档案 ——
+            // 房产账单 → 该房产的「楼栋号/单元号/房号」；车位账单 → 车位编号；
+            // 业主直缴账单 → 该业主名下主房产的「楼栋号/单元号/房号」（业主-房产关系回查，跨模块引用）；
+            // 自定义缴费对象（无档案）→ 手工填写的名称；支出行为空。
+            const string propertyPathSql =
+                "COALESCE(bld.building_no, '') || " +
+                "CASE WHEN COALESCE(u.unit_no, '') <> '' THEN '/' || u.unit_no || '单元' ELSE '' END || " +
+                "CASE WHEN COALESCE(p.room_no, '') <> '' THEN '/' || p.room_no ELSE '' END";
+            string objectExpr = "COALESCE(" +
+                "(SELECT " + propertyPathSql + " FROM t_property p " +
+                // 无单元房产（v1.1.0 起允许）：楼栋直接取 p.building_id，避免经 unit 关联后楼栋丢失
+                " LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                " LEFT JOIN t_building bld ON bld.id = COALESCE(u.building_id, p.building_id) " +
+                " WHERE p.id = b.property_id AND p.del_flag = 0), " +
+                "(SELECT ps.space_no FROM t_parking_space ps WHERE ps.id = b.parking_id AND ps.del_flag = 0), " +
+                "(SELECT " + propertyPathSql.Replace("bld.", "bld2.").Replace("u.", "u2.").Replace("p.", "p2.") +
+                " FROM t_owner_property_rel rel2 JOIN t_property p2 ON p2.id = rel2.property_id AND p2.del_flag = 0 " +
+                " LEFT JOIN t_unit u2 ON u2.id = p2.unit_id " +
+                " LEFT JOIN t_building bld2 ON bld2.id = COALESCE(u2.building_id, p2.building_id) " +
+                " WHERE rel2.owner_id = b.owner_id AND rel2.del_flag = 0 ORDER BY rel2.id DESC LIMIT 1), " +
+                "NULLIF(b.payer_name, ''), '')";
+
             string from = "FROM (" +
                 "SELECT p.id AS Id, p.paid_at AS BizTime, 'payment' AS BizType, " +
                 // CHG-v1.1.0-15：关联单据优先取「收款流水号」（与收据打印模板一致），存量数据回落原收据号
                 "COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, '') AS BizNo, p.amount AS InAmount, 0 AS OutAmount, " +
                 "COALESCE(ci.name, '收款') AS Subject, " +
                 "CASE p.pay_method WHEN 0 THEN '现金' WHEN 1 THEN '转账' WHEN 2 THEN '微信' WHEN 3 THEN '银行转账' WHEN 4 THEN 'POS' ELSE '转账' END AS PayMethod, " +
-                "'系统管理员' AS OperatorName, " + ownerExpr + " AS OwnerName " +
+                "'系统管理员' AS OperatorName, " + ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id " +
                 "LEFT JOIN t_bill b ON b.id = p.bill_id " +
-                "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id WHERE p.status = 0 " +
+                // CHG-v1.1.2-02：账单删除后其流水同步不再计入（与收款登记/财务报表口径一致）
+                "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
+                "WHERE p.status = 0 AND (b.id IS NULL OR b.del_flag = 0) " +
                 "UNION ALL " +
-                "SELECT pr.id, pr.created_at, 'refund', COALESCE(pr.ref_no, ''), 0, pr.amount, '退款/冲减', '原路退回', '系统管理员', " + ownerExpr + " AS OwnerName " +
+                // CHG-v1.1.2-12：账务调整的 +/− 由「方式」决定 —— 调增补收计入收入方向，调减冲正/退款为冲减方向
+                // CHG-v1.1.2-40：减免改为「调减应收」，**不产生资金流出** → 不进收支明细流水（否则会把减免误记成支出）
+                "SELECT pr.id, pr.created_at, 'refund', COALESCE(pr.ref_no, ''), " +
+                "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN pr.amount ELSE 0 END AS InAmount, " +
+                "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN 0 ELSE pr.amount END AS OutAmount, " +
+                "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN '调增补收' " +
+                " WHEN pr.refund_type = 2 AND pr.adjust_dir = 2 THEN '调减冲正' " +
+                " WHEN pr.refund_type = 1 THEN '费用减免' ELSE '退款/冲减' END AS Subject, " +
+                "COALESCE(NULLIF(pr.method, ''), '原路退回') AS PayMethod, '系统管理员', " +
+                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment_refund pr LEFT JOIN t_bill b ON b.id = pr.bill_id " +
+                "WHERE (b.id IS NULL OR b.del_flag = 0) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
-                "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName " +
+                "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
                 "UNION ALL " +
-                "SELECT p.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " + ownerExpr + " AS OwnerName " +
-                "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id LEFT JOIN t_bill b ON b.id = p.bill_id WHERE p.status = 1) x";
+                "SELECT p.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " +
+                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
+                "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id LEFT JOIN t_bill b ON b.id = p.bill_id " +
+                "WHERE p.status = 1 AND (b.id IS NULL OR b.del_flag = 0)) x";
 
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
@@ -1078,7 +1296,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
             int total = connection.ExecuteScalar<int>("SELECT COUNT(1) " + from + where, parameters);
 
-            string sql = "SELECT Id, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, " +
+            string sql = "SELECT Id, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, ObjectText, " +
                 "CAST(InAmount AS REAL) AS InAmount, CAST(OutAmount AS REAL) AS OutAmount " +
                 from + where + " ORDER BY BizTime DESC, Id DESC LIMIT @limit OFFSET @offset";
             parameters.Add("limit", pageSize);
@@ -1149,25 +1367,42 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return report;
         }
 
+        /// <summary>
+        /// CHG-v1.1.2-55：某时间窗「收入净额」—— 与财务报表「收入合计」完全同源（复用同一批明细行）。
+        /// 仪表盘「本月已收」改用它，保证两个页面同一指标数字必然一致（原实现只汇总收款毛额，未扣退款/冲减）。
+        /// </summary>
+        public decimal SumReportIncome(IDbConnection connection, DateTime from, DateTime to, int? chargeItemId)
+        {
+            return LoadReportItems(connection, from, to, chargeItemId, true)
+                .Where(x => x.Type == "income")
+                .Sum(x => x.Amount);
+        }
+
         private static List<ReportItemDto> LoadReportItems(IDbConnection connection, DateTime from, DateTime to, int? chargeItemId, bool includeRefund)
         {
             var branches = new List<string>
             {
+                // CHG-v1.1.2-02：账单删除后，其收款不再计入报表收入（原口径漏过滤账单 del_flag，
+                // 导致「删了账单，报表仍算这笔钱」的账实不一致）。
                 "SELECT p.paid_at AS BizTime, 'income' AS BizType, COALESCE(ci.name, '收款') AS Subject, " +
                 "p.amount AS Signed, COALESCE(r.receipt_no, '') AS Note " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id " +
                 "LEFT JOIN t_bill b ON b.id = p.bill_id LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
-                "WHERE p.status = 0 AND date(p.paid_at) >= date(@from) AND date(p.paid_at) <= date(@to)" +
+                "WHERE p.status = 0 AND (b.id IS NULL OR b.del_flag = 0) " +
+                "AND date(p.paid_at) >= date(@from) AND date(p.paid_at) <= date(@to)" +
                 (chargeItemId.HasValue ? " AND b.charge_item_id = @cid" : string.Empty)
             };
 
             if (includeRefund)
             {
+                // CHG-v1.1.2-40：减免＝调减应收（不走资金），不再计入报表收入/支出方向
                 branches.Add(
                     "SELECT pr.created_at AS BizTime, 'income' AS BizType, '退款/冲减' AS Subject, " +
-                    "-pr.amount AS Signed, COALESCE(pr.ref_no, '') AS Note " +
+                    "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN pr.amount ELSE -pr.amount END AS Signed, " +
+                    "COALESCE(pr.ref_no, '') AS Note " +
                     "FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
-                    "WHERE date(pr.created_at) >= date(@from) AND date(pr.created_at) <= date(@to)" +
+                    "WHERE (rb.id IS NULL OR rb.del_flag = 0) AND pr.refund_type <> 1 " +
+                    "AND date(pr.created_at) >= date(@from) AND date(pr.created_at) <= date(@to)" +
                     (chargeItemId.HasValue ? " AND rb.charge_item_id = @cid" : string.Empty));
             }
 

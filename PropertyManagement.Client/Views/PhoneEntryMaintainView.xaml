@@ -241,7 +241,7 @@
                     <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}" Stroke="#5B3DF5" Width="12" Height="12" />
                     <TextBlock Text="交互标注" Foreground="#5B3DF5" FontSize="11" FontWeight="SemiBold" Margin="6,0,0,0" />
                 </StackPanel>
-                <TextBlock Text="· 员工离职 → 其通讯录来源条目自动【自动停用】并通知管理员确认（UC-TEL-005）" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
+                <TextBlock Text="· 员工离职 → 其通讯录来源条目自动【自动停用】并通知管理员确认" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,4,0,0" />
                 <TextBlock Text="· 新增/编辑时校验号码重复与格式；【同步员工通讯录】→ 按在岗员工批量刷新" Foreground="#4A3AB0" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>
         </Border>

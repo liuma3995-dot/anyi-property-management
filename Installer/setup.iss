@@ -269,6 +269,16 @@ end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 begin
-  if (CurUninstallStep = usPostUninstall) and DeleteUserData then
-    DelTree(ExpandConstant('{commonappdata}\PropertyManagement'), True, True, True);
+  if CurUninstallStep = usPostUninstall then
+  begin
+    (* 卸载清理客户端本地缓存（负责人 2026-09-21 裁定）：
+       %LocalAppData%\PropertyManagement 存有 session.json（登录态）/ prefs.json（记住账号）/ crash.log。
+       此前卸载不清理，重装后只要本地会话未过期，客户端会跳过登录页直接进入上次登录态，故随卸载一并删除。
+       口径：只清当前 Windows 用户的本地缓存；共享数据目录 commonappdata 仍按上面的询问处理
+       （默认保留，选择「一并删除」时连同清理）。 *)
+    DelTree(ExpandConstant('{localappdata}\PropertyManagement'), True, True, True);
+
+    if DeleteUserData then
+      DelTree(ExpandConstant('{commonappdata}\PropertyManagement'), True, True, True);
+  end;
 end;

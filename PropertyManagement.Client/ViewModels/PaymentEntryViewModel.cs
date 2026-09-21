@@ -147,6 +147,14 @@ namespace PropertyManagement.Client.ViewModels
         public string BuildingNo { get; set; }
         public string RoomNo { get; set; }
 
+        /// <summary>
+        /// CHG-v1.1.2-53：车位编号。缴费人名下**没有房产**（只有车位，或业主直缴未绑房产）时，
+        /// 下拉用「车位 X」定位缴费对象，避免楼栋/房号两段都退化成「—」、同名缴费人无法分辨。
+        /// </summary>
+        public string SpaceNo { get; set; }
+        /// <summary>CHG-v1.1.2-53：名下车位数量（&gt;1 时下拉标注「等 N 个」）。</summary>
+        public int SpaceCount { get; set; }
+
         public int DueCount { get; set; }
 
         /// <summary>
@@ -162,14 +170,26 @@ namespace PropertyManagement.Client.ViewModels
                     // CHG-v1.1.0-18：自定义缴费对象无楼栋/房号，按「名称 · 自定义缴费对象 · 欠费 N 笔」展示
                     return PayerName + " · 自定义缴费对象 · 欠费 " + DueCount + " 笔";
                 }
-                string building = string.IsNullOrEmpty(BuildingNo) ? "—" : BuildingNo;
-                string room = string.IsNullOrEmpty(RoomNo) ? "—" : RoomNo;
-                return name + " · " + building + " · " + room + " · 欠费 " + DueCount + " 笔";
+                if (!string.IsNullOrEmpty(BuildingNo) || !string.IsNullOrEmpty(RoomNo))
+                {
+                    string building = string.IsNullOrEmpty(BuildingNo) ? "—" : BuildingNo;
+                    string room = string.IsNullOrEmpty(RoomNo) ? "—" : RoomNo;
+                    return name + " · " + building + " · " + room + " · 欠费 " + DueCount + " 笔";
+                }
+                // CHG-v1.1.2-53：无房产的缴费人（车主 / 未绑房产的业主）用「车位 X / 业主直缴」兜底，
+                // 不再输出「姓名 · — · — · 欠费 N 笔」这种分辨不出缴费对象的下拉项。
+                string label = string.IsNullOrEmpty(SpaceNo)
+                    ? "业主直缴"
+                    : "车位 " + SpaceNo + (SpaceCount > 1 ? " 等 " + SpaceCount + " 个" : string.Empty);
+                return name + " · " + label + " · 欠费 " + DueCount + " 笔";
             }
         }
     }
 
-    /// <summary>收款登记页（PG-FIN-03，UC-FIN-003/011，P-06，BR-FIN-02/08；T4F-3-1 三合计/经手人/收款日期/超额提示/HP-58 收据/确认弹窗）。</summary>
+    /// <summary>
+    /// 收款登记页（PG-FIN-03，UC-FIN-003/011，BR-FIN-02/08；T4F-3-1 三合计/经手人/收款日期/收据模板/确认弹窗）。
+    /// CHG-v1.1.2-51：下线「多缴自动转入预存账户」提示与链路，改为止付提示（收款金额不得超过账单未收金额）。
+    /// </summary>
     public class PaymentEntryViewModel : FinancePageViewModel
     {
         private PropertyPaymentOption _selectedProperty;
@@ -178,8 +198,7 @@ namespace PropertyManagement.Client.ViewModels
         private int _payMethod;
         private DateTime _payDate;
         private bool _printReceipt = true;
-        private string _preDepositText = "—";
-        private string _preDepositHintText = string.Empty;
+        private string _amountWarnText = string.Empty;
         private string _receivableTotalText = "¥0.00";
         private string _paidTotalText = "¥0.00";
         private string _unpaidTotalText = "¥0.00";
@@ -427,7 +446,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (CheckedBillCount == 0) { return "请先勾选待缴账单"; }
                 if (IsBatchPayment) { return "统一收款：按勾选账单欠费合计收款（不支持部分缴）"; }
-                return "单张收款：可修改金额，支持部分缴与超额转预存";
+                return "单张收款：可修改金额（不超过应缴金额），支持部分缴";
             }
         }
 
@@ -450,7 +469,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _payAmount, value))
                 {
-                    UpdatePreDepositHint();
+                    UpdateAmountWarn();
                     UpdateReceiptPreview();
                 }
             }
@@ -498,9 +517,8 @@ namespace PropertyManagement.Client.ViewModels
 
         public string UnpaidTotalText { get { return _unpaidTotalText; } private set { SetProperty(ref _unpaidTotalText, value); } }
 
-        public string PreDepositHintText { get { return _preDepositHintText; } private set { SetProperty(ref _preDepositHintText, value); } }
-
-        public string PreDepositText { get { return _preDepositText; } private set { SetProperty(ref _preDepositText, value); } }
+        /// <summary>CHG-v1.1.2-51：收款金额超限提示（原「多缴自动转入预存账户」提示已下线）。</summary>
+        public string AmountWarnText { get { return _amountWarnText; } private set { SetProperty(ref _amountWarnText, value); } }
 
         public string ReceiptPayeeText { get { return _receiptPayeeText; } private set { SetProperty(ref _receiptPayeeText, value); } }
 
@@ -576,8 +594,13 @@ namespace PropertyManagement.Client.ViewModels
                 // 服务端已按业主主房产回填楼栋/房号，此处回落到该行，保证四段格式恒完整。
                 if (primaryProperty == null)
                 {
-                    primaryProperty = g.FirstOrDefault(x => !string.IsNullOrEmpty(x.BuildingNo) || !string.IsNullOrEmpty(x.RoomNo));
+                    // CHG-v1.1.2-53：车位账单同样由服务端按缴费人名下主房产回填；
+                    // 排序口径与「主房产」一致（楼栋 → 房号），避免同一业主每次进页面显示不同的房产。
+                    primaryProperty = g.Where(x => !string.IsNullOrEmpty(x.BuildingNo) || !string.IsNullOrEmpty(x.RoomNo))
+                        .OrderBy(x => x.BuildingNo).ThenBy(x => x.RoomNo).FirstOrDefault();
                 }
+                // CHG-v1.1.2-53：无房产的缴费人（车主 / 未绑房产的业主）用名下车位编号兜底展示
+                var spaceBills = g.Where(x => !string.IsNullOrEmpty(x.SpaceNo)).ToList();
                 _allProperties.Add(new PropertyPaymentOption
                 {
                     PayerOwnerId = first.PayerOwnerId,
@@ -587,6 +610,8 @@ namespace PropertyManagement.Client.ViewModels
                     OwnerName = first.OwnerName ?? "",
                     BuildingNo = primaryProperty == null ? null : primaryProperty.BuildingNo,
                     RoomNo = primaryProperty == null ? null : primaryProperty.RoomNo,
+                    SpaceNo = spaceBills.Count == 0 ? null : spaceBills[0].SpaceNo,
+                    SpaceCount = spaceBills.Select(x => x.SpaceNo).Distinct().Count(),
                     DueCount = g.Count()
                 });
             }
@@ -602,7 +627,9 @@ namespace PropertyManagement.Client.ViewModels
                 source = source.Where(x =>
                     (x.OwnerName ?? string.Empty).Contains(kw) ||
                     (x.BuildingNo ?? string.Empty).Contains(kw) ||
-                    (x.RoomNo ?? string.Empty).Contains(kw));
+                    (x.RoomNo ?? string.Empty).Contains(kw) ||
+                    // CHG-v1.1.2-53：无房产业主（车主）支持按车位编号检索
+                    (x.SpaceNo ?? string.Empty).Contains(kw));
             }
             var matches = source.OrderBy(x => x.OwnerName).ThenBy(x => x.BuildingNo).ThenBy(x => x.RoomNo).ToList();
             PropertyPaymentOption keep = SelectedProperty != null && matches.Any(x => IsSameOption(x, SelectedProperty))
@@ -735,7 +762,7 @@ namespace PropertyManagement.Client.ViewModels
                 // CHG-v1.1.0-12：改由勾选驱动（单选/多选/全选统一收款），不再自动选中最早账单
                 SelectedBill = null;
                 PayAmount = 0m;
-                PreDepositHintText = string.Empty;
+                AmountWarnText = string.Empty;
                 NotifyBillSelectionChanged();
             }
         }
@@ -758,26 +785,32 @@ namespace PropertyManagement.Client.ViewModels
             PayAmount = _selectedBill.UnpaidAmount;
         }
 
-        private void UpdatePreDepositHint()
+        /// <summary>
+        /// CHG-v1.1.2-51：下线「多缴自动转入预存账户」—— 原提示承诺了一条并不闭环的业务链路
+        /// （超出金额静默转入预存账户，但系统没有预存余额的查看 / 退回入口）。
+        /// 现口径：收款金额不得超过该账单未收金额，超出即给出可读提示并阻止提交。
+        /// </summary>
+        private void UpdateAmountWarn()
         {
             if (IsBatchPayment)
             {
-                PreDepositHintText = string.Empty;   // 统一收款不支持部分缴/转预存
+                AmountWarnText = string.Empty;   // 统一收款按勾选账单欠费合计核销，不支持部分缴
                 return;
             }
             if (_selectedBill == null)
             {
-                PreDepositHintText = string.Empty;
+                AmountWarnText = string.Empty;
                 return;
             }
             if (PayAmount > _selectedBill.UnpaidAmount)
             {
                 var excess = PayAmount - _selectedBill.UnpaidAmount;
-                PreDepositHintText = "多缴 ¥" + excess.ToString("0.00") + " 自动转入预存账户";
+                AmountWarnText = "收款金额超出应缴 ¥" + excess.ToString("0.00") +
+                                 "，请调整为不超过该账单未收金额 ¥" + _selectedBill.UnpaidAmount.ToString("0.00");
             }
             else
             {
-                PreDepositHintText = string.Empty;
+                AmountWarnText = string.Empty;
             }
         }
 
@@ -829,6 +862,13 @@ namespace PropertyManagement.Client.ViewModels
                 if (PayAmount <= 0)
                 {
                     ErrorText = "收款金额必须大于 0";
+                    return;
+                }
+                // CHG-v1.1.2-51：下线「多缴转预存」后，收款金额不得超过该账单未收金额
+                if (PayAmount > _selectedBill.UnpaidAmount)
+                {
+                    ErrorText = "收款金额不能超过该账单未收金额 ¥" +
+                                _selectedBill.UnpaidAmount.ToString("0.00") + "，请调整后重新收款";
                     return;
                 }
                 ConfirmText = "金额 ¥" + PayAmount.ToString("0.00") + "，方式：" + PayMethodText + "，确认入账？";
@@ -926,10 +966,9 @@ namespace PropertyManagement.Client.ViewModels
             }
             else if (payment != null)
             {
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "收款已入账" +
-                    (payment.ToPreDeposit > 0
-                        ? "，超额 ¥" + payment.ToPreDeposit.ToString("0.00") + " 已转预存（P-06）"
-                        : "");
+                // CHG-v1.1.2-51：收款口径只有「全额 / 部分缴」，不再出现「超额转预存」结果提示
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "收款已入账 ¥" + amount.ToString("0.00") +
+                    "（流水中：" + (payment.BatchNo ?? string.Empty) + "）";
             }
         }
 
@@ -940,7 +979,6 @@ namespace PropertyManagement.Client.ViewModels
         private Task ApplyBatchReceiptAsync(PaymentBatchResultDto result)
         {
             BatchNoText = result.BatchNo;
-            PreDepositText = "查询业主预存余额（P-06）";
             // CHG-v1.1.0-20：缴款人取收款前捕获的上下文（不再依赖刷新后的选中态）
             ReceiptPayeeText = string.IsNullOrWhiteSpace(_lastPaidPayeeName) ? "—" : _lastPaidPayeeName;
             var names = _lastPaidItems.Select(x => x.ChargeItemName).Where(x => !string.IsNullOrEmpty(x));
@@ -961,7 +999,6 @@ namespace PropertyManagement.Client.ViewModels
         private void ApplySingleReceipt(PaymentDto payment, PaymentBillRow bill, decimal amount)
         {
             BatchNoText = payment == null ? string.Empty : (payment.BatchNo ?? string.Empty);
-            PreDepositText = "查询业主预存余额（P-06）";
             // CHG-v1.1.0-20：优先用收款前捕获的缴款人，回落本次账单自身口径
             ReceiptPayeeText = !string.IsNullOrWhiteSpace(_lastPaidPayeeName)
                 ? _lastPaidPayeeName

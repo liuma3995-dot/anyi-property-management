@@ -21,5 +21,14 @@ namespace PropertyManagement.Client.Views
             var vm = DataContext as DictParamViewModel;
             if (vm != null) { vm.RefreshSelectAllState(); }
         }
+
+        /// <summary>CHG-v1.1.2-26：计量变量行的勾选写回（只读 DataGrid 不自动回写源）。</summary>
+        private void ChargeVariableCheck_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox box && box.DataContext is ChargeVariableRow row)
+            {
+                row.IsSelected = box.IsChecked == true;
+            }
+        }
     }
 }

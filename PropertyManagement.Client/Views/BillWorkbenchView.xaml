@@ -1,10 +1,13 @@
 <UserControl x:Class="PropertyManagement.Client.Views.BillWorkbenchView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:PropertyManagement.Client.Views"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              FontFamily="微软雅黑">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <!-- CHG-v1.1.2-34：有手填计量参数时用输入框，无则回到只读展示 -->
+        <local:InverseBoolToVisibilityConverter x:Key="InverseBoolToVis" />
         <!-- CHG-v1.1.0-23：账单期间紧凑显示 + 悬停查看完整期间 -->
         <Style x:Key="GridCellTextWithTip" TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
             <Setter Property="ToolTip" Value="{Binding CyclePeriodFull}" />
@@ -386,13 +389,16 @@
         </Border>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="6" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="6" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器，长提示不再被右侧裁切 -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <!-- ============ 生成账单浮层 ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
-            <Border Width="860" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+            <Border Width="1000" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="700">
                 <StackPanel>
                     <TextBlock Text="生成账单（草稿）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
@@ -417,6 +423,9 @@
                             </DataTemplate>
                         </ComboBox.ItemTemplate>
                     </ComboBox>
+                    <!-- CHG-v1.1.2-35：周期派生变量的折算口径（每年 → 12 个月 = 1 年） -->
+                    <TextBlock Margin="0,-14,0,10" FontSize="9" TextWrapping="Wrap" Foreground="{StaticResource TextMutedBrush}"
+                               Text="周期折算：「月数 / 年数 / 天数」按收费标准的计费周期自动折算（每年 = 12 个月 · 1 年；每季 = 3 个月；每月 = 1 个月）；一次性不计周期倍数（三项均按 1 参与计算）；自定义周期按账期起止日期跨度折算。" />
 
                     <!-- CHG-M4-16：生成账单计费周期自定义（不再固定内置月份） -->
                     <TextBlock Text="自定义周期（可选，按起止日期新增）" FontSize="11" FontWeight="SemiBold"
@@ -478,7 +487,7 @@
                                       Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0" />
                                 <TextBox x:Name="BillObjectKeywordBox" Grid.Column="1" Style="{StaticResource SearchTextBox}" FontSize="11" Margin="8,0,12,0"
                                          Text="{Binding ObjectKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                         hc:InfoElement.Placeholder="房产搜楼栋/房号 · 车位搜编号 · 业主搜姓名/手机" />
+                                         hc:InfoElement.Placeholder="{Binding ObjectSearchPlaceholder}" />
                             </Grid>
                         </Border>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="6,0,4,0" VerticalAlignment="Center">
@@ -492,30 +501,124 @@
                         <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BillObjects}" IsReadOnly="True"
                                   RowHeight="32" MaxHeight="140" HeadersVisibility="Column">
                             <DataGrid.Columns>
-                                <DataGridTemplateColumn Width="40">
+                                <!-- CHG-v1.1.2-35 / -36：勾选列用「GridCheckCell + GridCheckBox」专用样式（去单元格 12px 内边距），
+                                     否则默认单元格内边距会把 24px 宽的勾选框裁掉一半（全仓其它模块同口径） -->
+                                <DataGridTemplateColumn Width="48" MinWidth="48" CellStyle="{StaticResource GridCheckCell}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="ObjectCheckBox_Click"
-                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                      Style="{StaticResource GridCheckBox}" />
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="缴费对象" Width="240" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
-                                <DataGridTextColumn Header="说明" Width="*" Binding="{Binding SubText}" ElementStyle="{StaticResource GridCellText}" />
-                                <DataGridTextColumn Header="缴费人" Width="120" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- CHG-v1.1.2-35：列宽按「对话框 1000 − 内边距」重排，表头文字与状态标识不再被裁切 -->
+                                <DataGridTextColumn Header="缴费对象" Width="170" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="规格（自动匹配）" Width="130" Binding="{Binding SpecText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- CHG-v1.1.2-50：单价列 —— 收费项目开启「出账时可改价」时按行改价（留空＝价目表单价）；
+                                     未开启时保持只读展示，与价目表口径一致。 -->
+                                <DataGridTemplateColumn Header="单价" Width="130">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding PriceText}" FontSize="11" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Visibility="{Binding IsPriceEditable, Converter={StaticResource InverseBoolToVis}}" />
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                                            Visibility="{Binding IsPriceEditable, Converter={StaticResource BoolToVis}}">
+                                                    <TextBox Width="58" Height="24" FontSize="11" VerticalContentAlignment="Center" Padding="4,0"
+                                                             Text="{Binding UnitPriceOverrideText, Mode=OneWay}"
+                                                             TextChanged="PriceOverrideTextBox_TextChanged"
+                                                             ToolTip="出账改价：填写本次出账单价（留空＝按价目表单价）；只作用于本次生成的账单" />
+                                                    <TextBlock Text="{Binding PriceUnitSuffix}" FontSize="10" VerticalAlignment="Center" Margin="3,0,0,0"
+                                                               Foreground="{StaticResource TextMutedBrush}" />
+                                                    <TextBlock Text="改价" FontSize="9" VerticalAlignment="Center" Margin="4,0,0,0"
+                                                               Foreground="{StaticResource PrimaryBrush}"
+                                                               Visibility="{Binding IsPriceOverridden, Converter={StaticResource BoolToVis}}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <!-- CHG-v1.1.2-34：价目表「手填」变量 → 出账行内输入框（其余来源只读展示计量结果） -->
+                                <DataGridTemplateColumn Header="计量" Width="196">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding MeasureText}" FontSize="11" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Visibility="{Binding HasMeasures, Converter={StaticResource InverseBoolToVis}}" />
+                                                <ItemsControl ItemsSource="{Binding Measures}"
+                                                              Visibility="{Binding HasMeasures, Converter={StaticResource BoolToVis}}">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <WrapPanel />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
+                                                                <TextBlock Text="{Binding Label}" FontSize="10" VerticalAlignment="Center"
+                                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                                <TextBox Width="52" Height="24" FontSize="11" Margin="4,0,0,0"
+                                                                         VerticalContentAlignment="Center"
+                                                                         Text="{Binding ValueText, Mode=OneWay}"
+                                                                         TextChanged="MeasureTextBox_TextChanged"
+                                                                         ToolTip="{Binding Hint}" />
+                                                                <TextBlock Text="{Binding UnitText}" FontSize="10" VerticalAlignment="Center"
+                                                                           Margin="3,0,0,0" Foreground="{StaticResource TextMutedBrush}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="预估金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTemplateColumn Header="状态" Width="88">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Border Background="{Binding PreviewBg}" CornerRadius="10" Padding="6,2" HorizontalAlignment="Left"
+                                                    ToolTip="{Binding PreviewReason}">
+                                                <TextBlock Text="{Binding PreviewState}" FontSize="11" FontWeight="SemiBold"
+                                                           Foreground="{Binding PreviewBrush}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="缴费人" Width="80" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
+                    <!-- CHG-v1.1.2-26：出账预演（规格命中 + 预估金额），与生成账单同口径 -->
+                    <StackPanel Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="{Binding PreviewSummaryText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding PreviewFailText}" FontSize="10" Foreground="#B76E00" TextWrapping="Wrap" />
+                    </StackPanel>
                     <StackPanel Visibility="{Binding IsCustomChargeObject, Converter={StaticResource BoolToVis}}">
                         <StackPanel Orientation="Horizontal" Margin="0,8,0,6">
                             <Button Style="{StaticResource LinkButton}" Content="新增一行" FontSize="12"
                                     Command="{Binding AddCustomPayerCommand}" />
-                            <TextBlock Text="手工填写缴费对象名称（如：1号楼租户-张三 / XX广告公司）"
+                            <TextBlock Text="无档案对象：手工填写名称 + 手选规格 + 手填计量参数（金额仍由价目表公式计算）"
                                        FontSize="10" Foreground="{StaticResource TextMutedBrush}"
                                        VerticalAlignment="Center" Margin="10,0,0,0" />
                         </StackPanel>
+                        <TextBlock Text="填写顺序：① 缴费对象名称（必填）→ ② 规格（手选，仅一条时自动选中）→ ③ 计量参数（按所选规格的公式显示，手填；“按周期自动折算”的项无需填写）→ ④ 生成草稿。"
+                                   FontSize="9" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="0,0,0,6" />
+                        <!-- CHG-v1.1.2-37：取价目表失败 / 无启用规格时给出可见原因 + 重试入口 -->
+                        <Border Background="#FDECEC" CornerRadius="6" Padding="8,6" Margin="0,0,0,6"
+                                Visibility="{Binding HasPriceListError, Converter={StaticResource BoolToVis}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding PriceListErrorText}" FontSize="10" TextWrapping="Wrap" MaxWidth="720"
+                                           Foreground="{StaticResource DangerBrush}" VerticalAlignment="Center" />
+                                <Button Style="{StaticResource LinkButton}" Content="重新加载价目表" FontSize="10"
+                                        Foreground="{StaticResource PrimaryBrush}" Margin="10,0,0,0" VerticalAlignment="Center"
+                                        Command="{Binding ReloadPriceListCommand}" />
+                            </StackPanel>
+                        </Border>
                         <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
-                            <ItemsControl x:Name="CustomPayerList" ItemsSource="{Binding CustomPayers}" MinHeight="72" MaxHeight="140">
+                            <ItemsControl x:Name="CustomPayerList" ItemsSource="{Binding CustomPayers}" MinHeight="96" MaxHeight="220">
                                 <ItemsControl.Template>
                                     <ControlTemplate TargetType="ItemsControl">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto">
@@ -525,31 +628,142 @@
                                 </ItemsControl.Template>
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <Grid Margin="8,6">
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <ColumnDefinition Width="Auto" />
-                                            </Grid.ColumnDefinitions>
-                                            <TextBox Grid.Column="0" Height="30" FontSize="12" VerticalContentAlignment="Center"
-                                                     Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
-                                                     AutomationProperties.HelpText="自定义缴费对象名称"
-                                                     hc:InfoElement.Placeholder="缴费对象名称（必填）" />
-                                            <Button Grid.Column="1" Style="{StaticResource LinkButton}" Content="删除"
-                                                    Foreground="{StaticResource DangerBrush}" FontSize="12"
-                                                    VerticalAlignment="Center" Margin="10,0,4,0"
-                                                    Command="{Binding DataContext.RemoveCustomPayerCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                                    CommandParameter="{Binding}" />
-                                        </Grid>
+                                        <StackPanel Margin="8,6">
+                                            <!-- CHG-v1.1.2-36：缴费对象 3 个输入项补显式引导文字（HandyControl 占位符在默认 TextBox 上不渲染） -->
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="170" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0" Text="缴费对象名称（必填）" FontSize="10" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="0,0,6,0" />
+                                                <TextBox Grid.Column="1" Height="30" FontSize="12" VerticalContentAlignment="Center"
+                                                         Padding="6,0"
+                                                         Text="{Binding Name, UpdateSourceTrigger=PropertyChanged}"
+                                                         AutomationProperties.HelpText="自定义缴费对象名称"
+                                                         hc:InfoElement.Placeholder="缴费对象名称（必填）" />
+                                                <TextBlock Grid.Column="2" Text="合同 / 备注编号（选填）" FontSize="10" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,6,0" />
+                                                <TextBox Grid.Column="3" Height="30" FontSize="12" VerticalContentAlignment="Center"
+                                                         Padding="6,0"
+                                                         Text="{Binding ContractNo, UpdateSourceTrigger=PropertyChanged}"
+                                                         AutomationProperties.HelpText="合同 / 备注编号（选填）"
+                                                         hc:InfoElement.Placeholder="合同 / 备注编号（选填）" />
+                                                <Button Grid.Column="4" Style="{StaticResource LinkButton}" Content="删除"
+                                                        Foreground="{StaticResource DangerBrush}" FontSize="12"
+                                                        VerticalAlignment="Center" Margin="10,0,4,0"
+                                                        Command="{Binding DataContext.RemoveCustomPayerCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                        CommandParameter="{Binding}" />
+                                            </Grid>
+                                            <!-- CHG-v1.1.2-46：规格 / 计量参数 两块排版对齐修正 ——
+                                                 ① 共用同一「标签列」（Auto＝两标签最大宽度），两个标签左边缘、
+                                                    两个控件的左边缘因此严格对齐（原先各自 Margin 起排，视觉上错位）；
+                                                 ② 拆成两行等距（规格一行、计量参数一行），互不挤压，也避免计量项多时换行
+                                                    把「字与输入框」挤成上下两块；
+                                                 ③ 控件高度统一 28（原 规格 28 / 计量框 26 不一致）；
+                                                 ④ 计算过程 / 金额移到规格行右侧居中，不再用两行堆叠顶开行高。 -->
+                                            <Grid Margin="0,8,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="Auto" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
+                                                </Grid.RowDefinitions>
+
+                                                <TextBlock Grid.Row="0" Grid.Column="0" Text="规格（手选）" FontSize="10"
+                                                           VerticalAlignment="Center" Margin="0,0,8,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <ComboBox Width="200" Height="28" FontSize="11" VerticalContentAlignment="Center"
+                                                              ItemsSource="{Binding SpecOptions}" DisplayMemberPath="SpecName"
+                                                              SelectedItem="{Binding SelectedSpec}"
+                                                              ToolTip="无档案对象：规格由用户手选（仅一条规格时自动选中；公式未用到的计量项不显示）" />
+                                                    <TextBlock Text="该收费标准没有启用中的规格，请先在「价目表」补充"
+                                                               FontSize="9" VerticalAlignment="Center" Margin="8,0,0,0"
+                                                               Foreground="{StaticResource DangerBrush}"
+                                                               Visibility="{Binding HasSpecWarning, Converter={StaticResource BoolToVis}}" />
+                                                </StackPanel>
+                                                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding ProcessText}" FontSize="10" MaxWidth="320"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                                                    <TextBlock Text="{Binding AmountText}" FontSize="12" FontWeight="SemiBold"
+                                                               VerticalAlignment="Center" Margin="10,0,0,0"
+                                                               Foreground="{StaticResource PrimaryBrush}" />
+                                                </StackPanel>
+
+                                                <!-- CHG-v1.1.2-50：自定义缴费对象的出账改价（仅收费项目开启时显示输入框） -->
+                                                <TextBlock Grid.Row="1" Grid.Column="0" Text="单价（出账改价）" FontSize="10"
+                                                           VerticalAlignment="Center" Margin="0,8,8,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <StackPanel Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Orientation="Horizontal"
+                                                            VerticalAlignment="Center" Margin="0,8,0,0">
+                                                    <TextBox Width="90" Height="28" FontSize="11" VerticalContentAlignment="Center" Padding="4,0"
+                                                             Text="{Binding UnitPriceOverrideText, UpdateSourceTrigger=PropertyChanged}"
+                                                             ToolTip="出账改价：填写本次出账单价（留空＝按所选规格的价目表单价）"
+                                                             Visibility="{Binding IsPriceEditable, Converter={StaticResource BoolToVis}}" />
+                                                    <TextBlock Text="按所选规格的价目表单价（本收费项目未开启「出账时可改价」）"
+                                                               FontSize="10" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource TextMutedBrush}"
+                                                               Visibility="{Binding IsPriceEditable, Converter={StaticResource InverseBoolToVis}}" />
+                                                </StackPanel>
+
+                                                <TextBlock Grid.Row="2" Grid.Column="0" Text="计量参数" FontSize="10"
+                                                           VerticalAlignment="Top" Margin="0,15,8,0"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                <ItemsControl Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2"
+                                                              ItemsSource="{Binding Measures}" Margin="0,8,0,0"
+                                                              VerticalAlignment="Center">
+                                                    <ItemsControl.ItemsPanel>
+                                                        <ItemsPanelTemplate>
+                                                            <!-- 计量项按「上下布局」逐行排列，每行＝文字 + 输入框 + 单位；
+                                                                 需要换行的项不会再横向挤在一起，也就不会与左侧「规格」错位。 -->
+                                                            <StackPanel Orientation="Vertical" />
+                                                        </ItemsPanelTemplate>
+                                                    </ItemsControl.ItemsPanel>
+                                                    <ItemsControl.ItemTemplate>
+                                                        <DataTemplate>
+                                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4" VerticalAlignment="Center">
+                                                                <TextBlock Text="{Binding Label}" FontSize="10" VerticalAlignment="Center"
+                                                                           Foreground="{StaticResource TextSecondaryBrush}" />
+                                                                <TextBox Width="64" Height="28" FontSize="11" Margin="4,0,0,0"
+                                                                         VerticalContentAlignment="Center" Padding="4,0"
+                                                                         IsReadOnly="{Binding IsReadOnly}"
+                                                                         Text="{Binding ValueText, UpdateSourceTrigger=PropertyChanged}"
+                                                                         ToolTip="{Binding Hint}" />
+                                                                <TextBlock Text="{Binding UnitText}" FontSize="10" VerticalAlignment="Center"
+                                                                           Margin="3,0,0,0" Foreground="{StaticResource TextMutedBrush}" />
+                                                            </StackPanel>
+                                                        </DataTemplate>
+                                                    </ItemsControl.ItemTemplate>
+                                                </ItemsControl>
+                                            </Grid>
+                                        </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </Border>
+                        <TextBlock Text="{Binding PreviewSummaryText}" FontSize="11" FontWeight="SemiBold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,6,0,0" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding PreviewFailText}" FontSize="10" Foreground="#B76E00" TextWrapping="Wrap" />
                     </StackPanel>
                     <TextBlock Style="{StaticResource HintLine}" Text="{Binding HiddenOwnerText}" />
                     <TextBlock Style="{StaticResource HintLine}" Text="{Binding ObjectListHint}" />
+                    <!-- CHG-v1.1.2-50：出账改价口径（开关来自「收费项目维护 → 出账时可改价」） -->
+                    <TextBlock Style="{StaticResource HintLine}" Text="{Binding PriceOverrideHintText}" />
                     <TextBlock Style="{StaticResource HintLine}"
                                Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}"
                                Text="提示：房产收物业费、车位收停车费、业主收办卡/清理/维修等直缴费用；全选只作用于当前搜索结果，未勾选任何缴费对象时无法生成。" />
+                    <TextBlock Style="{StaticResource HintLine}"
+                               Visibility="{Binding HasStandardMeasures, Converter={StaticResource BoolToVis}}"
+                               Text="提示：本收费标准的计算规则含「手填」计量变量（如车位数 / 度数 / 桶数），请先按缴费对象逐行填写「计量」再点生成草稿；未填写的行会进入失败明细。" />
                     <!-- CHG-v1.1.0-16：校验失败（如缴费对象与收费项目不一致）在弹窗内可见，避免提示被浮层遮住 -->
                     <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />

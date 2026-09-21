@@ -180,15 +180,15 @@ namespace PropertyManagement.Server.Services
         {
             // 当前系统仅内置 admin 管理员账号，以用户名判定管理员（后续接入角色体系时替换为角色校验）
             if (!string.Equals((operatorName ?? string.Empty).Trim(), "admin", StringComparison.OrdinalIgnoreCase))
-                throw ApiException.Forbidden("仅管理员可执行结案后补录（BR-DIS-04）");
+            throw ApiException.Forbidden("仅管理员可执行结案后补录");
             if (request == null || string.IsNullOrWhiteSpace(request.Reason))
-                throw ApiException.ValidationFailed("补录原因不能为空（BR-DIS-04）");
+            throw ApiException.ValidationFailed("补录原因不能为空");
             ValidateRecordContent(request.PlanSummary, request.Content);
             return WithTransaction((c, tx) =>
             {
                 var existing = _repo.GetCase(c, caseId) ?? throw ApiException.NotFound("纠纷案件不存在");
                 if (existing.Status != DisputeCaseStatus.Closed)
-                    throw ApiException.Conflict("仅已结案案件可补录处理记录（BR-DIS-04）");
+            throw ApiException.Conflict("仅已结案案件可补录处理记录");
                 var dto = new DisputeRecordDto
                 {
                     CaseId = caseId, RecordTime = DateTime.Now,
@@ -218,7 +218,7 @@ namespace PropertyManagement.Server.Services
                 }
                 else if (request.Status != existing.Status)
                 {
-                    throw ApiException.ValidationFailed("非法状态流转：纠纷状态仅允许 已登记→处理中→已结案（BR-DIS-01），结案请调用结案端点");
+            throw ApiException.ValidationFailed("非法状态流转：纠纷状态仅允许 已登记→处理中→已结案，结案请调用结案端点");
                 }
                 _repo.UpdateCase(c, tx, existing);
                 if ((int)existing.Status != oldStatus)
@@ -234,7 +234,7 @@ namespace PropertyManagement.Server.Services
                 if (existing.Status == DisputeCaseStatus.Closed)
                     throw ApiException.Conflict("该案件已结案");
                 if (existing.Status != DisputeCaseStatus.Handling)
-                    throw ApiException.Conflict("已登记案件须先受理为调解中后再结案（BR-DIS-01 状态流）");
+            throw ApiException.Conflict("已登记案件须先受理为调解中后再结案");
                 if (!Enum.IsDefined(typeof(DisputeCloseType), request.CloseType))
                     throw ApiException.ValidationFailed("请选择有效的结案类型（调解成功/自行和解/转办）");
                 if (string.IsNullOrWhiteSpace(request.Summary))
@@ -242,7 +242,7 @@ namespace PropertyManagement.Server.Services
                 // BR-DIS-02：至少一条处理方案记录（方案摘要或内容非空任一）
                 var records = _repo.ListRecords(c, id);
                 if (!records.Any(r => !string.IsNullOrWhiteSpace(r.PlanSummary) || !string.IsNullOrWhiteSpace(r.Content)))
-                    throw ApiException.Conflict("结案前必须存在至少一条处理方案记录（BR-DIS-02）");
+            throw ApiException.Conflict("结案前必须存在至少一条处理方案记录");
                 int oldStatus = (int)existing.Status;
                 existing.Status = DisputeCaseStatus.Closed;
                 existing.CloseType = request.CloseType;

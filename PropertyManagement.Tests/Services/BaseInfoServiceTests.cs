@@ -39,7 +39,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.Conflict, ex.Code);
-            Assert.Contains("BR-INF-01", ex.Message);
+            Assert.Contains("房号已存在", ex.Message);
         }
 
         [Fact]
@@ -106,7 +106,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.Conflict, ex.Code);
-            Assert.Contains("BR-INF-02", ex.Message);
+            Assert.Contains("已存在一名业主", ex.Message);
         }
 
         [Fact]
@@ -171,7 +171,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
-            Assert.Contains("人防车位不可标为出售", ex.Message);
+            Assert.Contains("不可标为出售", ex.Message);
         }
 
         [Fact]
@@ -396,7 +396,8 @@ namespace PropertyManagement.Tests.Services
         [Theory]
         [InlineData(ImportModule.Property, "", 5)]
         [InlineData(ImportModule.Owner, "", 9)]
-        [InlineData(ImportModule.Parking, "", 9)]
+        // v1.1.2：车位模板下线「租金 / 租期至」两列（停车费统一由价目表定价）→ 9 列变 7 列
+        [InlineData(ImportModule.Parking, "", 7)]
         [InlineData(ImportModule.OwnerRelation, "", 11)]
         public void BuildTemplate_示例行_每张模板都有(ImportModule module, string _, int columns)
         {
@@ -514,9 +515,9 @@ namespace PropertyManagement.Tests.Services
         }
 
         [Fact]
-        public void Import_业主同名且无证件无电话_拒绝并提示补充()
+        public void Import_业主同名且无证件无电话_按覆盖口径更新既有档案()
         {
-            TestData.Owner("同名业主", "13800008888");
+            int ownerId = TestData.Owner("同名业主", "13800008888");
             byte[] file = BuildSheet(
                 new[] { "姓名" },
                 new[] { new[] { "同名业主" } });
@@ -526,8 +527,17 @@ namespace PropertyManagement.Tests.Services
                 Module = ImportModule.Owner, FileName = "业主同名.xlsx", FileContent = file
             });
 
+            // v1.1.2 I-01（负责人裁定 A）：重复数据改走「覆盖处理」——
+            // 仅填姓名且命中唯一既有业主时按同一人覆盖（不计入 Success，计入 Updated），
+            // 文件未填字段保留库内原值，不再报「该业主已存在」；
+            // 仅当姓名命中多条（无法判定对象）时才报错要求补充证件号/电话。
             Assert.Equal(0, result.Batch.Success);
-            Assert.Contains(result.Errors, e => e.Reason.Contains("存在同名业主"));
+            Assert.Equal(1, result.Batch.Updated);
+            Assert.Equal(0, result.Batch.Fail);
+            Assert.Empty(result.Errors);
+            Assert.Equal(1, ScalarInt(
+                "SELECT COUNT(1) FROM t_owner WHERE id = @id AND phone = '13800008888' AND del_flag = 0",
+                new { id = ownerId }));
         }
 
         [Fact]

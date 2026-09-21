@@ -32,7 +32,7 @@ namespace PropertyManagement.Client.Views
 
         private void CollectButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("请在「收款登记」页办理收款（PG-FIN-03）。", "提示",
+                        MessageBox.Show("请在「收款登记」页办理收款。", "提示",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
 
@@ -44,7 +44,7 @@ namespace PropertyManagement.Client.Views
 
         private void ExportButton_Click(object sender, RoutedEventArgs e)
         {
-            MessageBox.Show("导出功能随报表模块统一提供（M4-D4-6，Excel/PDF）。", "提示",
+                        MessageBox.Show("导出功能随报表模块统一提供（Excel/PDF）。", "提示",
                 MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }

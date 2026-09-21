@@ -1,6 +1,6 @@
 # API 接口契约
 
-> 适用版本：安怡物业管理系统 1.1.1 ｜ 基址：`http://127.0.0.1:5210/api/v1`（仅绑定回环地址）
+> 适用版本：安怡物业管理系统 1.1.2 ｜ 基址：`http://127.0.0.1:5210/api/v1`（仅绑定回环地址）
 > 契约代码：`PropertyManagement.Contract`（前后端同源引用，DTO/枚举/错误码）
 ## 一、通用规范
 
@@ -99,6 +99,7 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | UC-INF-006 模板 | GET | /baseinfo/imports/template?module= | — | 文件流 |
 | UC-INF-006 错误清单 | GET | /baseinfo/imports/{id}/errors | — | 文件流 |
 | UC-INF-006 批次记录批量删除（v1.1.0） | POST | /baseinfo/imports/batch-delete | RecordBatchDeleteRequest | RecordBatchDeleteResultDto |
+| UC-INF-006 重复数据覆盖（v1.1.2） | — | 同一 /baseinfo/imports | 同上 | ImportLogDto 增加 `updated`（覆盖条数）：命中既有房产/业主/车位/关系时按「只覆盖文件里填了值的字段」更新，不再报「已存在」 |
 | UC-INF-007 查询（房产） | GET | /baseinfo/properties | BaseInfoQueryRequest | PageResult\<PropertyDto\> |
 | UC-INF-007 查询（业主） | GET | /baseinfo/owners | BaseInfoQueryRequest | PageResult\<OwnerDto\> |
 | UC-INF-007 查询（车位） | GET | /baseinfo/parking-spaces | BaseInfoQueryRequest | PageResult\<ParkingSpaceDto\> |
@@ -127,10 +128,15 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
 | UC-FIN-001 收费项目（含 **objectCode** 缴费对象字典编码：property/parking/owner 为系统固定项、其余为自定义项；objectType 0 房产/1 车位/2 业主/3 自定义，null 时按计价方式派生） | GET/POST/PUT/DELETE | /billing/charge-items[/{id}] | ChargeItemRequest | ChargeItemDto |
+| UC-FIN-001 **自定义计价公式**（v1.1.2：`formula` 选填；出账时优先按公式计算，变量 `单价/面积/月数/天数/数量`，运算符仅 `+ - * / ( )`；非法公式返回 42200 并给出中文原因；为空时沿用内置口径：按建筑面积 = 单价 × 面积、其余 = 单价） | GET/POST/PUT | /billing/charge-items[/{id}] | ChargeItemRequest.formula | ChargeItemDto.formula |
+| UC-FIN-001 计价方式与缴费对象的绑定（v1.1.2 起由「硬拦」改为**提示建议**；出账时仍按「缴费对象类型须与收费项目一致」校验） | — | — | — | — |
 | UC-FIN-001 计费周期 | GET/POST/PUT/DELETE | /billing/cycles[/{id}] | BillingCycleRequest | BillingCycleDto |
 | UC-FIN-001 删除计费周期（仅自定义周期；内置周期或已被账单引用 → 42200） | DELETE | /billing/cycles/{id} | — | — |
+| UC-FIN-001 **收费标准变量绑定自洽校验**（v1.1.2 CHG-52：`PUT /billing/charge-standards/{id}` 的 `variableIds` 收缩到不含「启用中规格公式仍在引用的变量」时返回 42200 并点名规格与变量；`POST /billing/charge-specs/{id}/status` 启用规格时，若其计算规则引用了未绑定到本收费标准的变量同样 42200 并给出「先到变量区勾选」的指引。停用中的规格不参与校验，改价替换不受影响） | PUT / POST | /billing/charge-standards/{id}、/billing/charge-specs/{id}/status | ChargeStandardRequest.variableIds、ChargeStandardStatusRequest | ChargeStandardDto / — |
 | UC-FIN-002 生成账单（**校验缴费对象类型与收费项目一致**，不一致返回 42200；**同对象同周期同项目允许重复出账**） | POST | /billing/bills/generate | BillGenerateRequest | BillGenerateLogDto |
 | UC-FIN-002 生成账单（**自定义缴费对象**：`customPayerNames` 手工填写名称，一行一张账单；与房产/车位/业主口径互斥） | POST | /billing/bills/generate | BillGenerateRequest | BillGenerateLogDto |
+| UC-FIN-002 **出账时可改价**（v1.1.2 CHG-50：`customPayers[]` / `objectMeasures[]` 新增 `unitPriceOverride` —— 按缴费对象逐行改本次出账单价；仅「出账时可改价」已开启的项目（一次性收费标准 / 自定义缴费对象）可提交，否则 42200 并点名项目；改价 ≤ 0 → 42200；改后单价写入账单 `unit_price_snapshot`，**价目表单价不变**；试算 `/billing/bills/preview` 与生成同口径，响应行带 `unitPriceOverridden` 供界面标注「改价」） | POST | /billing/bills/generate、/billing/bills/preview | BillGenerateRequest / BillPreviewRequest（unitPriceOverride） | BillGenerateLogDto / BillPreviewResult |
+| UC-FIN-002 **失败行重推保留出账输入**（v1.1.2 CHG-50：失败清单行留痕 `specId` / `measures` / `unitPriceOverride`，`/retry` 按原输入重出，不再回落价目表默认价） | GET/POST | /billing/bills/generate-logs/{id}/failures、/retry | BillRetryRequest | List\<BillFailureDto\> / BillGenerateLogDto |
 | UC-FIN-002 缴费对象候选 | GET | /billing/bill-objects?kind=property/parking/owner&keyword= | BillObjectQueryRequest | BillObjectQueryResult |
 | UC-FIN-002 批次查询 | GET | /billing/bills/generate-logs/{id} | — | BillGenerateLogDto |
 | UC-FIN-002 批次缴费对象 | GET | /billing/bills/generate-logs/{id}/objects | — | BillObjectSelectionDto |
@@ -138,22 +144,33 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | UC-FIN-002 失败清单 | GET | /billing/bills/generate-logs/{id}/failures | — | List\<BillDto\> |
 | UC-FIN-002 失败对象重推（FL-FIN-01：按失败清单重新出账，并收敛源批次失败清单；全部成功 → 源批次状态「已重推」Retried） | POST | /billing/bills/generate-logs/{id}/retry | BillRetryRequest | BillGenerateLogDto |
 | UC-FIN-002 账单列表 | GET | /billing/bills（可按 ownerId / **payerOwnerId** / **payerName** 取账单；payerOwnerId＝按缴费人取全部欠费，payerName＝按自定义缴费对象名称取全部欠费） | BillQueryRequest | PageResult\<BillDto\> |
-| UC-FIN-007 欠费台账 | GET | /billing/bills/arrears | BillQueryRequest（arrearsOnly） | PageResult\<ArrearDto\> |
+| UC-FIN-002 **账单单据的楼栋/房号回填**（v1.1.2 CHG-53：`buildingNo` / `roomNo` 在账单自身无房产时按**账单缴费人名下主房产**（业主-房产关系，按楼栋→房号取同一套）回填 —— 覆盖业主直缴与**车位账单**；`spaceNo` 恒为车位编号。缴费人名下确无房产时 `buildingNo` / `roomNo` 为空，由界面用具名对象兜底展示） | GET | /billing/bills、/billing/bills/arrears | BillQueryRequest | PageResult\<BillListItemDto\> |
+| UC-FIN-007 欠费台账（v1.1.2 CHG-54：响应新增 `cycleStart` / `cycleEnd` —— 账单**真实账期**，台账「欠费期间」列直接引用，不再按到期日倒推一个月推算；`dueAt` 仍为到期日＝账期结束日 + 宽限天数，`agingDays` ＝ 今天 − 到期日，负数表示未到期） | GET | /billing/bills/arrears | BillQueryRequest（arrearsOnly） | PageResult\<ArrearDto\> |
+| UC-FIN-007 **移出台账**（v1.1.2：单条/批量；只影响台账可见性，**不软删账单**，其它模块数据不变） | POST | /billing/bills/arrears/dismiss | ArrearDismissRequest(billIds, reason) | `int`（影响条数） |
+| UC-FIN-007 已移出台账记录 | GET | /billing/bills/arrears/dismissed | — | List\<ArrearDismissDto\> |
+| UC-FIN-007 恢复台账 | POST | /billing/bills/arrears/restore | ArrearDismissRequest(dismissIds) | `int` |
+| UC-FIN-002 删除账单/批次（v1.1.2 口径统一：删除后其收款/退款记录在**收款登记、欠费台账、财务报表、收支明细流水**中同步不再计入；底层流水行保留留痕） | POST / DELETE | /billing/bills/generate-logs/delete、/billing/bills/{id} | BillBatchDeleteRequest | — |
 | UC-FIN-008 已缴/未缴统计 | GET | /billing/statistics/payment | — | PaymentStatisticsDto |
 
 ### 2.5 payments（财务-收款）
 
 | 用例 | 方法 | 端点 | 请求 DTO | 响应 DTO |
 |---|---|---|---|---|
-| UC-FIN-003 收款登记 | POST | /payments | PaymentCreateRequest | PaymentDto |
-| UC-FIN-003 统一收款（多账单） | POST | /payments/batch | PaymentBatchCreateRequest | PaymentBatchResultDto |
+| UC-FIN-003 收款登记（v1.1.2 CHG-51：**收款金额不得超过该账单未收金额**，超出返回 42200 并提示「收款金额不能超过该账单未收金额 ¥X」；「多缴自动转入预存账户」已下线，收款不再产生预存款） | POST | /payments | PaymentCreateRequest | PaymentDto |
+| UC-FIN-003 统一收款（多账单；逐张按欠费全额核销，同一口径受「不得超过未收金额」约束） | POST | /payments/batch | PaymentBatchCreateRequest | PaymentBatchResultDto |
 | UC-FIN-003 收款历史 | GET | /payments | PageRequest | PageResult\<PaymentDto\> |
 | UC-FIN-003 收款查询 | GET | /payments/{id} | — | PaymentDto |
-| UC-FIN-003 预存款 | GET | /payments/pre-deposits/{ownerId} | — | PreDepositDto |
-| UC-FIN-003 预存退还 | POST | /payments/pre-deposits/refund | PreDepositRefundRequest | PreDepositDto |
+| UC-FIN-003 预存款（v1.1.2 CHG-51：**只读存量数据**，收款不再产生新预存；业主已有余额仍自动抵扣账单） | GET | /payments/pre-deposits/{ownerId} | — | PreDepositDto |
+| UC-FIN-003 预存退还（存量余额退还，口径不变） | POST | /payments/pre-deposits/refund | PreDepositRefundRequest | PreDepositDto |
 | UC-FIN-004 退款/减免/调整 | POST | /payments/refunds | RefundAdjustmentRequest | RefundAdjustmentDto |
+| UC-FIN-004 **无账单/无对象的账务调整**（v1.1.2：账务调整时 `billId` 可传 0 → 服务端存 NULL；**关联对象亦为可选**，「不指定」时前端按全部已缴账单给候选；退款与减免仍必须关联账单，否则 42200） | POST | /payments/refunds | RefundAdjustmentRequest(billId=0, refundType=2) | RefundAdjustmentDto(billId=0, adjustDir=1/2) |
+| UC-FIN-004 **调整方向由「方式」决定**（v1.1.2：`method` 落库到 `t_payment_refund.method`，方向落 `adjust_dir` —— 调增补收=1 计入收入方向、调减冲正=2 冲减方向；收支流水与财务报表按方向计入；调增补收不占用退款/减免累计额度） | POST/GET | /payments/refunds | RefundAdjustmentRequest.method | RefundAdjustmentDto.method/adjustDir |
+| UC-FIN-004 **减免＝调减应收（与退款分链路）**（v1.1.2 CHG-40：减免只改 `t_bill.amount`（应收），**不动 `paid_amount`**，**上限＝未收余额（应收 − 实缴）**，超出返回 42200；退款/调减冲正仍冲减实缴，上限＝净实缴；减免不产生资金流出 → 不进收支明细流水，也不计入财务报表收支方向；已缴清账单不能再减免，应走退款） | POST | /payments/refunds | RefundAdjustmentRequest(refundType=1) | RefundAdjustmentDto |
+| UC-FIN-004 **减免/调整可重复登记**（v1.1.2：同一账单可多次减免/调整 —— 减免按累计不超**未收余额**封顶，调整按累计不超实缴封顶；退款仍按「已冲正不可重复」拦截） | POST | /payments/refunds | RefundAdjustmentRequest | RefundAdjustmentDto |
 | UC-FIN-004 批量退款/减免/调整 | POST | /payments/refunds/batch | RefundAdjustmentRequest（billIds 多账单） | RefundBatchResultDto |
 | UC-FIN-004 记录查询 | GET | /payments/refunds | PageRequest | PageResult\<RefundAdjustmentDto\> |
+| UC-FIN-004 **单据导出 PDF（留档/审计追溯）**（v1.1.2 CHG-41：只传单据主键，金额与账单口径由服务端回查 → `RefundRecordDetailDto`；A4 单页含类型/编号/经办人/关联账单快照/原因/落账口径；写 `t_report_log`(report_type=refund) 与审计 `REFUND_EXPORT`；文件经 `GET /reports/files/{logId}` 下载） | POST | /reports/refund-record | RefundRecordExportRequest(refundId, remark) | ReportLogDto |
+| UC-FIN-004 **记录带经办人**（v1.1.2 CHG-41：登记时把登录人写入 `t_payment_refund.operator_name`，`RefundAdjustmentDto.operatorName` 回传，记录表「经办人」列与单据 PDF 同源） | POST/GET | /payments/refunds | — | RefundAdjustmentDto.operatorName |
 | UC-FIN-011 收据查询（v1.1.0 第 15 轮起下线） | ~~GET /payments/receipts/{id}~~ | 收据号下线，改为导出打印模板 | — | — |
 | UC-FIN-011 收据打印/补打（v1.1.0 第 15 轮起下线） | ~~POST /payments/receipts/{id}/print~~ | 同上 | — | — |
 
@@ -174,6 +191,9 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | UC-FIN-010 收支流水（keyword 支持 **单据号/流水号 + 付款人 + 项目**；付款人列优先取自定义缴费对象名称） | GET | /reports/ledger | LedgerQueryRequest | PageResult\<LedgerEntryDto\> |
 | UC-FIN-009 财务报表 | GET | /reports/financial | FinancialReportQueryRequest | FinancialReportDto |
 | UC-FIN-012 导出报表 | POST | /reports/export | ReportExportRequest | ReportLogDto |
+| UC-FIN-012 **导出收支明细流水**（v1.1.2：按当前筛选条件导出明细，Excel/PDF，走同一导出通道并写 t_report_log；单次上限 5000 行） | POST | /reports/ledger/export | LedgerExportRequest(query, format) | ReportLogDto |
+| UC-FIN-010 流水「楼栋/房号/单元」列（v1.1.2：`LedgerEntryDto.objectText` —— 房产取「楼栋号/单元号单元/房号」（无单元房产仍带楼栋）、车位取车位编号、**业主直缴按「业主-房产关系」回查主房产**、自定义缴费对象取名称、支出为空） | GET | /reports/ledger | LedgerQueryRequest | LedgerEntryDto.objectText |
+| 客户端 HTTP 404 兜底（v1.1.2：新客户端打到旧后端时把「服务器响应异常（HTTP 404）」翻译为「后端服务版本过旧，请启动与本客户端同版本的后端」） | — | 全部端点 | — | — |
 | UC-FIN-011 导出收据打印模板（**hideObjectColumn=true 且全部明细对象文本＝缴款人时过滤「缴费对象」列**，四列布局） | POST | /reports/receipt-template | ReceiptTemplateRequest | ReportLogDto |
 | 导出文件下载（报表/收据模板） | GET | /reports/files/{logId} | — | 文件流 |
 | UC-FIN-012 文件下载 | GET | /reports/files/{logId} | — | 文件流 |
@@ -248,7 +268,7 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | UC-COM-005 手动备份 | POST | /common/backups | BackupCreateRequest | BackupDto |
 | UC-COM-005 备份列表 | GET | /common/backups | PageRequest | PageResult\<BackupDto\> |
 | UC-COM-005 恢复 | POST | /common/backups/{id}/restore | BackupRestoreRequest | — |
-| UC-COM-006 仪表盘 | GET | /common/dashboard | — | DashboardDto |
+| UC-COM-006 仪表盘（v1.1.2 CHG-55：`monthReceived` ＝**财务报表「收入合计」同源净额**（收款 − 退款/调减冲正 + 调增补收）；`monthReceivable` ＝账期归属本月的账单应收；新增 `monthCycleReceived`（收缴率分子）与 `collectionRateTrend`（百分点差）；`collectionRate` 恒 ≤100%） | GET | /common/dashboard（period=yyyy-MM） | — | DashboardDto |
 
 ## 三、关键业务规则落点（契约校验要求）
 
@@ -261,7 +281,7 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 | BR-INF-02 一房一业主 | /baseinfo/owner-property-relations | 冲突返回 40900 |
 | BR-INF-03 固定车位唯一绑定 | /baseinfo/parking-spaces | 冲突返回 40900 |
 | BR-EMG-03 值班匹配 | /emergency/events/{id}/assign | 无匹配不阻塞（P-07），发起人为默认第一处置人 |
-| P-06 预存款简单版 | /payments、/payments/pre-deposits/* | 超额自动转存、自动抵扣、余额退还 |
+| P-06 预存款简单版（v1.1.2 CHG-51 调整） | /payments/pre-deposits/* | **超额自动转存已下线**（超额收款 42200 拒绝）；存量余额仍自动抵扣与退还 |
 | P-09 备份保留 30 份 | /common/backups | 超量自动清理 |
 | 敏感操作审计（BR-COM-01 等） | 收款/退款/支出/结案/导入/备份/字典 | 后端写 t_audit_log |
 
@@ -290,3 +310,54 @@ Invoke-RestMethod http://127.0.0.1:5210/api/v1/health | Select-Object -ExpandPro
 - **状态日志表**：60 张表中 6 张"只追加"状态日志表均有对应 DTO（BillStatusLogDto / EmergencyEventStatusLogDto / DisputeStatusLogDto / DeviceStatusLogDto / EmployeeStatusLogDto / BaseChangeLogDto）；
 - **与 AM-02 对齐**：60 个用例每个至少映射一个端点（§二覆盖核对通过）；
 - **枚举序列化**：契约约定枚举以字符串传输，M2 Startup 增加 `StringEnumConverter`。
+
+## 六、v1.1.2 收费项目「价目表 + 计量变量」端点（CHG-v1.1.2-31）
+
+| 方法 | 端点 | 说明 | 关键校验 |
+|---|---|---|---|
+| GET | `/billing/charge-standards?keyword=&category=&includeDisabled=` | 收费标准列表（含规格与引用变量） | — |
+| POST / PUT | `/billing/charge-standards`、`/billing/charge-standards/{id}` | 新增 / 编辑收费标准 | 名称与类别必填；自建变量 ≤ 5 个 |
+| DELETE | `/billing/charge-standards/{id}` | 删除收费标准（软删） | 已被收费项目引用时拒绝，提示改用停用 |
+| POST | `/billing/charge-standards/{id}/status` | 启停收费标准 | — |
+| GET / POST | `/billing/charge-standards/{id}/specs` | 规格明细列表 / 新增规格 | 名称必填、单价 > 0；`deprecateSameName = true` 时**变更原因必填**（改价） |
+| PUT / DELETE | `/billing/charge-specs/{id}` | 编辑 / 删除规格 | 已被账单引用时拒绝删除；公式引用的变量必须已绑定到该标准 |
+| POST | `/billing/charge-specs/{id}/status` | 启停规格 | 停用只影响后续出账 |
+| GET | `/billing/charge-variables?keyword=&includeDisabled=` | 计量变量列表（含引用计数） | — |
+| POST / PUT | `/billing/charge-variables`、`/billing/charge-variables/{id}` | 新增 / 编辑变量 | 名称仅中文或字母；自建来源仅「手填 / 固定值」；内置变量不可改来源 |
+| DELETE | `/billing/charge-variables/{id}` | 删除变量（软删） | 内置变量拒绝删除；被收费标准引用时拒绝删除（可停用） |
+| POST | `/billing/charge-variables/{id}/status` | 启停变量 | — |
+| POST | `/billing/bills/preview` | **出账试算（只读）**：按价目表规格匹配并试算规格 / 单价 / 计量 / 金额 / 兜底与失败原因 | 与生成账单同口径，不落库 |
+
+> **`measureText`（计量规则列）口径**（CHG-v1.1.2-47）：只列出**所选规格计算规则真正引用**的计量变量（按公式引用顺序，
+> 如「数量 1」「建筑面积 123.12 · 月数 12」）；空公式按既有约定视为「单价 × 数量」→ 只显示「数量」。
+> 求值上下文中的周期派生项（月数 / 年数 / 天数）与默认数量只参与计算（`measureSnapshot` 仍完整落库），不再出现在该展示字段，
+> 避免「单价 × 数量」类项目被显示成「数量 · 月数 · 年数 · 天数」。
+
+`POST /billing/bills/generate` 请求体新增 `customPayers`：`[{ payerName, contractNo, specId, measures: { 变量ID: 数值 } }]`——自定义缴费对象（无档案）的**规格手选 + 计量参数手填**由此提交；响应与账单落库包含 `chargeSpecId / measureSnapshot / unitPriceSnapshot / formulaSnapshot` 快照。
+
+`POST /billing/bills/generate` 与 `POST /billing/bills/preview` 请求体新增 `objectMeasures`：`[{ kind: property|parking|owner, objectId, measures: { 变量ID: 数值 } }]`——档案对象（房产 / 车位 / 业主）的**「手填」计量参数按对象逐行提交**（价目表公式引用「手填」变量时无档案取值来源；未填写该行进入失败明细，试算与生成同口径）。
+
+**删除拦截与周期折算（CHG-v1.1.2-35）**
+
+- `DELETE /billing/charge-items/{id}`：**已被账单引用**（`t_bill.charge_item_id` 且未软删）时返回 42200「该收费项目已被 N 张账单引用，不能删除；如需停止使用请改用「停用」」；未被引用则软删。
+- `DELETE /billing/charge-standards/{id}`：已被收费项目引用时返回 42200（既有口径，客户端删除前先弹确认、被拦时弹提示）。
+- 周期派生变量（`月数 / 天数 / 年数`）按**规格计费周期**折算：每年 → 12 / 360 / 1，每半年 → 6 / 180 / 0.5，每季 → 3 / 90 / 0.25，每月 → 1 / 30 / 0.0833；**「一次性」三项均为 1（不纳入计算规则）**；规格计费周期为「自定义」或未设置时回落账期起止日期跨度（`月数` = 含首尾自然月、`天数` = 实际天数、`年数` = 月数 ÷ 12）。账单落库写 `measure_snapshot`。
+- 变量库新增内置变量 `MQ-19 年数`（周期派生 / 单位「年」/ 小数），migration_051 幂等插入；内置变量不可删除。
+
+**退款/减免/调整与账单状态（CHG-v1.1.2-39 / CHG-v1.1.2-40）**
+
+- `POST /payments/refunds`（`refundType`：0 退款 / 1 减免 / 2 账务调整）分两条落账链路：
+
+  | 类型 | 落账对象 | 上限校验 | 资金影响 |
+  |---|---|---|---|
+  | 0 退款 | `t_bill.paid_amount`（冲减实缴） | 不得超过**当前净实缴**（累计口径，报错给出剩余可冲减金额） | 有（资金流出，进收支流水与报表） |
+  | 1 减免 | `t_bill.amount`（**调减应收**），`paid_amount` 不变 | 不得超过**未收余额**（应收 − 实缴） | 无（不进收支流水，不计入报表收支方向） |
+  | 2 账务调整 | 调增补收 → 计入实缴；调减冲正 → 冲减实缴 | 非调增方向同退款 | 按方向计入 |
+
+- 账单状态一律按「应收 / 净实缴」重算：实缴 ≥ 应收 → 已缴（应收被减免至 0 亦视为已缴清）；仍欠款则按到期日判定逾期（与 `MarkOverdue` 同口径：**到期日次日起**算逾期），否则部分缴 / 待缴；**不再一律置为「已冲正」**。草稿账单（status=5）与已冲正账单不允许登记退款/减免（账务调整除外）。
+- 收款登记 / 欠费台账 / 仪表盘欠费 / 业主档案缴费概况均取自 `amount − paid_amount`：因此**减免后应收、未收同步下降**，退款后只要仍有未收金额账单继续留在应缴明细并可继续收取（CHG-v1.1.2-39/-40）。
+- migration_052：对历史遗留（`status = 4` 且存在冲减记录）的账单回填 `paid_amount` 与状态；migration_053：把历史减免（`refund_type = 1`）从「冲减实缴」回填为「调减应收」（`amount − 减免累计 / paid_amount + 减免累计`），减免累计超出未收余额者**不动金额**、只写状态流水提示人工复核；两脚本均以流水留痕为闸门，可重复执行。
+
+`POST /billing/charge-items`、`PUT /billing/charge-items/{id}` 请求体新增 `standardId`、`allowPriceOverride`；提供 `standardId` 时，项目名称 / 类别 / 单价 / 单位 / 公式 / 周期一律由该收费标准的第一条启用规格带出（价格只读，统一在价目表维护）。
+
+`allowPriceOverride`（出账时可改价）的口径闭环（v1.1.2 CHG-50）：新增 / 编辑项目时**只有一次性收费标准或自定义缴费对象可以开启**（否则 42200）；开启后，生成账单与出账试算的 `customPayers[]`、`objectMeasures[]` 才接受 `unitPriceOverride`，改后单价随账单落 `unit_price_snapshot` 快照，价目表单价不变。

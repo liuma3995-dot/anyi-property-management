@@ -144,7 +144,7 @@ namespace PropertyManagement.Client.ViewModels
         /// CHG-v1.1.0-12：租金已下线（定价统一归收费项目），「已出租」卡片副文案由「月租金收入」改为「含绑定业主 N 户」。
         /// </summary>
         public string RentedOwnerHintText { get { return "含绑定业主 " + _globalRentedOwnerCount + " 户"; } }
-        public string VacantHintText { get { return "含人防车位 " + _globalVacantDefense + " 个"; } }
+        public string VacantHintText { get { return "含普通车位 " + _globalVacantDefense + " 个"; } }
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
         public bool IsEdit { get { return _editingId > 0; } }
         public string FormTitle { get { return _editingId > 0 ? "编辑车位" : "新增车位"; } }
@@ -205,7 +205,7 @@ namespace PropertyManagement.Client.ViewModels
                 _isSelectAll = false;
                 OnPropertyChanged(nameof(IsSelectAll));
 
-                // 统计卡：全量口径，不受筛选/搜索影响（车位总数/已售/已租/空置/月租收入/人防空置）
+                // 统计卡：全量口径，不受筛选/搜索影响（车位总数/已售/已租/空置/月租收入/普通类型空置）
                 var stats = await Api.QueryParkingsAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100000 });
                 Total = stats.Total;
                 OwnedCount = stats.Items.Count(x => x.Status == ParkingSpaceStatus.Owned);
@@ -341,7 +341,7 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SaveAsync()
         {
             if (string.IsNullOrWhiteSpace(FormSpaceNo)) { ErrorText = "车位编号不能为空"; return; }
-            if (FormType == ParkingSpaceType.CivilDefense && FormStatus == ParkingSpaceStatus.Owned) { ErrorText = "人防车位不可标为出售（BR-INF-03）"; return; }
+            if (FormType == ParkingSpaceType.CivilDefense && FormStatus == ParkingSpaceStatus.Owned) { ErrorText = "普通车位不可标为出售"; return; }
             // CHG-v1.1.0-12：产权车位售出改为校验「绑定业主」（房产权属由服务端按业主自动引用）
             if (FormType == ParkingSpaceType.PropertyRight && FormStatus == ParkingSpaceStatus.Owned && !FormOwnerId.HasValue)
             { ErrorText = "产权车位标记为已售需绑定业主（房产权属将按其名下房产自动引用）"; return; }

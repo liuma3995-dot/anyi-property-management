@@ -57,7 +57,8 @@ namespace PropertyManagement.Contract.Enums
     public enum PropertyUsage
     {
         Residential = 0, // 住宅
-        Commercial = 1   // 商铺
+        Commercial = 1,  // 商铺
+        Vacant = 2       // 空置（v1.1.2 CHG-48：收费规格「适用条件 → 房产用途」需要能按空置定价）
     }
 
     /// <summary>房产入住状态。</summary>
@@ -72,7 +73,7 @@ namespace PropertyManagement.Contract.Enums
     public enum ParkingSpaceType
     {
         PropertyRight = 0, // 产权（固定）
-        CivilDefense = 1,  // 人防（禁售，只租不售）
+        CivilDefense = 1,  // 普通（v1.1.2 CHG-48：对外文案由「人防」改为「普通」；沿用原值 1 与禁售约束）
         Temporary = 2      // 临时（租用）
     }
 
@@ -229,6 +230,35 @@ namespace PropertyManagement.Contract.Enums
         /// 具体名称由 charge_object 字典项（t_charge_item.object_code）决定；该类项目暂不支持批量出账。
         /// </summary>
         Custom = 3
+    }
+
+    /// <summary>
+    /// CHG-v1.1.2-26：计量变量取值来源（t_charge_variable.source）。
+    /// 档案自动 / 周期派生为系统内置专用；用户自建仅开放 手填 / 固定值。
+    /// </summary>
+    public enum ChargeVariableSource
+    {
+        Archive = 0,       // 档案自动（房产面积、户数等，代码级绑定档案字段）
+        CycleDerived = 1,  // 周期派生（月数、天数，由计费周期自动折算）
+        Manual = 2,        // 手填（出账时由用户输入）
+        Fixed = 3          // 固定值（不显示输入项，如「数量 = 1」等价于按户 / 按次）
+    }
+
+    /// <summary>CHG-v1.1.2-26：计量变量值类型。</summary>
+    public enum ChargeVariableValueType
+    {
+        Integer = 0,  // 整数
+        Decimal = 1   // 小数
+    }
+
+    /// <summary>CHG-v1.1.2-26：计量变量适用对象范围。</summary>
+    public enum ChargeVariableScope
+    {
+        Property = 0,   // 房产
+        Parking = 1,    // 车位
+        Owner = 2,      // 业主
+        Custom = 3,     // 自定义缴费对象
+        Any = 4         // 不限
     }
     /// <summary>报表导出格式（D-3：Excel/PDF）。</summary>
     public enum ExportFormat

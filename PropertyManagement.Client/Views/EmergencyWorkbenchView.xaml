@@ -384,7 +384,7 @@
             <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="结案确认" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="必填处置结果与物资消耗（BR-EMG-02），结案后归档只可补录。" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,12" TextWrapping="Wrap" />
+                    <TextBlock Text="必填处置结果与物资消耗；结案后归档只可补录。" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,12" TextWrapping="Wrap" />
                     <TextBox Text="{Binding CloseSummary, UpdateSourceTrigger=PropertyChanged}" Height="110" AcceptsReturn="True" TextWrapping="Wrap" VerticalContentAlignment="Top"
                              VerticalScrollBarVisibility="Auto" hc:InfoElement.Placeholder="处置结果 + 物资消耗，如：现场烟雾排除，使用干粉灭火器 2 具；无人员伤亡。" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
@@ -401,7 +401,7 @@
             <Border Width="480" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="补录事件" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="选择已结案事件补录处置记录，自动标记为补录（BR-EMG-06：归档后只可补录）。" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,12" TextWrapping="Wrap" />
+                    <TextBlock Text="选择已结案事件补录处置记录，系统自动标记为补录；归档后只可补录。" FontSize="11" Foreground="{StaticResource TextMutedBrush}" Margin="0,8,0,12" TextWrapping="Wrap" />
                     <TextBlock Text="已结案事件" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                     <ComboBox ItemsSource="{Binding SupplementCandidates}" SelectedItem="{Binding SupplementTarget, Mode=TwoWay}"
                               DisplayMemberPath="DisplayText" Height="32" Margin="0,6,0,0" />

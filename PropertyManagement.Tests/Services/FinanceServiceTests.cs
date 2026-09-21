@@ -13,7 +13,8 @@ namespace PropertyManagement.Tests.Services
     /// <summary>
     /// 财务收费服务单元测试（BR-FIN-01~10）：
     /// 账单生成/收款/退款/欠费台账/收据/报表/软删口径。
-    /// 口径说明：BR-FIN-02「多收阻止」已被 P-06（多缴转预存款，M4 T4-2-1 已确认）取代；
+    /// 口径说明：P-06「多缴转预存款」已于 v1.1.2（CHG-v1.1.2-51）按负责人裁定下线 ——
+    /// 收款金额不得超过账单未收金额，超收直接拒绝（BR-FIN-02「多收阻止」口径回归）；
     /// BR-FIN-05（工资支出必须引用员工）现状未强制，见 BUG-003 待裁决用例。
     /// </summary>
     public class FinanceServiceTests : DbTestBase
@@ -43,7 +44,7 @@ namespace PropertyManagement.Tests.Services
 
             Assert.Equal(0, batch.Success);
             Assert.Equal(1, batch.Fail);
-            Assert.Contains("BR-INF-02", _billing.ListFailures(batch.Id)[0].Reason);
+            Assert.Contains("业主-房产关系", _billing.ListFailures(batch.Id)[0].Reason);
             Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE property_id = @id AND del_flag = 0", new { id = property }));
         }
 
@@ -81,7 +82,7 @@ namespace PropertyManagement.Tests.Services
 
             Assert.Equal(0, batch.Success);
             Assert.Equal(1, batch.Fail);
-            Assert.Contains("BR-INF-02", _billing.ListFailures(batch.Id)[0].Reason);
+            Assert.Contains("车位维护", _billing.ListFailures(batch.Id)[0].Reason);
             Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_bill WHERE parking_id = @id", new { id = parking }));
         }
 
@@ -171,7 +172,7 @@ namespace PropertyManagement.Tests.Services
             Assert.Contains("已停用", ex.Message);
         }
 
-        // ===================== BR-FIN-02 少收转部分缴；多收转预存（P-06） =====================
+        // ===================== BR-FIN-02 少收转部分缴；多收阻止（v1.1.2 CHG-51 下线多缴转预存） =====================
 
         [Fact]
         public void CreatePayment_金额小于应收_账单转部分缴并记审计()
@@ -194,19 +195,21 @@ namespace PropertyManagement.Tests.Services
         }
 
         [Fact]
-        public void CreatePayment_金额大于应收_多缴转预存款()
+        public void CreatePayment_金额大于应收_拒绝并提示()
         {
             int billId = NewPublishedBill(out int ownerId, unitPrice: 2m, area: 100m); // 应收 200
 
-            var payment = _payment.CreatePayment(new PaymentCreateRequest
+            // CHG-v1.1.2-51：下线「多缴自动转入预存账户」，超收直接拒绝（客户端 + 服务端双拦）
+            var ex = Assert.Throws<ApiException>(() => _payment.CreatePayment(new PaymentCreateRequest
             {
                 BillId = billId, Amount = 300m, PayMethod = PayMethod.WeChat
-            });
+            }));
 
-            Assert.Equal(300m, payment.Amount);
-            Assert.Equal(100m, payment.ToPreDeposit);            // P-06 简单版：多缴转存
-            Assert.Equal(BillStatus.Paid, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
-            Assert.Equal(100m, ScalarDecimal("SELECT COALESCE((SELECT balance FROM t_pre_deposit WHERE owner_id = @id), 0)", ownerId));
+            Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
+            Assert.Contains("不能超过", ex.Message);
+            Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_payment WHERE bill_id = @id", new { id = billId }));
+            Assert.Equal(BillStatus.Pending, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
+            Assert.Equal(0m, ScalarDecimal("SELECT COALESCE((SELECT balance FROM t_pre_deposit WHERE owner_id = @id), 0)", ownerId));
         }
 
         [Fact]
@@ -327,7 +330,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.BadRequest, ex.Code);
-            Assert.Contains("BR-FIN-04", ex.Message);
+            Assert.Contains("必须选择支出分类", ex.Message);
             Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_expense"));
         }
 
@@ -397,7 +400,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
-            Assert.Contains("BR-FIN-06", ex.Message);
+            Assert.Contains("必须填写退款/减免原因", ex.Message);
             Assert.Equal(0, ScalarInt("SELECT COUNT(1) FROM t_payment_refund"));
         }
 
@@ -416,9 +419,9 @@ namespace PropertyManagement.Tests.Services
         }
 
         [Fact]
-        public void CreateRefund_原因齐备且不超额_冲正账单并写审计()
+        public void CreateRefund_原因齐备且不超额_冲减实缴并写审计()
         {
-            int billId = NewPublishedBillAndPaid(out int _, 2m, 100m);
+            int billId = NewPublishedBillAndPaid(out int _, 2m, 100m); // 应收 200、实缴 200
 
             var refund = _payment.CreateRefund(new RefundAdjustmentRequest
             {
@@ -427,7 +430,42 @@ namespace PropertyManagement.Tests.Services
 
             Assert.True(refund.Id > 0);
             Assert.StartsWith("RF-", refund.RefNo);
-            Assert.Equal(BillStatus.Reversed, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
+            // CHG-v1.1.2-39/-40：退款按「冲减实缴」落账（原实现一律置为「已冲正」），应收不变
+            Assert.Equal(150m, ScalarDecimal("SELECT paid_amount FROM t_bill WHERE id = @id", billId));
+            Assert.Equal(200m, ScalarDecimal("SELECT amount FROM t_bill WHERE id = @id", billId));
+            Assert.NotEqual(BillStatus.Reversed, ScalarEnum<BillStatus>("SELECT status FROM t_bill WHERE id = @id", billId));
+        }
+
+        [Fact]
+        public void CreateRefund_减免_调减应收而实缴不变()
+        {
+            int billId = NewPublishedBill(out int _, 2m, 100m); // 应收 200
+            _payment.CreatePayment(new PaymentCreateRequest { BillId = billId, Amount = 100m, PayMethod = PayMethod.Cash }); // 实缴 100
+
+            var refund = _payment.CreateRefund(new RefundAdjustmentRequest
+            {
+                BillId = billId, RefundType = RefundType.Discount, Amount = 60m, Reason = "空置房减免"
+            });
+
+            Assert.True(refund.Id > 0);
+            // CHG-v1.1.2-40：减免＝调减应收（200 − 60），实缴保持 100（不再冲减实缴）
+            Assert.Equal(140m, ScalarDecimal("SELECT amount FROM t_bill WHERE id = @id", billId));
+            Assert.Equal(100m, ScalarDecimal("SELECT paid_amount FROM t_bill WHERE id = @id", billId));
+        }
+
+        [Fact]
+        public void CreateRefund_减免超过未收余额_抛ValidationFailed()
+        {
+            int billId = NewPublishedBill(out int _, 2m, 100m); // 应收 200
+            _payment.CreatePayment(new PaymentCreateRequest { BillId = billId, Amount = 100m, PayMethod = PayMethod.Cash }); // 未收 100
+
+            var ex = Assert.Throws<ApiException>(() => _payment.CreateRefund(new RefundAdjustmentRequest
+            {
+                BillId = billId, RefundType = RefundType.Discount, Amount = 150m, Reason = "超额减免"
+            }));
+
+            Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
+            Assert.Contains("未收余额", ex.Message);
         }
 
         [Fact]

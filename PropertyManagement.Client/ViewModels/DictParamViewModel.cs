@@ -95,7 +95,7 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>参数/字典维护（PG-COM-01，UC-COM-004，BR-COM-05）。
     /// 分类切换经 SelectedType setter 联动加载（含停用项，管理端可恢复）；
     /// 编辑走确认弹窗「修改将影响相关业务展示，确认保存？」；系统级字典停用二次确认。</summary>
-    public class DictParamViewModel : BaseInfoPageViewModel
+    public partial class DictParamViewModel : BaseInfoPageViewModel
     {
         private DictTypeRow _selectedType;
         private bool _isFormVisible;
@@ -131,6 +131,8 @@ namespace PropertyManagement.Client.ViewModels
             BatchDeleteCommand = new RelayCommand(BatchDelete);
             CancelSelectionCommand = new RelayCommand(ExitSelectionMode);
             CloseNoticeCommand = new RelayCommand(() => IsNoticeVisible = false);
+            // CHG-v1.1.2-26：计量变量分类（定义侧）的命令装配
+            InitChargeVariable();
             _ = LoadAsync();
         }
 
@@ -310,6 +312,14 @@ namespace PropertyManagement.Client.ViewModels
                 // R10 修复：原实现先 Items.Clear() 再 await 取数，表格在等待期间塌陷为「仅表头」，
                 // 下方「交互标注」被顶到表格位置渲染一帧后再落回 → 切换分类时闪现。
                 // 现改为先取数、再一次性替换，页面不出现空表中间态。
+                // CHG-v1.1.2-26：「计量变量」分类走变量接口（单位 / 类型 / 来源 / 默认值 / 适用对象）
+                if (string.Equals(type.Dto.TypeCode, "charge_variable", StringComparison.OrdinalIgnoreCase))
+                {
+                    Items.Clear();
+                    await LoadVariablesAsync();
+                    return;
+                }
+                VariableItems.Clear();
                 List<DictItemDto> items = await Api.GetSystemDictItemsAsync(type.Dto.TypeCode, true);
                 Items.Clear();
                 // 管理端 includeDisabled=true：停用项灰显并可恢复（业务下拉仍走仅启用端点）
@@ -317,6 +327,8 @@ namespace PropertyManagement.Client.ViewModels
                 {
                     Items.Add(new DictItemRow { Dto = i });
                 }
+                OnPropertyChanged(nameof(IsVariableType));
+                OnPropertyChanged(nameof(IsNotVariableType));
             }, "字典项已加载");
         }
 

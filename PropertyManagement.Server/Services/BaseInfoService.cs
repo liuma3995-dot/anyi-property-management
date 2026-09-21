@@ -18,7 +18,7 @@ namespace PropertyManagement.Server.Services
 {
     /// <summary>
     /// 基础信息服务（M5 D5-1~D5-4）：小区/楼栋/单元/房产/业主/关系/车位 CRUD + 变更留痕 + Excel 导入导出。
-    /// 业务规则：BR-INF-01（房号唯一）、BR-INF-02（一房一业主）、BR-INF-03（车位唯一/人防禁售）、
+    /// 业务规则：BR-INF-01（房号唯一）、BR-INF-02（一房一业主）、BR-INF-03（车位唯一/「普通」类型禁售）、
     /// BR-INF-04（变更留痕）、BR-INF-05（导入错误行不入库）。
     /// </summary>
     public class BaseInfoService
@@ -160,7 +160,7 @@ namespace PropertyManagement.Server.Services
                     ? _repo.GetPropertyByUnitRoom(connection, transaction, unitId.Value, room, id)
                     : _repo.GetPropertyByBuildingRoom(connection, transaction, request.BuildingId, room, id);
                 if (duplicate != null)
-                    throw ApiException.Conflict(unitId.HasValue ? "该单元下房号已存在（BR-INF-01）" : "该楼栋下房号已存在（BR-INF-01）");
+            throw ApiException.Conflict(unitId.HasValue ? "该单元下房号已存在" : "该楼栋下房号已存在");
 
                 if (id > 0)
                 {
@@ -303,7 +303,7 @@ namespace PropertyManagement.Server.Services
                 if (request.RelType == OwnerRelType.Owner)
                 {
                     int ownerCount = _repo.CountActiveOwnerRelationsByProperty(connection, transaction, request.PropertyId, id);
-                    if (ownerCount > 0) throw ApiException.Conflict("该房产已存在一名业主（一房仅一名业主 BR-INF-02）");
+            if (ownerCount > 0) throw ApiException.Conflict("该房产已存在一名业主，一房仅可登记一名业主");
                 }
                 else if (request.RelType == OwnerRelType.CoOwner)
                 {
@@ -357,13 +357,13 @@ namespace PropertyManagement.Server.Services
             {
                 if (string.IsNullOrWhiteSpace(request.SpaceNo)) throw ApiException.ValidationFailed("车位编号不能为空");
 
-                // 人防禁售：人防车位不可为已售
+                // 普通（原「人防」）类型禁售：该类型车位不可为已售（CHG-v1.1.2-48 文案由「人防」改为「普通」，约束不变）
                 if (request.SpaceType == ParkingSpaceType.CivilDefense && request.Status == ParkingSpaceStatus.Owned)
-                    throw ApiException.ValidationFailed("人防车位不可标为出售（BR-INF-03）");
+                    throw ApiException.ValidationFailed("普通车位不可标为出售");
 
                 string spaceNo = request.SpaceNo.Trim();
                 var dup = _repo.GetParkingByNo(connection, spaceNo, id);
-                if (dup != null) throw ApiException.Conflict("车位编号已存在（BR-INF-03）");
+            if (dup != null) throw ApiException.Conflict("车位编号已存在");
 
                 // CHG-v1.1.0-12：车位不再由表单手工指定房产；绑定房产由「绑定业主」自动引用，
                 // 规则（负责人口径）：业主名下有效房产 ≥1 套 → 自动引用（编辑时若原绑定仍属该业主则保留原绑定，
@@ -399,7 +399,7 @@ namespace PropertyManagement.Server.Services
                 if (request.SpaceType == ParkingSpaceType.PropertyRight && derivedPropertyId.HasValue && derivedPropertyId.Value > 0)
                 {
                     int bound = _repo.CountParkingsBoundToProperty(connection, transaction, derivedPropertyId.Value, id, (int)ParkingSpaceType.PropertyRight);
-                    if (bound > 0) throw ApiException.Conflict("该房产已绑定一个产权车位（BR-INF-03）");
+            if (bound > 0) throw ApiException.Conflict("该房产已绑定一个产权车位");
                 }
 
                 var parking = new ParkingSpaceDto
@@ -496,7 +496,9 @@ namespace PropertyManagement.Server.Services
 
                 List<ImportErrorItemDto> errors = new List<ImportErrorItemDto>();
                 int success = 0;
+                int updated = 0;
                 int total = 0;
+                ImportCount count = new ImportCount();
                 try
                 {
                     using (var stream = new MemoryStream(request.FileContent))
@@ -526,12 +528,14 @@ namespace PropertyManagement.Server.Services
 
                         switch (request.Module)
                         {
-                            case ImportModule.Property: success = ImportProperties(connection, transaction, sheet, errors); break;
-                            case ImportModule.Owner: success = ImportOwners(connection, transaction, sheet, errors); break;
-                            case ImportModule.Parking: success = ImportParkings(connection, transaction, sheet, errors); break;
-                            case ImportModule.OwnerRelation: success = ImportRelations(connection, transaction, sheet, errors); break;
+                            case ImportModule.Property: count = ImportProperties(connection, transaction, sheet, errors); break;
+                            case ImportModule.Owner: count = ImportOwners(connection, transaction, sheet, errors); break;
+                            case ImportModule.Parking: count = ImportParkings(connection, transaction, sheet, errors); break;
+                            case ImportModule.OwnerRelation: count = ImportRelations(connection, transaction, sheet, errors); break;
                             default: throw ApiException.BadRequest("不支持的数据类型");
                         }
+                        success = count.Inserted;
+                        updated = count.Updated;
                     }
                 }
                 catch (Exception ex)
@@ -555,10 +559,12 @@ namespace PropertyManagement.Server.Services
                 string errorFile = fail > 0 ? BuildErrorFile(log.Id, errors) : null;
 
                 _repo.UpdateImportLog(connection, transaction, log.Id, status, success, fail, errorFile);
+                _repo.UpdateImportLogUpdated(connection, transaction, log.Id, updated);
                 if (fail > 0) _repo.InsertImportErrors(connection, transaction, errors, log.Id);
                 transaction.Commit();
 
                 log.Success = success;
+                log.Updated = updated;
                 log.Fail = fail;
                 log.Status = status;
                 log.StatusText = status == ImportStatus.Success ? "成功"
@@ -781,13 +787,11 @@ namespace PropertyManagement.Server.Services
                     {
                         F("车位编号", true, "B1-001", "必填。车位编号全局唯一"),
                         F("区域", false, "B1 层", "选填。车位所在区域/楼层"),
-                        F("类型", false, "产权", "选填。产权 / 人防 / 临时，留空按「产权」"),
+                        F("类型", false, "产权", "选填。产权 / 普通 / 临时，留空按「产权」"),
                         F("状态", false, "空置", "选填。已售 / 已租 / 空置 / 维修中，留空按「空置」"),
                         F("绑定楼栋号", false, "1号楼", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」（单元号可留空）"),
                         F("绑定单元号", false, "", "选填。与绑定楼栋号/绑定房号配套使用"),
                         F("绑定房号", false, "101", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」"),
-                        F("租金", false, "300", "选填。数字，可含小数"),
-                        F("租期至", false, "2027-01-01", "选填。格式 yyyy-MM-dd")
                     };
                 case ImportModule.OwnerRelation:
                     return new List<ImportField>
@@ -931,7 +935,17 @@ namespace PropertyManagement.Server.Services
         }
 
         // ============================ 私有辅助 ============================
-        private int ImportProperties(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
+        /// <summary>
+        /// 导入计数（CHG-v1.1.2-01）：Inserted = 新增行数，Updated = 覆盖行数。
+        /// 命中既有记录时不再报错，改为按「只覆盖文件里填了值的字段」的口径更新。
+        /// </summary>
+        private class ImportCount
+        {
+            public int Inserted;
+            public int Updated;
+        }
+
+        private ImportCount ImportProperties(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
         {
             Dictionary<string, int> map = BuildColumnMap(sheet);
             RequireHeaders(map, ImportModule.Property, "楼栋号", "房号", "建筑面积");
@@ -941,7 +955,7 @@ namespace PropertyManagement.Server.Services
             int colArea = ColIndex(map, "建筑面积", "面积");
             int colStatus = ColIndex(map, "状态");
 
-            int success = 0;
+            var count = new ImportCount();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -981,34 +995,69 @@ namespace PropertyManagement.Server.Services
                     if (rowErrors.Count == 0)
                     {
                         // BR-INF-01：有单元按「单元+房号」判重；无单元按「楼栋+房号」判重（与表单口径一致）
+                        // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：命中既有房产不再报错 → 覆盖处理。
+                        // 覆盖口径：只覆盖文件里填了值的字段（建筑面积必填 → 必覆盖；状态留空 → 保留库内原值），
+                        // 并写 t_base_change_log 留痕，便于追溯「哪一次导入改了什么」。
                         PropertyDto dup = unitId.HasValue
                             ? _repo.GetPropertyByUnitRoom(c, tx, unitId.Value, roomNo, 0)
                             : _repo.GetPropertyByBuildingRoom(c, tx, buildingId.Value, roomNo, 0);
                         if (dup != null)
-                            rowErrors.Add(Err(row, "房号", roomNo, "房号已存在（BR-INF-01）",
-                                hasUnit ? "更换房号，或先删除既有房产" : "更换房号，或补填单元号以区分"));
-                    }
-                    if (rowErrors.Count == 0)
-                    {
-                        _repo.InsertProperty(c, tx, new PropertyDto
                         {
-                            BuildingId = buildingId.Value,
-                            UnitId = unitId,
-                            RoomNo = roomNo,
-                            Area = area,
-                            Usage = PropertyUsage.Residential,   // v1.1.0：模板不再提供「用途」列，统一按住宅入库
-                            Status = propStatus
-                        });
-                        success++;
+                            PropertyDto before = _repo.GetProperty(c, dup.Id);
+                            if (before == null)
+                            {
+                                // 并发下既有房产已被删除：按新增处理，避免空引用
+                                _repo.InsertProperty(c, tx, new PropertyDto
+                                {
+                                    BuildingId = buildingId.Value, UnitId = unitId, RoomNo = roomNo,
+                                    Area = area, Usage = PropertyUsage.Residential, Status = propStatus
+                                });
+                                count.Inserted++;
+                                errors.AddRange(rowErrors);
+                                row++;
+                                continue;
+                            }
+                            PropertyStatus newStatus = string.IsNullOrWhiteSpace(statusText) ? before.Status : propStatus;
+                            _repo.UpdateProperty(c, tx, new PropertyDto
+                            {
+                                Id = before.Id,
+                                BuildingId = buildingId.Value,
+                                UnitId = unitId,
+                                RoomNo = roomNo,
+                                Area = area,
+                                Usage = before.Usage,   // 模板已不含「用途」列 → 保留库内用途，不因导入被改写
+                                Status = newStatus
+                            });
+                            if (before.Area != area)
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Property, before.Id, "建筑面积",
+                                    before.Area.ToString("0.####"), area.ToString("0.####"), "批量导入");
+                            if (before.Status != newStatus)
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Property, before.Id, "状态",
+                                    StatusText(before.Status), StatusText(newStatus), "批量导入");
+                            count.Updated++;
+                        }
+                        else
+                        {
+                            _repo.InsertProperty(c, tx, new PropertyDto
+                            {
+                                BuildingId = buildingId.Value,
+                                UnitId = unitId,
+                                RoomNo = roomNo,
+                                Area = area,
+                                Usage = PropertyUsage.Residential,   // v1.1.0：模板不再提供「用途」列，统一按住宅入库
+                                Status = propStatus
+                            });
+                            count.Inserted++;
+                        }
                     }
                 }
                 errors.AddRange(rowErrors);
                 row++;
             }
-            return success;
+            return count;
         }
 
-        private int ImportOwners(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
+        private ImportCount ImportOwners(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
         {
             Dictionary<string, int> map = BuildColumnMap(sheet);
             RequireHeaders(map, ImportModule.Owner, "姓名");
@@ -1022,7 +1071,7 @@ namespace PropertyManagement.Server.Services
             int colCheckIn = ColIndex(map, "入住日期");
             int colStatus = ColIndex(map, "状态");
 
-            int success = 0;
+            var count = new ImportCount();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -1053,26 +1102,60 @@ namespace PropertyManagement.Server.Services
                     string n = name.Trim();
                     string ph = string.IsNullOrWhiteSpace(phone) ? string.Empty : phone.Trim();
                     string ic = string.IsNullOrWhiteSpace(idCard) ? string.Empty : idCard.Trim();
-                    // 查重口径（v1.1.0）：证件号 → 电话 → 仅姓名；同名且无证件号/电话时拒绝导入，避免误并档
-                    int existingOwner = 0;
-                    if (ic.Length > 0)
-                        existingOwner = c.ExecuteScalar<int>(
-                            "SELECT COUNT(1) FROM t_owner WHERE name = @name AND id_card = @idCard AND del_flag = 0",
-                            new { name = n, idCard = ic, phone = ph }, tx);
-                    else if (ph.Length > 0)
-                        existingOwner = c.ExecuteScalar<int>(
-                            "SELECT COUNT(1) FROM t_owner WHERE name = @name AND phone = @phone AND del_flag = 0",
-                            new { name = n, idCard = ic, phone = ph }, tx);
-                    else
-                        existingOwner = c.ExecuteScalar<int>(
-                            "SELECT COUNT(1) FROM t_owner WHERE name = @name AND del_flag = 0",
-                            new { name = n, idCard = ic, phone = ph }, tx);
+                    // 查重口径（v1.1.0 起）：证件号 → 电话 → 仅姓名，用于**定位同一业主**。
+                    // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：
+                    //   命中唯一既有业主 → 覆盖处理（只覆盖文件里填了值的字段），不再报「该业主已存在」；
+                    //   同名命中多条且无证件号/电话 → 无法判定对象，按裁定 ⑨ 仍报错，不做自造合并。
+                    var sameNameIds = c.Query<int>(
+                        ic.Length > 0
+                            ? "SELECT id FROM t_owner WHERE name = @name AND id_card = @idCard AND del_flag = 0"
+                            : (ph.Length > 0
+                                ? "SELECT id FROM t_owner WHERE name = @name AND phone = @phone AND del_flag = 0"
+                                : "SELECT id FROM t_owner WHERE name = @name AND del_flag = 0"),
+                        new { name = n, idCard = ic, phone = ph }, tx).ToList();
 
-                    if (existingOwner > 0)
+                    if (sameNameIds.Count > 1)
                     {
-                        rowErrors.Add(ic.Length > 0 || ph.Length > 0
-                            ? Err(row, "姓名", n, "该业主已存在", "跳过该行，或先在「业主档案」查询既有业主")
-                            : Err(row, "姓名", n, "存在同名业主，无法确定是否为同一人", "补充「证件号」或「联系电话」后再导入"));
+                        rowErrors.Add(Err(row, "姓名", n,
+                            ic.Length > 0 || ph.Length > 0 ? "证件号/电话对应到多名业主，无法确定覆盖对象" : "存在同名业主，无法确定是否为同一人",
+                            "补充「证件号」或「联系电话」后再导入"));
+                    }
+                    else if (sameNameIds.Count == 1)
+                    {
+                        OwnerDto before = LoadOwner(c, tx, sameNameIds[0]);
+                        if (before == null)
+                        {
+                            rowErrors.Add(Err(row, "姓名", n, "该业主已被删除，请重新核对业主档案", "先在「业主档案」确认后再导入"));
+                        }
+                        else
+                        {
+                            var after = new OwnerDto
+                            {
+                                Id = before.Id,
+                                Name = n,
+                                // 只覆盖文件里填了值的字段：空单元格保留库内原值
+                                IdCardType = string.IsNullOrWhiteSpace(idType) ? before.IdCardType : idCardType,
+                                IdCard = ic.Length > 0 ? ic : before.IdCard,
+                                Phone = ph.Length > 0 ? ph : before.Phone,
+                                ResidentAddress = string.IsNullOrWhiteSpace(address) ? before.ResidentAddress : address,
+                                EmergencyContactName = string.IsNullOrWhiteSpace(emergency) ? before.EmergencyContactName : emergency,
+                                EmergencyContactPhone = string.IsNullOrWhiteSpace(emergencyPhone) ? before.EmergencyContactPhone : emergencyPhone,
+                                CheckInDate = string.IsNullOrWhiteSpace(checkIn) ? before.CheckInDate : ParseDate(checkIn),
+                                Status = string.IsNullOrWhiteSpace(statusText) ? before.Status : ownerStatus
+                            };
+                            _repo.UpdateOwner(c, tx, after);
+                            LogOwnerChanges(c, tx, before, after, "批量导入");
+                            if (!Equals(before.CheckInDate, after.CheckInDate))
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "入住日期",
+                                    before.CheckInDate.HasValue ? before.CheckInDate.Value.ToString("yyyy-MM-dd") : string.Empty,
+                                    after.CheckInDate.HasValue ? after.CheckInDate.Value.ToString("yyyy-MM-dd") : string.Empty,
+                                    "批量导入");
+                            if (before.Status != after.Status)
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "状态",
+                                    before.Status == OwnerStatus.Living ? "在住" : "搬离",
+                                    after.Status == OwnerStatus.Living ? "在住" : "搬离", "批量导入");
+                            count.Updated++;
+                        }
                     }
                     else
                     {
@@ -1088,16 +1171,16 @@ namespace PropertyManagement.Server.Services
                             CheckInDate = ParseDate(checkIn),
                             Status = ownerStatus
                         });
-                        success++;
+                        count.Inserted++;
                     }
                 }
                 errors.AddRange(rowErrors);
                 row++;
             }
-            return success;
+            return count;
         }
 
-        private int ImportParkings(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
+        private ImportCount ImportParkings(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
         {
             Dictionary<string, int> map = BuildColumnMap(sheet);
             RequireHeaders(map, ImportModule.Parking, "车位编号");
@@ -1108,10 +1191,8 @@ namespace PropertyManagement.Server.Services
             int colBindBuilding = ColIndex(map, "绑定楼栋号", "楼栋号");
             int colBindUnit = ColIndex(map, "绑定单元号", "单元号");
             int colBindRoom = ColIndex(map, "绑定房号", "房号");
-            int colRent = ColIndex(map, "租金", "月租金");
-            int colRentTo = ColIndex(map, "租期至");
 
-            int success = 0;
+            var count = new ImportCount();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -1124,31 +1205,88 @@ namespace PropertyManagement.Server.Services
                 string bindBuildingNo = CellAt(sheet, row, colBindBuilding);
                 string bindUnitNo = CellAt(sheet, row, colBindUnit);
                 string bindRoomNo = CellAt(sheet, row, colBindRoom);
-                string rentText = CellAt(sheet, row, colRent);
-                string rentToText = CellAt(sheet, row, colRentTo);
 
                 var rowErrors = new List<ImportErrorItemDto>();
                 if (string.IsNullOrWhiteSpace(spaceNo)) rowErrors.Add(Err(row, "车位编号", spaceNo, "车位编号不能为空", "填写车位编号"));
 
+                bool hasTypeText = !string.IsNullOrWhiteSpace(typeText);
                 ParkingSpaceType spaceType = ParkingSpaceType.PropertyRight;
-                if (!string.IsNullOrWhiteSpace(typeText) && !TryParseLabeled(typeText, ParkingTypeMap, out spaceType))
-                    rowErrors.Add(Err(row, "类型", typeText, "类型不合法（产权/人防/临时）", "填写 产权/人防/临时"));
+                if (hasTypeText && !TryParseLabeled(typeText, ParkingTypeMap, out spaceType))
+                    rowErrors.Add(Err(row, "类型", typeText, "类型不合法（产权/普通/临时）", "填写 产权/普通/临时"));
+                bool hasStatusText = !string.IsNullOrWhiteSpace(statusText);
                 ParkingSpaceStatus status = ParkingSpaceStatus.Vacant;
-                if (!string.IsNullOrWhiteSpace(statusText) && !TryParseLabeled(statusText, ParkingStatusMap, out status))
+                if (hasStatusText && !TryParseLabeled(statusText, ParkingStatusMap, out status))
                     rowErrors.Add(Err(row, "状态", statusText, "状态不合法（已售/已租/空置/维修中）", "填写 已售/已租/空置/维修中"));
                 if (spaceType == ParkingSpaceType.CivilDefense && status == ParkingSpaceStatus.Owned)
-                    rowErrors.Add(Err(row, "类型/状态", typeText + "-" + statusText, "人防车位不可标为出售（BR-INF-03）", "改为已租/空置"));
-                decimal monthlyRent = 0;
-                if (!string.IsNullOrWhiteSpace(rentText) && !decimal.TryParse(rentText, out monthlyRent))
-                    rowErrors.Add(Err(row, "租金", rentText, "数字格式不正确", "填写数字"));
-                DateTime? rentTo = null;
-                if (!string.IsNullOrWhiteSpace(rentToText) && !DateTime.TryParse(rentToText, out DateTime rd))
-                    rowErrors.Add(Err(row, "租期至", rentToText, "日期格式不正确", "填写 yyyy-MM-dd"));
+                        rowErrors.Add(Err(row, "类型/状态", typeText + "-" + statusText, "普通车位不可标为出售", "改为已租/空置"));
 
                 if (rowErrors.Count == 0)
                 {
                     string key = spaceNo.Trim();
-                    if (_repo.GetParkingByNo(c, key, 0) != null) rowErrors.Add(Err(row, "车位编号", key, "车位编号已存在（BR-INF-03）", "更换编号"));
+                    // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：车位编号命中既有记录 → 覆盖处理，不再报错。
+                    // 覆盖口径：只覆盖文件里填了值的字段；「绑定房产」三列整体留空时保留库内既有绑定。
+                    // 另：v1.1.0 起车位表单已下线「租金/租期至」，模板同步移除该两列，导入不再改写库内租金与租期。
+                    ParkingSpaceDto duplicate = _repo.GetParkingByNo(c, key, 0);
+                    ParkingSpaceDto before = duplicate == null ? null : LoadParking(c, tx, duplicate.Id);
+                    if (before != null)
+                    {
+                        ParkingSpaceType newType = hasTypeText ? spaceType : before.SpaceType;
+                        ParkingSpaceStatus newStatus = hasStatusText ? status : before.Status;
+                        int? propertyId = null;
+                        bool hasBind = !string.IsNullOrWhiteSpace(bindBuildingNo) || !string.IsNullOrWhiteSpace(bindUnitNo) || !string.IsNullOrWhiteSpace(bindRoomNo);
+                        if (hasBind)
+                        {
+                            // v1.1.0 F-06：绑定房产只需「楼栋号 + 房号」，单元号可留空（老旧小区无单元）
+                            if (string.IsNullOrWhiteSpace(bindBuildingNo) || string.IsNullOrWhiteSpace(bindRoomNo))
+                                rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindRoomNo, "绑定房产需同时填写「绑定楼栋号 + 绑定房号」", "补填楼栋号与房号（单元号可留空）"));
+                            else
+                            {
+                                string bindLabel = bindBuildingNo.Trim() + (string.IsNullOrWhiteSpace(bindUnitNo) ? string.Empty : bindUnitNo.Trim()) + bindRoomNo.Trim();
+                                propertyId = ResolvePropertyByKeyLoose(c, tx, bindBuildingNo.Trim(), bindUnitNo, bindRoomNo.Trim());
+                                if (!propertyId.HasValue)
+                                    rowErrors.Add(Err(row, "绑定房产", bindLabel, "找不到唯一对应的房产", "核对该房产是否存在；若同楼栋存在多个同名房号，请补填单元号"));
+                            }
+                        }
+                        if (rowErrors.Count == 0)
+                        {
+                            int? effPropertyId = hasBind ? propertyId : before.PropertyId;
+                            int? effOwnerId = hasBind
+                                ? (effPropertyId.HasValue ? ResolveOwnerIdByProperty(c, tx, effPropertyId.Value) : null)
+                                : before.OwnerId;
+                            if (newType == ParkingSpaceType.PropertyRight && effPropertyId.HasValue &&
+                                _repo.CountParkingsBoundToProperty(c, tx, effPropertyId.Value, before.Id, (int)ParkingSpaceType.PropertyRight) > 0)
+                            rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位", "更换房产"));
+                            if (rowErrors.Count == 0)
+                            {
+                                _repo.UpdateParking(c, tx, new ParkingSpaceDto
+                                {
+                                    Id = before.Id,
+                                    SpaceNo = key,
+                                    Area = string.IsNullOrWhiteSpace(area) ? before.Area : area,
+                                    SpaceType = newType,
+                                    Status = newStatus,
+                                    PropertyId = effPropertyId,
+                                    OwnerId = effOwnerId,
+                                    MonthlyRent = before.MonthlyRent,   // 模板已下线「租金」列 → 保留库内原值
+                                    RentMode = before.RentMode,
+                                    RentTo = before.RentTo               // 模板已下线「租期至」列 → 保留库内原值
+                                });
+                                if (before.Status != newStatus)
+                                    WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "状态",
+                                        ParkingStatusLabel(before.Status), ParkingStatusLabel(newStatus), "批量导入");
+                                if (before.SpaceType != newType)
+                                    WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "类型",
+                                        ParkingTypeLabel(before.SpaceType), ParkingTypeLabel(newType), "批量导入");
+                                if (!Equals(before.Area, area) && !string.IsNullOrWhiteSpace(area))
+                                    WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "区域", before.Area, area, "批量导入");
+                                if (before.PropertyId != effPropertyId)
+                                    WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "绑定房产",
+                                        before.PropertyId.HasValue ? before.PropertyId.Value.ToString() : string.Empty,
+                                        effPropertyId.HasValue ? effPropertyId.Value.ToString() : string.Empty, "批量导入");
+                                count.Updated++;
+                            }
+                        }
+                    }
                     else
                     {
                         int? propertyId = null;
@@ -1171,7 +1309,7 @@ namespace PropertyManagement.Server.Services
                         {
                             if (spaceType == ParkingSpaceType.PropertyRight && propertyId.HasValue &&
                                 _repo.CountParkingsBoundToProperty(c, tx, propertyId.Value, 0, (int)ParkingSpaceType.PropertyRight) > 0)
-                                rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位（BR-INF-03）", "更换房产"));
+                            rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位", "更换房产"));
                         }
                         if (rowErrors.Count == 0 && propertyId.HasValue)
                         {
@@ -1188,20 +1326,20 @@ namespace PropertyManagement.Server.Services
                                 Status = status,
                                 PropertyId = propertyId,
                                 OwnerId = ownerId,
-                                MonthlyRent = monthlyRent > 0 ? monthlyRent : (decimal?)null,
-                                RentTo = rentTo
+                                MonthlyRent = null,
+                                RentTo = null
                             });
-                            success++;
+                            count.Inserted++;
                         }
                     }
                 }
                 errors.AddRange(rowErrors);
                 row++;
             }
-            return success;
+            return count;
         }
 
-        private int ImportRelations(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
+        private ImportCount ImportRelations(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
         {
             Dictionary<string, int> map = BuildColumnMap(sheet);
             RequireHeaders(map, ImportModule.OwnerRelation, "房号", "业主姓名");
@@ -1217,7 +1355,7 @@ namespace PropertyManagement.Server.Services
             int colEnd = ColIndex(map, "终止日期", "结束日期");
             int colStatus = ColIndex(map, "状态");
 
-            int success = 0;
+            var count = new ImportCount();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -1263,20 +1401,15 @@ namespace PropertyManagement.Server.Services
                     {
                         DateTime effectiveAt = ParseDate(startText) ?? DateTime.Today;
                         DateTime? expireAt = ParseDate(endText);
-                        if (relType == OwnerRelType.Owner && _repo.CountActiveOwnerRelationsByProperty(c, tx, propertyId.Value, 0) > 0)
-                            rowErrors.Add(Err(row, "关系类型", relTypeText, "该房产已有一名业主（一房仅一名业主 BR-INF-02）", "改为共有人/租户备案"));
-                        // v1.1.0 第 3 轮：同「房产 + 业主 + 生效日期」关系已存在时给出中文提示，
-                        // 避免直接撞 t_owner_property_rel 唯一约束抛英文异常（重复导入同一文件的典型场景）
-                        if (rowErrors.Count == 0 &&
-                            c.ExecuteScalar<int>(
-                                "SELECT COUNT(1) FROM t_owner_property_rel WHERE property_id = @p AND owner_id = @o " +
-                                "AND date(effective_at) = @d AND del_flag = 0",
-                                new { p = propertyId.Value, o = ownerId.Value, d = effectiveAt.ToString("yyyy-MM-dd") }, tx) > 0)
-                        {
-                            rowErrors.Add(Err(row, "关系", propLabel + " / " + ownerName,
-                                "该业主与此房产的关系已存在（同一房产 + 业主 + 生效日期不可重复）",
-                                "跳过该行，或在「起始日期」填写不同日期后重试"));
-                        }
+                        // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：同「房产 + 业主 + 生效日期」命中既有关系 → 覆盖处理。
+                        // 同时 BR-INF-02 只在「该房产已有另一位业主」时报错 —— 同一业主重复行不再被拦。
+                        int existingRelId = c.ExecuteScalar<int>(
+                            "SELECT COALESCE((SELECT id FROM t_owner_property_rel WHERE property_id = @p AND owner_id = @o " +
+                            "AND date(effective_at) = @d AND del_flag = 0 ORDER BY id DESC LIMIT 1), 0)",
+                            new { p = propertyId.Value, o = ownerId.Value, d = effectiveAt.ToString("yyyy-MM-dd") }, tx);
+                        if (existingRelId == 0 && relType == OwnerRelType.Owner &&
+                            _repo.CountActiveOwnerRelationsByProperty(c, tx, propertyId.Value, 0) > 0)
+                        rowErrors.Add(Err(row, "关系类型", relTypeText, "该房产已有一名业主，一房仅可登记一名业主", "改为共有人/租户备案"));
                         if (rowErrors.Count == 0)
                         {
                             decimal defaultShare = relType == OwnerRelType.Owner ? 100m : (relType == OwnerRelType.CoOwner ? 50m : 0m);
@@ -1285,37 +1418,128 @@ namespace PropertyManagement.Server.Services
                         }
                         if (rowErrors.Count == 0)
                         {
-                            _repo.InsertRelation(c, tx, new OwnerPropertyRelationDto
+                            if (existingRelId > 0)
                             {
-                                PropertyId = propertyId.Value,
-                                OwnerId = ownerId.Value,
-                                RelType = relType,
-                                Share = share <= 0 ? (relType == OwnerRelType.Owner ? 100m : (relType == OwnerRelType.CoOwner ? 50m : 0m)) : share,
-                                EffectiveAt = effectiveAt,
-                                ExpireAt = expireAt,
-                                // 模板「状态」列给了就按填写值落库（历史档案导入），否则按终止日期自动判定
-                                Status = hasStatusText ? relStatus : ResolveRelStatus(expireAt)
-                            });
-                            success++;
+                                OwnerPropertyRelationDto beforeRel = _repo.GetRelation(c, existingRelId);
+                                if (beforeRel == null)
+                                {
+                                    rowErrors.Add(Err(row, "关系", propLabel + " / " + ownerName, "该关系已被删除，请核对后重试", "在「业主-房产关系」页面确认后再导入"));
+                                }
+                                else
+                                {
+                                    // 只覆盖文件里填了值的字段（关系类型/份额/终止日期/状态留空 → 保留库内原值）
+                                    OwnerRelType newRelType = string.IsNullOrWhiteSpace(relTypeText) ? beforeRel.RelType : relType;
+                                    decimal newShare = share > 0 ? share : beforeRel.Share;
+                                    DateTime? newExpire = string.IsNullOrWhiteSpace(endText) ? beforeRel.ExpireAt : expireAt;
+                                    OwnerRelStatus newRelStatus = hasStatusText ? relStatus : beforeRel.Status;
+                                    _repo.UpdateRelation(c, tx, new OwnerPropertyRelationDto
+                                    {
+                                        Id = beforeRel.Id,
+                                        PropertyId = propertyId.Value,
+                                        OwnerId = ownerId.Value,
+                                        RelType = newRelType,
+                                        Share = newShare,
+                                        EffectiveAt = effectiveAt,
+                                        ExpireAt = newExpire,
+                                        Status = newRelStatus
+                                    });
+                                    if (beforeRel.RelType != newRelType)
+                                        WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "关系类型",
+                                            RelTypeName(beforeRel.RelType), RelTypeName(newRelType), "批量导入");
+                                    if (beforeRel.Share != newShare)
+                                        WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "份额",
+                                            beforeRel.Share.ToString("0.##"), newShare.ToString("0.##"), "批量导入");
+                                    if (!Equals(beforeRel.ExpireAt, newExpire))
+                                        WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "终止日期",
+                                            beforeRel.ExpireAt.HasValue ? beforeRel.ExpireAt.Value.ToString("yyyy-MM-dd") : string.Empty,
+                                            newExpire.HasValue ? newExpire.Value.ToString("yyyy-MM-dd") : string.Empty, "批量导入");
+                                    if (beforeRel.Status != newRelStatus)
+                                        WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "状态",
+                                            RelStatusText(beforeRel.Status), RelStatusText(newRelStatus), "批量导入");
+                                    count.Updated++;
+                                }
+                            }
+                            else
+                            {
+                                _repo.InsertRelation(c, tx, new OwnerPropertyRelationDto
+                                {
+                                    PropertyId = propertyId.Value,
+                                    OwnerId = ownerId.Value,
+                                    RelType = relType,
+                                    Share = share <= 0 ? (relType == OwnerRelType.Owner ? 100m : (relType == OwnerRelType.CoOwner ? 50m : 0m)) : share,
+                                    EffectiveAt = effectiveAt,
+                                    ExpireAt = expireAt,
+                                    // 模板「状态」列给了就按填写值落库（历史档案导入），否则按终止日期自动判定
+                                    Status = hasStatusText ? relStatus : ResolveRelStatus(expireAt)
+                                });
+                                count.Inserted++;
+                            }
                         }
                     }
                 }
                 errors.AddRange(rowErrors);
                 row++;
             }
-            return success;
+            return count;
         }
 
-        private void LogOwnerChanges(IDbConnection c, IDbTransaction tx, OwnerDto before, OwnerDto after)
+        /// <summary>
+        /// 业主关键字段变更留痕（t_base_change_log）。
+        /// CHG-v1.1.2-01：新增 channel 参数 —— 批量导入覆盖走「批量导入」，档案页维护仍为「后台维护」，
+        /// 便于在业主档案的「联系方式变更历史」里区分数据来源。
+        /// </summary>
+        private void LogOwnerChanges(IDbConnection c, IDbTransaction tx, OwnerDto before, OwnerDto after, string channel = "后台维护")
         {
             if (!Equals(before.Phone, after.Phone))
-                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "联系电话", before.Phone, after.Phone, "后台维护");
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "联系电话", before.Phone, after.Phone, channel);
             if (!Equals(before.EmergencyContactName, after.EmergencyContactName))
-                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人", before.EmergencyContactName, after.EmergencyContactName, "后台维护");
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人", before.EmergencyContactName, after.EmergencyContactName, channel);
             if (!Equals(before.EmergencyContactPhone, after.EmergencyContactPhone))
-                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人电话", before.EmergencyContactPhone, after.EmergencyContactPhone, "后台维护");
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人电话", before.EmergencyContactPhone, after.EmergencyContactPhone, channel);
             if (!Equals(before.ResidentAddress, after.ResidentAddress))
-                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "常住地址", before.ResidentAddress, after.ResidentAddress, "后台维护");
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "常住地址", before.ResidentAddress, after.ResidentAddress, channel);
+        }
+
+        /// <summary>读取业主原始行（不含统计聚合），供导入覆盖前的「变更前后」比对使用。</summary>
+        private static OwnerDto LoadOwner(IDbConnection c, IDbTransaction tx, int id)
+        {
+            return c.QueryFirstOrDefault<OwnerDto>(
+                "SELECT id, name, id_card_type AS IdCardType, id_card AS IdCard, phone, resident_address AS ResidentAddress, " +
+                "emergency_contact_name AS EmergencyContactName, emergency_contact_phone AS EmergencyContactPhone, " +
+                "check_in_date AS CheckInDate, status FROM t_owner WHERE id = @id AND del_flag = 0",
+                new { id }, tx);
+        }
+
+        /// <summary>读取车位原始行（含绑定与租金字段），供导入覆盖前的「变更前后」比对与保留非覆盖字段使用。</summary>
+        private static ParkingSpaceDto LoadParking(IDbConnection c, IDbTransaction tx, int id)
+        {
+            return c.QueryFirstOrDefault<ParkingSpaceDto>(
+                "SELECT id, space_no AS SpaceNo, area AS Area, space_type AS SpaceType, status AS Status, " +
+                "property_id AS PropertyId, owner_id AS OwnerId, monthly_rent AS MonthlyRent, " +
+                "rent_mode AS RentMode, rent_to AS RentTo, del_flag AS DelFlag " +
+                "FROM t_parking_space WHERE id = @id AND del_flag = 0",
+                new { id }, tx);
+        }
+
+        private static string ParkingStatusLabel(ParkingSpaceStatus status)
+        {
+            switch (status)
+            {
+                case ParkingSpaceStatus.Owned: return "已售";
+                case ParkingSpaceStatus.Rented: return "已租";
+                case ParkingSpaceStatus.Repairing: return "维修中";
+                default: return "空置";
+            }
+        }
+
+        private static string ParkingTypeLabel(ParkingSpaceType type)
+        {
+            switch (type)
+            {
+                case ParkingSpaceType.CivilDefense: return "普通";
+                case ParkingSpaceType.Temporary: return "临时";
+                default: return "产权";
+            }
         }
 
         private static void WriteChangeLog(IDbConnection c, IDbTransaction tx, BaseChangeObjectType type, int objectId,
@@ -1629,9 +1853,9 @@ namespace PropertyManagement.Server.Services
             return fallback;
         }
 
-        // ===== 导入枚举中文标签映射（模板列直接写中文：产权/人防/已售…） =====
+        // ===== 导入枚举中文标签映射（模板列直接写中文：产权/普通/已售…；CHG-v1.1.2-48：人防→普通） =====
         private static readonly Dictionary<string, PropertyUsage> PropertyUsageMap = new Dictionary<string, PropertyUsage>
-        { { "住宅", PropertyUsage.Residential }, { "商铺", PropertyUsage.Commercial } };
+        { { "住宅", PropertyUsage.Residential }, { "商铺", PropertyUsage.Commercial }, { "空置", PropertyUsage.Vacant } };
         private static readonly Dictionary<string, PropertyStatus> PropertyStatusMap = new Dictionary<string, PropertyStatus>
         { { "空置", PropertyStatus.Vacant }, { "入住", PropertyStatus.Occupied }, { "已入住", PropertyStatus.Occupied }, { "装修中", PropertyStatus.Renovating } };
         private static readonly Dictionary<string, OwnerIdCardType> IdCardTypeMap = new Dictionary<string, OwnerIdCardType>
@@ -1639,7 +1863,7 @@ namespace PropertyManagement.Server.Services
         private static readonly Dictionary<string, OwnerStatus> OwnerStatusMap = new Dictionary<string, OwnerStatus>
         { { "在住", OwnerStatus.Living }, { "搬离", OwnerStatus.MovedOut } };
         private static readonly Dictionary<string, ParkingSpaceType> ParkingTypeMap = new Dictionary<string, ParkingSpaceType>
-        { { "产权", ParkingSpaceType.PropertyRight }, { "人防", ParkingSpaceType.CivilDefense }, { "临时", ParkingSpaceType.Temporary } };
+        { { "产权", ParkingSpaceType.PropertyRight }, { "普通", ParkingSpaceType.CivilDefense }, { "临时", ParkingSpaceType.Temporary } };
         private static readonly Dictionary<string, ParkingSpaceStatus> ParkingStatusMap = new Dictionary<string, ParkingSpaceStatus>
         { { "已售", ParkingSpaceStatus.Owned }, { "已租", ParkingSpaceStatus.Rented }, { "空置", ParkingSpaceStatus.Vacant }, { "维修中", ParkingSpaceStatus.Repairing } };
         private static readonly Dictionary<string, OwnerRelType> OwnerRelTypeMap = new Dictionary<string, OwnerRelType>

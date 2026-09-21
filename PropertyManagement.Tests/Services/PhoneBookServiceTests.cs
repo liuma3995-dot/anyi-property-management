@@ -168,7 +168,7 @@ namespace PropertyManagement.Tests.Services
             }));
 
             Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
-            Assert.Contains("BR-TEL-04", ex.Message);
+            Assert.Contains("号码格式不正确", ex.Message);
         }
 
         [Fact]

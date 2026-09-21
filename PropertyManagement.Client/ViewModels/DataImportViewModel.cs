@@ -25,7 +25,19 @@ namespace PropertyManagement.Client.ViewModels
         public string ModuleText { get { return Dto.ModuleText ?? Dto.Module.ToString(); } }
         public int Total { get { return Dto.Total; } }
         public int Success { get { return Dto.Success; } }
+        /// <summary>CHG-v1.1.2-01：覆盖条数（重复数据按导入文件覆盖既有记录的条数）。</summary>
+        public int Updated { get { return Dto.Updated; } }
         public int Fail { get { return Dto.Fail; } }
+        /// <summary>结果摘要：新增 / 覆盖 / 失败（覆盖为 0 时不展示，避免干扰）。</summary>
+        public string ResultText
+        {
+            get
+            {
+                string text = "新增 " + Success;
+                if (Updated > 0) { text += " / 覆盖 " + Updated; }
+                return text + " / 失败 " + Fail;
+            }
+        }
         public string StatusText { get { return Dto.StatusText ?? string.Empty; } }
         public string TimeText { get { return Dto.CreatedAt == default ? "—" : Dto.CreatedAt.ToString("yyyy-MM-dd HH:mm"); } }
         public Brush StatusBg { get { return Dto.Status == ImportStatus.Success ? Br("#E8F7F1") : (Dto.Status == ImportStatus.PartialSuccess ? Br("#FEF0C7") : Br("#F1F3F7")); } }
@@ -359,7 +371,9 @@ namespace PropertyManagement.Client.ViewModels
                 if (result != null)
                 {
                     string reason = result.Errors.Count > 0 ? (result.Errors[0].Reason ?? "请下载回执查看") : string.Empty;
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "导入完成：成功 " + result.Batch.Success + " 行，失败 " + result.Batch.Fail + " 行"
+                    // CHG-v1.1.2-01：重复数据做覆盖处理 —— 结果区分「新增」与「覆盖」，让用户看清这次导入改了什么
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "导入完成：新增 " + result.Batch.Success + " 行，覆盖 "
+                        + result.Batch.Updated + " 行，失败 " + result.Batch.Fail + " 行"
                         + (reason.Length > 0 ? "；" + reason : string.Empty);
                 }
             }

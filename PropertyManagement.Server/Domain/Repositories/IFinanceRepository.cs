@@ -19,6 +19,8 @@ namespace PropertyManagement.Server.Domain.Repositories
         int InsertChargeItem(IDbConnection connection, IDbTransaction transaction, ChargeItemDto item);
         void UpdateChargeItem(IDbConnection connection, IDbTransaction transaction, ChargeItemDto item);
         void SoftDeleteChargeItem(IDbConnection connection, IDbTransaction transaction, int id);
+        /// <summary>CHG-v1.1.2-35：收费项目被多少张（未删除）账单引用 —— 删除前拦截依据。</summary>
+        int CountChargeItemBills(IDbConnection connection, int id);
 
         // ---------- 计费周期（UC-FIN-001） ----------
         List<BillingCycleDto> ListCycles(IDbConnection connection);
@@ -49,7 +51,12 @@ namespace PropertyManagement.Server.Domain.Repositories
         /// </summary>
         bool HasValidOwnerRelation(IDbConnection connection, int? propertyId, int? parkingId, int? ownerId);
         int InsertBill(IDbConnection connection, IDbTransaction transaction, BillDto bill); // 按 bill.DelFlag 落库（失败占位=1）
-        void UpdateBillPaidAmount(IDbConnection connection, IDbTransaction transaction, BillDto bill);
+
+        /// <summary>
+        /// CHG-v1.1.2-40：同时回写「应收金额 + 实缴金额 + 状态」——
+        /// 退款/调减冲减实缴（paid_amount）、减免调减应收（amount），两条链路都经此落库。
+        /// </summary>
+        void UpdateBillAmountAndPaid(IDbConnection connection, IDbTransaction transaction, BillDto bill);
         void MarkOverdue(IDbConnection connection, IDbTransaction transaction, DateTime now);
         void InsertBillStatusLog(IDbConnection connection, IDbTransaction transaction, BillStatusLogDto log);
         BillDto GetBill(IDbConnection connection, int id);
@@ -75,7 +82,21 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         // ---------- 欠费台账（UC-FIN-007） ----------
         PageResult<ArrearDto> QueryArrears(IDbConnection connection, BillQueryRequest query);
+
+        /// <summary>
+        /// CHG-v1.1.2-55：按财务报表口径汇总某时间窗的**收入净额**（收款 − 退款/调减冲正 + 调增补收；减免不进）。
+        /// 与 <c>BuildFinancialReport</c> 同源（内部复用同一份明细行聚合），供仪表盘「本月已收」对齐财务报表「收入合计」，
+        /// 避免两处各写一套 SQL 造成口径漂移。
+        /// </summary>
+        decimal SumReportIncome(IDbConnection connection, DateTime from, DateTime to, int? chargeItemId);
         void InsertArrearRemind(IDbConnection connection, IDbTransaction transaction, int billId, string channel, string note, int? userId);
+
+        /// <summary>欠费台账「移出台账」（CHG-v1.1.2-03）：只写剔除记录，不动账单与其它模块数据。</summary>
+        int DismissArrearBills(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> billIds, string reason, string operatorName);
+        /// <summary>恢复台账：删除剔除记录。</summary>
+        int RestoreArrearBills(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> dismissIds);
+        /// <summary>已移出台账的记录列表。</summary>
+        List<ArrearDismissDto> QueryDismissedArrears(IDbConnection connection);
         void SoftDeleteBill(IDbConnection connection, IDbTransaction transaction, int id);
 
         // ---------- 收款/收据（UC-FIN-003/011，P-06） ----------
@@ -96,6 +117,17 @@ namespace PropertyManagement.Server.Domain.Repositories
         // ---------- 退款/减免/调整（UC-FIN-004） ----------
         int InsertRefund(IDbConnection connection, IDbTransaction transaction, RefundAdjustmentDto refund);
         List<RefundAdjustmentDto> ListRefunds(IDbConnection connection, PageRequest query, out int total);
+
+        /// <summary>
+        /// CHG-v1.1.2-41：按主键取单据详情（含账单口径与缴费对象），供导出 PDF 留档与审计追溯。
+        /// </summary>
+        RefundRecordDetailDto GetRefundRecord(IDbConnection connection, int id);
+
+        /// <summary>
+        /// 某账单**已冲减实缴**的金额合计（退款 + 调减冲正，CHG-v1.1.2-07：按累计口径封顶）。
+        /// CHG-v1.1.2-40：减免（refund_type = 1）改为调减应收、不再冲减实缴，故不计入本合计。
+        /// </summary>
+        decimal SumPaidCutsByBill(IDbConnection connection, IDbTransaction transaction, int billId);
         decimal GetBillPaidAmount(IDbConnection connection, int billId);
 
         // ---------- 支出（UC-FIN-005/006） ----------
@@ -143,6 +175,19 @@ namespace PropertyManagement.Server.Domain.Repositories
         public string No { get; set; }
         public BillObjectKind Kind { get; set; }
         public decimal? Area { get; set; }    // T4F-1-5：房产建筑面积（按建筑面积计费用；车位为 null）
+        /// <summary>CHG-v1.1.2-26：房产用途（0 住宅 1 商铺），用于规格自动匹配。</summary>
+        public int? Usage { get; set; }
+        /// <summary>CHG-v1.1.2-26：房产入住状态（0 空置 1 入住 2 装修中），用于规格自动匹配。</summary>
+        public int? Status { get; set; }
+        /// <summary>CHG-v1.1.2-26：车位类型（0 产权 1 人防 2 临时），用于规格自动匹配。</summary>
+        public int? SpaceType { get; set; }
+        /// <summary>CHG-v1.1.2-26：楼栋号，用于规格自动匹配。</summary>
+        public string BuildingNo { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-49：业主名下主房产的「楼栋 单元 房号」（仅业主口径填充）——
+        /// 用于出账预演/失败明细里区分同名业主（业主档案可能与多套房产关联，取最近一条有效关系）。
+        /// </summary>
+        public string Address { get; set; }
     }
 
     public enum BillObjectKind

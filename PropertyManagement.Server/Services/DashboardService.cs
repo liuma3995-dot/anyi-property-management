@@ -5,7 +5,9 @@ using System.Globalization;
 using System.Linq;
 using Dapper;
 using PropertyManagement.Contract.Common;
+using PropertyManagement.Server.Domain.Repositories;
 using PropertyManagement.Server.Infrastructure.Data;
+using PropertyManagement.Server.Infrastructure.Repositories;
 
 namespace PropertyManagement.Server.Services
 {
@@ -17,16 +19,24 @@ namespace PropertyManagement.Server.Services
     {
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly TodoService _todos;
+        /// <summary>CHG-v1.1.2-55：报表口径收入聚合（与财务报表同源，保证两页数字一致）。</summary>
+        private readonly IFinanceRepository _finance;
 
         public DashboardService()
-            : this(new SqliteConnectionFactory(), new TodoService())
+            : this(new SqliteConnectionFactory(), new TodoService(), new SqlFinanceRepository())
         {
         }
 
         public DashboardService(IDbConnectionFactory connectionFactory, TodoService todos)
+            : this(connectionFactory, todos, new SqlFinanceRepository())
+        {
+        }
+
+        public DashboardService(IDbConnectionFactory connectionFactory, TodoService todos, IFinanceRepository finance)
         {
             _connectionFactory = connectionFactory;
             _todos = todos;
+            _finance = finance;
         }
 
         /// <summary>仪表盘统计（默认当前月口径）。</summary>
@@ -96,32 +106,43 @@ namespace PropertyManagement.Server.Services
                     "date(COALESCE((SELECT MAX(i.i_date) FROM t_inspection_record i WHERE i.device_id = d.id), d.enable_date, d.created_at), '+1 year') " +
                     "<= date('now','localtime','+30 day'))");
 
-                // 应收/已收/收缴率（R17：按所选月份口径）
-                dto.MonthReceivable = Sum(connection,
-                    "SELECT COALESCE(SUM(amount), 0) FROM t_bill WHERE del_flag = 0 " +
-                    "AND strftime('%Y-%m', due_at) = @period", new { period = periodText });
-
-                dto.MonthReceived = Sum(connection,
-                    "SELECT COALESCE(SUM(amount), 0) FROM t_payment WHERE status = 0 " +
-                    "AND strftime('%Y-%m', paid_at) = @period", new { period = periodText });
+                // CHG-v1.1.2-55：应收/已收/收缴率口径校正
+                // ①「本月应收」＝**账期归属本月**的账单应收（按月账单按账期起始月归月，原实现按到期日归月）；
+                // ②「本月已收」＝本月**实收现金净额**，与财务报表「收入合计」同源（原实现只算收款毛额，
+                //    未扣退款/调减冲正、未计调增补收 → 与财务报表差 0.35 这类小额差异）；
+                // ③ 收缴率＝本月账期账单「已收 / 应收」（分子分母同源），不再出现「已收按收款日 + 应收按到期日」
+                //    导致的 >100%（实测曾出现 926.5%）。
+                string monthScope = "FROM t_bill b LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                                    "WHERE b.del_flag = 0 " +
+                                    "AND strftime('%Y-%m', COALESCE(cy.start_date, b.due_at)) = @period";
+                dto.MonthReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + monthScope,
+                    new { period = periodText });
+                dto.MonthCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + monthScope,
+                    new { period = periodText });
+                dto.MonthReceived = SumReportIncome(connection, monthStart, monthStart.AddMonths(1));
 
                 dto.CollectionRate = dto.MonthReceivable > 0
-                    ? Math.Round(dto.MonthReceived / dto.MonthReceivable * 100m, 1)
+                    ? Math.Round(dto.MonthCycleReceived / dto.MonthReceivable * 100m, 1)
                     : 0m;
 
                 // 环比：与上一月对比（应收/已收按百分比，逾期户数按户数差）
-                decimal previousReceivable = Sum(connection,
-                    "SELECT COALESCE(SUM(amount), 0) FROM t_bill WHERE del_flag = 0 " +
-                    "AND strftime('%Y-%m', due_at) = @period", new { period = previousPeriod });
-                decimal previousReceived = Sum(connection,
-                    "SELECT COALESCE(SUM(amount), 0) FROM t_payment WHERE status = 0 " +
-                    "AND strftime('%Y-%m', paid_at) = @period", new { period = previousPeriod });
+                decimal previousReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + monthScope,
+                    new { period = previousPeriod });
+                decimal previousCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + monthScope,
+                    new { period = previousPeriod });
+                decimal previousReceived = SumReportIncome(connection, monthStart.AddMonths(-1), monthStart);
                 dto.ReceivableTrend = PercentTrend(dto.MonthReceivable, previousReceivable);
                 dto.ReceivedTrend = PercentTrend(dto.MonthReceived, previousReceived);
+                // 收缴率环比改用「百分点差」（原实现借用了应收环比，语义不对）
+                decimal previousRate = previousReceivable > 0
+                    ? Math.Round(previousCycleReceived / previousReceivable * 100m, 1)
+                    : 0m;
+                dto.CollectionRateTrend = RateTrend(dto.CollectionRate, previousRate);
 
                 int currentOverdue = Count(connection,
                     "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
                     "AND strftime('%Y-%m', due_at) = @period", new { period = periodText });
+                // BUG 修正：上月逾期户数原样用了本月的 @period（复制粘贴笔误），导致「较上月」恒为 0 户
                 int previousOverdue = Count(connection,
                     "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
                     "AND strftime('%Y-%m', due_at) = @period", new { period = previousPeriod });
@@ -156,6 +177,20 @@ namespace PropertyManagement.Server.Services
         private static decimal Sum(IDbConnection connection, string sql, object param)
         {
             return connection.ExecuteScalar<decimal?>(sql, param) ?? 0m;
+        }
+
+        /// <summary>CHG-v1.1.2-55：本月已收（现金净额）＝财务报表「收入合计」口径。</summary>
+        private decimal SumReportIncome(IDbConnection connection, DateTime from, DateTime to)
+        {
+            return _finance.SumReportIncome(connection, from, to, null);
+        }
+
+        /// <summary>收缴率环比（百分点差，如 +1.2 个百分点）。</summary>
+        private static string RateTrend(decimal current, decimal previous)
+        {
+            decimal delta = Math.Round(current - previous, 1);
+            return "较上月 " + (delta >= 0 ? "+" : string.Empty) +
+                   delta.ToString("0.#", CultureInfo.InvariantCulture) + " 个百分点";
         }
 
         /// <summary>环比文案：上月为 0 时以 +100%/0% 兜底，避免除零。</summary>

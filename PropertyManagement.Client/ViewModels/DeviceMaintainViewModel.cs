@@ -267,7 +267,7 @@ namespace PropertyManagement.Client.ViewModels
             if (!IsInspection && string.IsNullOrWhiteSpace(Content)) { ErrorText = "请填写结果记录"; return; }
             if (string.Equals(_result, "不合格", StringComparison.Ordinal) && string.IsNullOrWhiteSpace(_failReason))
             {
-                ErrorText = "检测结果为不合格时必须填写不合格说明（BR-EQP-03）";
+                ErrorText = "检测结果为不合格时必须填写不合格说明";
                 return;
             }
             decimal? cost = null;
@@ -333,7 +333,7 @@ namespace PropertyManagement.Client.ViewModels
             Result = "不合格";
             if (string.IsNullOrWhiteSpace(FailReason))
             {
-                ErrorText = "检测不合格必须填写不合格说明（BR-EQP-03）";
+            ErrorText = "检测不合格必须填写不合格说明";
                 return;
             }
             await SaveAsync();

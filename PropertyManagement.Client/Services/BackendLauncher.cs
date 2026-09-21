@@ -86,7 +86,12 @@ namespace PropertyManagement.Client.Services
             {
                 // 安装布局（M8 T8-1-2 口径）：{app}\Client\..\Server\PropertyManagement.Server.exe
                 Path.Combine(clientDir, "..", "Server", "PropertyManagement.Server.exe"),
-                // 开发布局
+                // 开发布局（源码仓库）：Client\bin\{Debug|Release} → 仓库根\PropertyManagement.Server\bin\{Debug|Release}
+                // CHG-v1.1.2-37：原候选写成「仓库根\Server\bin\...」，而仓库实际目录是 PropertyManagement.Server，
+                // 导致 Debug 客户端**永远找不到后端可执行文件**（后端没起来时只能干等，页面取数失败又无提示）。
+                Path.Combine(clientDir, "..", "..", "..", "PropertyManagement.Server", "bin", "Debug", "PropertyManagement.Server.exe"),
+                Path.Combine(clientDir, "..", "..", "..", "PropertyManagement.Server", "bin", "Release", "PropertyManagement.Server.exe"),
+                // 兼容旧命名副本
                 Path.Combine(clientDir, "..", "..", "..", "Server", "bin", "Debug", "PropertyManagement.Server.exe"),
                 Path.Combine(clientDir, "..", "..", "..", "Server", "bin", "Release", "PropertyManagement.Server.exe"),
                 // 扁平布局

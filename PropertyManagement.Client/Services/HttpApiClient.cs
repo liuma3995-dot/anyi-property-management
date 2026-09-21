@@ -129,6 +129,97 @@ namespace PropertyManagement.Client.Services
             return DeleteAsync<object>("billing/charge-items/" + id);
         }
 
+        // ---------- CHG-v1.1.2-26：价目表与计量变量 ----------
+
+        public Task<List<ChargeStandardDto>> GetChargeStandardsAsync(string keyword = null, string category = null, bool includeDisabled = true)
+        {
+            return GetAsync<List<ChargeStandardDto>>("billing/charge-standards" + Query(new { keyword, category, includeDisabled }));
+        }
+
+        public Task<ChargeStandardDto> GetChargeStandardAsync(int id)
+        {
+            return GetAsync<ChargeStandardDto>("billing/charge-standards/" + id);
+        }
+
+        public Task<ChargeStandardDto> CreateChargeStandardAsync(ChargeStandardRequest request)
+        {
+            return PostAsync<ChargeStandardRequest, ChargeStandardDto>("billing/charge-standards", request);
+        }
+
+        public Task<ChargeStandardDto> UpdateChargeStandardAsync(int id, ChargeStandardRequest request)
+        {
+            return PutAsync<ChargeStandardRequest, ChargeStandardDto>("billing/charge-standards/" + id, request);
+        }
+
+        public Task DeleteChargeStandardAsync(int id)
+        {
+            return DeleteAsync<object>("billing/charge-standards/" + id);
+        }
+
+        public Task<ChargeStandardDto> ToggleChargeStandardAsync(int id, int status)
+        {
+            return PostAsync<ChargeStandardStatusRequest, ChargeStandardDto>(
+                "billing/charge-standards/" + id + "/status", new ChargeStandardStatusRequest { Status = status });
+        }
+
+        public Task<ChargeStandardSpecDto> CreateChargeSpecAsync(int standardId, ChargeStandardSpecRequest request)
+        {
+            return PostAsync<ChargeStandardSpecRequest, ChargeStandardSpecDto>(
+                "billing/charge-standards/" + standardId + "/specs", request);
+        }
+
+        public Task<ChargeStandardSpecDto> UpdateChargeSpecAsync(int id, ChargeStandardSpecRequest request)
+        {
+            return PutAsync<ChargeStandardSpecRequest, ChargeStandardSpecDto>("billing/charge-specs/" + id, request);
+        }
+
+        public Task DeleteChargeSpecAsync(int id)
+        {
+            return DeleteAsync<object>("billing/charge-specs/" + id);
+        }
+
+        public Task ToggleChargeSpecAsync(int id, int status)
+        {
+            return PostAsync<ChargeStandardStatusRequest, object>(
+                "billing/charge-specs/" + id + "/status", new ChargeStandardStatusRequest { Status = status });
+        }
+
+        public Task<List<ChargeVariableDto>> GetChargeVariablesAsync(string keyword = null, bool includeDisabled = true)
+        {
+            return GetAsync<List<ChargeVariableDto>>("billing/charge-variables" + Query(new { keyword, includeDisabled }));
+        }
+
+        public Task<ChargeVariableDto> CreateChargeVariableAsync(ChargeVariableRequest request)
+        {
+            return PostAsync<ChargeVariableRequest, ChargeVariableDto>("billing/charge-variables", request);
+        }
+
+        public Task<ChargeVariableDto> UpdateChargeVariableAsync(int id, ChargeVariableRequest request)
+        {
+            return PutAsync<ChargeVariableRequest, ChargeVariableDto>("billing/charge-variables/" + id, request);
+        }
+
+        public Task DeleteChargeVariableAsync(int id)
+        {
+            return DeleteAsync<object>("billing/charge-variables/" + id);
+        }
+
+        public Task ToggleChargeVariableAsync(int id, int status)
+        {
+            return PostAsync<ChargeStandardStatusRequest, object>(
+                "billing/charge-variables/" + id + "/status", new ChargeStandardStatusRequest { Status = status });
+        }
+
+        public Task<BillPreviewResult> PreviewBillsAsync(BillPreviewRequest request)
+        {
+            return PostAsync<BillPreviewRequest, BillPreviewResult>("billing/bills/preview", request);
+        }
+
+        public Task<ReportLogDto> ExportChargeItemsAsync(ChargeItemExportRequest request)
+        {
+            return PostAsync<ChargeItemExportRequest, ReportLogDto>("reports/charge-items/export", request);
+        }
+
         public Task<BillingCycleDto> CreateCycleAsync(BillingCycleRequest request)
         {
             return PostAsync<BillingCycleRequest, BillingCycleDto>("billing/cycles", request);
@@ -207,6 +298,22 @@ namespace PropertyManagement.Client.Services
         public Task DeleteArrearAsync(int billId)
         {
             return DeleteAsync<object>("billing/bills/" + billId);
+        }
+
+        // ---------- 欠费台账「移出台账」（CHG-v1.1.2-03） ----------
+        public Task<int> DismissArrearsAsync(ArrearDismissRequest request)
+        {
+            return PostAsync<ArrearDismissRequest, int>("billing/bills/arrears/dismiss", request);
+        }
+
+        public Task<List<ArrearDismissDto>> QueryDismissedArrearsAsync()
+        {
+            return GetAsync<List<ArrearDismissDto>>("billing/bills/arrears/dismissed");
+        }
+
+        public Task<int> RestoreArrearsAsync(ArrearDismissRequest request)
+        {
+            return PostAsync<ArrearDismissRequest, int>("billing/bills/arrears/restore", request);
         }
 
         public Task<PaymentStatisticsDto> GetPaymentStatisticsAsync()
@@ -304,10 +411,22 @@ namespace PropertyManagement.Client.Services
             return PostAsync<ReportExportRequest, ReportLogDto>("reports/export", request);
         }
 
+        /// <summary>CHG-v1.1.2-05：收支明细流水导出（Excel/PDF）。</summary>
+        public Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request)
+        {
+            return PostAsync<LedgerExportRequest, ReportLogDto>("reports/ledger/export", request);
+        }
+
         /// <summary>CHG-v1.1.0-14：导出收据打印模板。</summary>
         public Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request)
         {
             return PostAsync<ReceiptTemplateRequest, ReportLogDto>("reports/receipt-template", request);
+        }
+
+        /// <summary>CHG-v1.1.2-41：导出退款/减免/调整单据 PDF（留档/审计追溯）。</summary>
+        public Task<ReportLogDto> ExportRefundRecordAsync(RefundRecordExportRequest request)
+        {
+            return PostAsync<RefundRecordExportRequest, ReportLogDto>("reports/refund-record", request);
         }
 
         // ==================== M5 基础信息与导入 ====================
@@ -1430,6 +1549,15 @@ namespace PropertyManagement.Client.Services
         {
             HttpResponseMessage resp = await _http.SendAsync(req);
             string json = await resp.Content.ReadAsStringAsync();
+
+            // CHG-v1.1.2-14：后端与客户端版本错配的兜底提示。
+            // 现象：新客户端打到旧后端（如已安装的 1.1.1 实例）时，新端点返回 HTTP 404，
+            // 用户只看到「服务器响应异常（HTTP 404）」无从判断。这里统一翻译为可行动的中文提示。
+            if (resp.StatusCode == System.Net.HttpStatusCode.NotFound)
+            {
+                throw new ApiClientException(ErrorCode.InternalError,
+                    "后端服务版本过旧，不支持该功能（HTTP 404）：请关闭旧的后端服务并启动与本客户端同版本的后端后再试");
+            }
 
             if (string.IsNullOrWhiteSpace(json))
             {

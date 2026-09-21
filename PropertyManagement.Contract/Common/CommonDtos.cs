@@ -136,6 +136,14 @@ namespace PropertyManagement.Contract.Common
         public decimal CollectionRate { get; set; }
         public string ReceivedTrend { get; set; }
         public string OverdueTrend { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-55：所选月份「账期归属本月」账单的**已收合计**（收缴率的分子，与 <see cref="MonthReceivable"/> 同源）。
+        /// 说明：<see cref="MonthReceived"/> 是本月**实收现金净额**（与财务报表「收入合计」同一口径，含清欠、扣退款/冲减），
+        /// 两者口径不同 —— 收缴率用「本月账期账单的清缴比例」（≤100%），卡片「本月已收」用现金净额。
+        /// </summary>
+        public decimal MonthCycleReceived { get; set; }
+        /// <summary>CHG-v1.1.2-55：收缴率环比（百分点差，如「较上月 +1.2 个百分点」）。</summary>
+        public string CollectionRateTrend { get; set; }
         public int MaintenanceDue { get; set; }
         public int DutyToday { get; set; }
 

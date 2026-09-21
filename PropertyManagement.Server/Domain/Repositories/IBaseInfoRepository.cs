@@ -84,6 +84,9 @@ namespace PropertyManagement.Server.Domain.Repositories
         // ---------- 导入（UC-INF-006，BR-INF-05） ----------
         int InsertImportLog(IDbConnection connection, IDbTransaction transaction, ImportLogDto dto);
         void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, ImportStatus status, int success, int fail, string errorFile);
+
+        /// <summary>导入批次「覆盖」计数（CHG-v1.1.2-01：重复数据做覆盖处理）。</summary>
+        void UpdateImportLogUpdated(IDbConnection connection, IDbTransaction transaction, int id, int updated);
         ImportLogDto GetImportLog(IDbConnection connection, int id);
         List<ImportLogDto> ListImportLogs(IDbConnection connection);
 

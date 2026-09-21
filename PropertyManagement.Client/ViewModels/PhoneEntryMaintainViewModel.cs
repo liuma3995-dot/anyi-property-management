@@ -357,7 +357,7 @@ namespace PropertyManagement.Client.ViewModels
             if (!_isEdit && FormEntryType == (int)PhoneEntryType.Employee)
             {
                 // BR-TEL-01：员工条目只来自同步，新增表单不提供"员工通讯录"类型
-                ErrorText = "员工条目只能通过\"同步员工通讯录\"生成（BR-TEL-01）";
+            ErrorText = "员工条目只能通过\"同步员工通讯录\"生成";
                 return;
             }
             string typeName = (FormTypeText ?? string.Empty).Trim();

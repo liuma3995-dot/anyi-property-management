@@ -13,12 +13,6 @@ namespace PropertyManagement.Client.Views
             InitializeComponent();
         }
 
-        private void ExportButton_Click(object sender, RoutedEventArgs e)
-        {
-            MessageBox.Show("流水导出请使用「财务报表」页的导出功能（Excel/PDF）。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
         /// <summary>行双击 → 查看关联单据详情（T4F-7-1）。</summary>
         private void DataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {

@@ -338,7 +338,7 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (SelectedScene == null) { ErrorText = "请先选择场景"; return; }
             StatusConfirmText = SelectedScene.Status == 0
-                ? "确认停用场景「" + SelectedScene.Name + "」？停用后场景状态置为停用，处置步骤历史保留（BR-EMG-01）。"
+                ? "确认停用场景「" + SelectedScene.Name + "」？停用后场景状态置为停用，处置步骤历史保留。"
                 : "确认启用场景「" + SelectedScene.Name + "」？启用后场景恢复正常使用。";
             IsStatusConfirmVisible = true;
         }

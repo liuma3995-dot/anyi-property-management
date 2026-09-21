@@ -247,7 +247,7 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SaveAsync()
         {
             if (SelectedDevice == null) { ErrorText = "请选择故障设备"; return; }
-            if (string.IsNullOrWhiteSpace(FaultDesc)) { ErrorText = "故障描述不能为空（BR-EQP-04）"; return; }
+            if (string.IsNullOrWhiteSpace(FaultDesc)) { ErrorText = "故障描述不能为空"; return; }
             if (string.IsNullOrWhiteSpace(Reporter)) { ErrorText = "请填写发现人"; return; }
             DateTime ftime;
             if (!DateTime.TryParse(FTimeText, out ftime)) { ErrorText = "发现时间格式应为 yyyy-MM-dd HH:mm"; return; }
@@ -331,7 +331,7 @@ namespace PropertyManagement.Client.ViewModels
         private async Task ConfirmRepairDoneAsync()
         {
             if (_repairTarget == null) return;
-            if (string.IsNullOrWhiteSpace(RepairHandle)) { RepairErrorText = "处理结果不能为空（BR-EQP-04）"; return; }
+            if (string.IsNullOrWhiteSpace(RepairHandle)) { RepairErrorText = "处理结果不能为空"; return; }
             var target = _repairTarget;
             string msg = null;
             await RunAsync(async () =>

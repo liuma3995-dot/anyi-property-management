@@ -203,9 +203,11 @@ namespace PropertyManagement.Client.ViewModels
                 SummaryRows.Add(new FinancialSummaryRow { Dto = dto });
             }
 
-            IncomeText = "¥" + report.IncomeTotal.ToString("N0");
-            ExpenseText = "¥" + report.ExpenseTotal.ToString("N0");
-            BalanceText = "¥" + report.Balance.ToString("N0");
+            // CHG-v1.1.2-55：财务报表金额统一保留 2 位小数（与仪表盘/收款登记/账单/台账/导出统一；
+            // 原 N0 会把 1,143.45 显示成 ¥1,143，与仪表盘的 ¥1,144 看起来「对不上」）
+            IncomeText = "¥" + report.IncomeTotal.ToString("N2");
+            ExpenseText = "¥" + report.ExpenseTotal.ToString("N2");
+            BalanceText = "¥" + report.Balance.ToString("N2");
             decimal rate = report.IncomeTotal > 0 ? report.Balance / report.IncomeTotal * 100m : 0m;
             BalanceSubText = "结余率 " + rate.ToString("0.0") + "%";
 
@@ -218,7 +220,7 @@ namespace PropertyManagement.Client.ViewModels
             try
             {
                 var stats = await Api.GetPaymentStatisticsAsync();
-                UnpaidText = "¥" + stats.UnpaidAmount.ToString("N0");
+                UnpaidText = "¥" + stats.UnpaidAmount.ToString("N2");
             }
             catch (Exception)
             {

@@ -916,7 +916,7 @@ namespace PropertyManagement.Client.ViewModels
             string reason = (StatusChangeReason ?? string.Empty).Trim();
             if ((target == DeviceStatus.Disabled || target == DeviceStatus.Scrapped) && reason.Length == 0)
             {
-                StatusChangeError = target == DeviceStatus.Scrapped ? "报废必须填写原因（BR-EQP-01）" : "停用必须填写原因（BR-EQP-01）";
+            StatusChangeError = target == DeviceStatus.Scrapped ? "报废必须填写原因" : "停用必须填写原因";
                 return;
             }
             if (target == DeviceStatus.Scrapped)
@@ -1052,7 +1052,7 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SubmitRepairAsync()
         {
             if (_repairTargetId <= 0) { ErrorText = "请选择报修设备"; return; }
-            if (string.IsNullOrWhiteSpace(RepairSymptom)) { ErrorText = "故障现象不能为空（BR-EQP-04）"; return; }
+            if (string.IsNullOrWhiteSpace(RepairSymptom)) { ErrorText = "故障现象不能为空"; return; }
             DateTime ftime;
             if (!DateTime.TryParse(RepairFTimeText, out ftime)) { ErrorText = "发现时间格式应为 yyyy-MM-dd HH:mm"; return; }
             var request = new FaultRecordRequest

@@ -19,7 +19,7 @@
             <!-- 左：登记表单 -->
             <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="22,18">
                 <StackPanel>
-                    <TextBlock Text="保养 / 年检登记（UC-EQP-002/003）" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
+                    <TextBlock Text="保养 / 年检登记" FontSize="15" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
                     <Grid Margin="0,0,0,10">
                         <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="16"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
                         <StackPanel Grid.Column="0">

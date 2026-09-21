@@ -48,6 +48,12 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>仪表盘首页（PG-DASH，UC-COM-006，按原型 §2.3 一比一修版）。</summary>
     public class DashboardViewModel : ObservableObject
     {
+        /// <summary>
+        /// CHG-v1.1.2-56：收缴率目标（原型 PG-DASH「本月收缴概览」口径，固定 85%）。
+        /// 仅用于「已达成 / 还差 N 个百分点」文案，不参与任何计算。
+        /// </summary>
+        private const decimal CollectionTargetRate = 85m;
+
         private static readonly Brush Primary = Brush("#1F4B43");
         private static readonly Brush PrimarySoft = Brush("#E9F0EE");
         private static readonly Brush Success = Brush("#12805C");
@@ -90,6 +96,7 @@ namespace PropertyManagement.Client.ViewModels
 
         // 收缴概览
         private string _collectionRateText = "0%";
+        private double _collectionRateValue;
         private string _collectionTrend = "↑ 0%";
         private string _receivedLegendText = "已收 ¥0";
         private string _arrearLegendText = "待收 ¥0";
@@ -240,6 +247,16 @@ namespace PropertyManagement.Client.ViewModels
         {
             get { return _collectionRateText; }
             private set { SetProperty(ref _collectionRateText, value); }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-56：收缴率数值（0–100，供进度条按比例显示）。
+        /// 原实现进度条填充宽度是**写死的 245px**，与收缴率无关（100% 和 30% 画出来一样长）。
+        /// </summary>
+        public double CollectionRateValue
+        {
+            get { return _collectionRateValue; }
+            private set { SetProperty(ref _collectionRateValue, value); }
         }
 
         public string CollectionTrend
@@ -467,11 +484,13 @@ namespace PropertyManagement.Client.ViewModels
                               + WeekdayOf(now)
                               + "  ·  今日共有 " + dto.PendingReminders + " 项待办";
 
-                MonthReceivableText = "¥ " + dto.MonthReceivable.ToString("N0");
+                // CHG-v1.1.2-55：金额一律保留 2 位小数（与收款登记/账单/台账/报表导出统一）；
+                // 原 N0 会把 1,143.80 与 1,143.45 各四舍五入成 1,144 与 1,143，放大成「相差 1 元」的假象。
+                MonthReceivableText = "¥ " + dto.MonthReceivable.ToString("N2");
                 ReceivableTrend = dto.ReceivableTrend ?? "较上月 +0%";
-                MonthReceivedText = "¥ " + dto.MonthReceived.ToString("N0");
+                MonthReceivedText = "¥ " + dto.MonthReceived.ToString("N2");
                 ReceivedTrend = dto.ReceivedTrend ?? "收缴率 " + dto.CollectionRate.ToString("0.0") + "%";
-                ArrearAmountText = "¥ " + dto.ArrearAmount.ToString("N0");
+                ArrearAmountText = "¥ " + dto.ArrearAmount.ToString("N2");
                 ArrearTrend = "涉及 " + dto.ArrearCount + " 户";
                 OverdueCountText = dto.ArrearCount + " 户";
                 OverdueTrend = dto.OverdueTrend ?? "较上月 0 户";
@@ -482,13 +501,38 @@ namespace PropertyManagement.Client.ViewModels
                 MaintenanceDue = dto.MaintenanceDue;
                 DutyToday = dto.DutyToday;
 
-                CollectionRateText = dto.CollectionRate.ToString("0.0") + "%";
-                CollectionTrend = "↑ " + ExtractPercent(dto.ReceivableTrend) + "%";
-                ReceivedLegendText = "已收 ¥" + dto.MonthReceived.ToString("N0");
-                ArrearLegendText = "待收 ¥" + dto.ArrearAmount.ToString("N0");
-                var gap = 85m - dto.CollectionRate;
-                CollectionGapText = "目标收缴率 85%，还差 " + gap.ToString("0.0") + "%";
-                CollectionHintText = "建议优先跟进 " + dto.ArrearCount + " 户逾期业主";
+                // CHG-v1.1.2-56：本月无账期账单时不显示「0.0% + 还差 85 个百分点」这类无意义口径
+                bool hasCollectionScope = dto.MonthReceivable > 0m;
+                CollectionRateText = hasCollectionScope ? dto.CollectionRate.ToString("0.0") + "%" : "—";
+                CollectionRateValue = hasCollectionScope ? (double)dto.CollectionRate : 0d;
+                // CHG-v1.1.2-55：收缴率＝本月账期账单「已收/应收」（同源，≤100%）；
+                // 环比改用服务端给出的百分点差（原实现借用了「应收」环比，语义不对）。
+                CollectionTrend = string.IsNullOrWhiteSpace(dto.CollectionRateTrend)
+                    ? "本月账期账单清缴率"
+                    : dto.CollectionRateTrend;
+                ReceivedLegendText = "本月账期已收 ¥" + dto.MonthCycleReceived.ToString("N2");
+                ArrearLegendText = "本月账期待收 ¥" +
+                    (dto.MonthReceivable - dto.MonthCycleReceived).ToString("N2");
+                // 目标对比文案：达标显示「已达成（超额 N 个百分点）」，未达标显示「还差 N 个百分点」。
+                // 原实现固定算 85 - 收缴率，收缴率 100% 时输出「还差 -15.0%」（负数 + 用 % 表述百分点差）。
+                string target = CollectionTargetRate.ToString("0.#");
+                if (!hasCollectionScope)
+                {
+                    CollectionGapText = "本月暂无账期账单，无需考核收缴率";
+                }
+                else if (dto.CollectionRate >= CollectionTargetRate)
+                {
+                    CollectionGapText = "目标收缴率 " + target + "%，已达成（超额 " +
+                        (dto.CollectionRate - CollectionTargetRate).ToString("0.0") + " 个百分点）";
+                }
+                else
+                {
+                    CollectionGapText = "目标收缴率 " + target + "%，还差 " +
+                        (CollectionTargetRate - dto.CollectionRate).ToString("0.0") + " 个百分点";
+                }
+                CollectionHintText = dto.ArrearCount > 0
+                    ? "建议优先跟进 " + dto.ArrearCount + " 户逾期业主"
+                    : "本月无逾期业主，保持常规跟进";
 
                 Reminders.Clear();
                 if (dto.Todos != null)

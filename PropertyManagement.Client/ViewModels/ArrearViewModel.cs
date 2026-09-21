@@ -11,6 +11,30 @@ using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
 {
+    /// <summary>
+    /// 已移出欠费台账的记录行（CHG-v1.1.2-03）。
+    /// 语义：账单本身仍在（账单工作台/收款登记/退款/报表/流水一切不变），只是不在欠费台账列表；
+    /// 点「恢复台账」即让它重新出现在台账里。
+    /// </summary>
+    public class ArrearDismissRow
+    {
+        public ArrearDismissDto Dto { get; set; }
+
+        public string PropertyText { get { return string.IsNullOrEmpty(Dto.PropertyNo) ? "—" : Dto.PropertyNo; } }
+
+        public string OwnerText { get { return string.IsNullOrEmpty(Dto.OwnerName) ? "—（空置）" : Dto.OwnerName; } }
+
+        public string ChargeItemText { get { return string.IsNullOrEmpty(Dto.ChargeItemName) ? "—" : Dto.ChargeItemName; } }
+
+        public string AmountText { get { return "¥" + Dto.ArrearAmount.ToString("N2"); } }
+
+        public string ReasonText { get { return string.IsNullOrEmpty(Dto.Reason) ? "—" : Dto.Reason; } }
+
+        public string OperatorText { get { return string.IsNullOrEmpty(Dto.Operator) ? "—" : Dto.Operator; } }
+
+        public string CreatedText { get { return Dto.CreatedAt.ToString("yyyy-MM-dd HH:mm"); } }
+    }
+
     /// <summary>欠费台账行（PG-FIN-06，UC-FIN-007，账龄>90 天标红；操作按催缴状态派生 T4F-6-1）。</summary>
     public class ArrearRow : ObservableObject
     {
@@ -25,7 +49,39 @@ namespace PropertyManagement.Client.ViewModels
 
         public string ChargeItemName { get { return Dto.ChargeItemName ?? "—"; } }
 
-        public string PeriodText { get { return Dto.DueAt.AddMonths(-1).ToString("yyyy-MM") + " ~ " + Dto.DueAt.ToString("yyyy-MM"); } }
+        /// <summary>
+        /// 欠费期间 —— CHG-v1.1.2-54：直接引用账单真实账期（与收款登记 / 账单工作台同源）。
+        /// 原实现按到期日倒推一个月推算，按月账单看似正确，按年 / 一次性账单会显示错误区间。
+        /// 同年账期压缩为「yyyy-MM-dd~MM-dd」，避免台账列宽（120px）把结束日期裁掉。
+        /// </summary>
+        public string PeriodText
+        {
+            get
+            {
+                string start = (Dto.CycleStart ?? string.Empty).Trim();
+                string end = (Dto.CycleEnd ?? string.Empty).Trim();
+                if (start.Length == 0 && end.Length == 0) { return "—"; }
+                if (start.Length == 0) { return end; }
+                if (end.Length == 0) { return start; }
+                if (start.Length >= 10 && end.Length >= 10 && start.Substring(0, 4) == end.Substring(0, 4))
+                {
+                    return start + "~" + end.Substring(5);
+                }
+                return start + "~" + end;
+            }
+        }
+
+        /// <summary>完整账期（悬停提示，不压缩）。</summary>
+        public string PeriodFullText
+        {
+            get
+            {
+                string start = (Dto.CycleStart ?? string.Empty).Trim();
+                string end = (Dto.CycleEnd ?? string.Empty).Trim();
+                if (start.Length == 0 && end.Length == 0) { return "该账单未关联计费周期"; }
+                return start + " ~ " + end;
+            }
+        }
 
         public string AmountText { get { return "¥" + Dto.ArrearAmount.ToString("N2"); } }
 
@@ -113,6 +169,7 @@ namespace PropertyManagement.Client.ViewModels
         private string _batchConfirmMessage = string.Empty;
         private List<ArrearRow> _batchRows;
         private bool _isSelectAll;
+        private bool _isDismissedVisible;
 
         private static readonly string[] Channels = { "短信", "电话", "函件", "上门", "微信", "法务", "免催缴" };
 
@@ -131,6 +188,9 @@ namespace PropertyManagement.Client.ViewModels
             BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
             ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
             CancelBatchDeleteCommand = new RelayCommand(() => { IsBatchConfirmVisible = false; _batchRows = null; });
+            OpenDismissedCommand = new AsyncRelayCommand(LoadDismissedAsync);
+            CloseDismissedCommand = new RelayCommand(() => IsDismissedVisible = false);
+            RestoreDismissedCommand = new AsyncRelayCommand<ArrearDismissRow>(RestoreDismissedAsync);
             _ = LoadAsync();
         }
 
@@ -204,6 +264,15 @@ namespace PropertyManagement.Client.ViewModels
 
         public IRelayCommand<ArrearRow> DeleteCommand { get; }
         public IRelayCommand BatchDeleteCommand { get; }
+
+        /// <summary>CHG-v1.1.2-03：打开「已移出台账」列表 / 关闭 / 恢复台账。</summary>
+        public IAsyncRelayCommand OpenDismissedCommand { get; private set; }
+        public IRelayCommand CloseDismissedCommand { get; private set; }
+        public IAsyncRelayCommand<ArrearDismissRow> RestoreDismissedCommand { get; private set; }
+
+        public bool IsDismissedVisible { get { return _isDismissedVisible; } private set { SetProperty(ref _isDismissedVisible, value); } }
+
+        public ObservableCollection<ArrearDismissRow> DismissedItems { get; } = new ObservableCollection<ArrearDismissRow>();
 
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
 
@@ -348,7 +417,10 @@ namespace PropertyManagement.Client.ViewModels
             }, "催缴记录已生成（渠道：" + RemindChannelText + "）");
         }
 
-        /// <summary>欠费台账删除（软删除：del_flag=1，保留查账轨迹）。</summary>
+        /// <summary>
+        /// 移出台账（CHG-v1.1.2-03，负责人 2026-09-19 裁定 A）：
+        /// 只把该行移出欠费台账，不再软删账单 —— 账单工作台/收款登记/退款/报表/流水/业主档案一律不受影响。
+        /// </summary>
         private void RequestDelete(ArrearRow row)
         {
             if (row == null) { return; }
@@ -362,21 +434,26 @@ namespace PropertyManagement.Client.ViewModels
             if (row == null) { return; }
             await RunAsync(async () =>
             {
-                await Api.DeleteArrearAsync(row.Dto.BillId);
+                await Api.DismissArrearsAsync(new ArrearDismissRequest
+                {
+                    BillIds = new List<int> { row.Dto.BillId },
+                    Reason = "台账移出"
+                });
                 ConfirmRow = null;
                 IsConfirmVisible = false;
                 await LoadAsync();
-            }, "欠费记录已删除（软删除，保留操作轨迹）");
+            }, "已移出台账（账单与其它模块数据不变，可在「已移出记录」中恢复）");
         }
 
         private void RequestBatchDelete()
         {
             var rows = Items.Where(x => x.IsChecked).ToList();
-            if (rows.Count == 0) { ErrorText = "请先勾选要删除的欠费记录"; return; }
+            if (rows.Count == 0) { ErrorText = "请先勾选要移出台账的欠费记录"; return; }
             string desc = string.Join("、", rows.Take(3).Select(r => r.PropertyNo + " " + r.OwnerName));
             if (rows.Count > 3) { desc += " 等 " + rows.Count + " 条"; }
             _batchRows = rows;
-            BatchConfirmMessage = "将删除 " + rows.Count + " 条欠费记录（软删除，保留操作轨迹）：\n" + desc;
+            BatchConfirmMessage = "将把 " + rows.Count + " 条欠费记录移出台账：\n" + desc +
+                "\n\n只影响欠费台账的显示，账单、收款登记、退款记录、财务报表与收支流水都不受影响，可随时恢复。";
             IsBatchConfirmVisible = true;
         }
 
@@ -387,10 +464,42 @@ namespace PropertyManagement.Client.ViewModels
             if (rows == null || rows.Count == 0) { return; }
             await RunAsync(async () =>
             {
-                foreach (var r in rows) { await Api.DeleteArrearAsync(r.Dto.BillId); }
+                await Api.DismissArrearsAsync(new ArrearDismissRequest
+                {
+                    BillIds = rows.Select(r => r.Dto.BillId).ToList(),
+                    Reason = "台账批量移出"
+                });
                 _batchRows = null;
                 await LoadAsync();
-            }, "已批量删除 " + rows.Count + " 条欠费记录（软删除）");
+            }, "已移出 " + rows.Count + " 条欠费记录（账单一律保持不变，可恢复）");
+        }
+
+        /// <summary>CHG-v1.1.2-03：打开「已移出台账」列表。</summary>
+        private async Task LoadDismissedAsync()
+        {
+            await RunAsync(async () =>
+            {
+                List<ArrearDismissDto> items = await Api.QueryDismissedArrearsAsync();
+                DismissedItems.Clear();
+                foreach (ArrearDismissDto dto in items ?? new List<ArrearDismissDto>())
+                {
+                    DismissedItems.Add(new ArrearDismissRow { Dto = dto });
+                }
+                IsDismissedVisible = true;
+            }, null);
+        }
+
+        /// <summary>CHG-v1.1.2-03：恢复台账（删除剔除记录，账单重新回到台账列表）。</summary>
+        private async Task RestoreDismissedAsync(ArrearDismissRow row)
+        {
+            if (row == null) { return; }
+            await RunAsync(async () =>
+            {
+                await Api.RestoreArrearsAsync(new ArrearDismissRequest { DismissIds = new List<int> { row.Dto.Id } });
+                DismissedItems.Remove(row);
+                await LoadAsync();
+                if (DismissedItems.Count == 0) { IsDismissedVisible = false; }
+            }, "已恢复台账：" + row.OwnerText + " " + row.AmountText);
         }
     }
 }

@@ -191,7 +191,7 @@
                             <TextBlock Text="交互标注" FontSize="12" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}"
                                        VerticalAlignment="Center" Margin="8,0,0,0" />
                         </StackPanel>
-                        <TextBlock Text="· 【一键发起】→ 确认弹窗“确认发起火灾应急事件（Ⅱ 级）？”→ 广播 + 推送 + 计时 → 跳转 PG-EMG-03"
+                        <TextBlock Text="· 【一键发起】→ 确认弹窗“确认发起火灾应急事件（Ⅱ 级）？”→ 广播 + 推送 + 计时 → 跳转事件工作台"
                                    FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
                         <TextBlock Text="· 角色无人当班 → 弹窗提示并允许手动指派；误发起可在 1 分钟内撤销（留痕）"
                                    FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,3,0,0" />

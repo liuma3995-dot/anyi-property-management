@@ -15,7 +15,7 @@
                 <!-- 左：登记表单 -->
                 <Border Grid.Column="0" Style="{StaticResource CardBorder}" Padding="26,22" VerticalAlignment="Top">
                     <StackPanel>
-                        <TextBlock Text="纠纷登记（UC-DIS-001）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
+                <TextBlock Text="纠纷登记" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
 
                         <!-- 行一：纠纷类型（自定义新增/删除，全宽避免按钮截断） -->
                         <StackPanel>

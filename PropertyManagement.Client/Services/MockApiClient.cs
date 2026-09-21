@@ -193,6 +193,9 @@ namespace PropertyManagement.Client.Services
                 MonthReceived = 95000.00m,
                 CollectionRate = 79.2m,
                 ReceivedTrend = "收缴率 79.2%",
+                // CHG-v1.1.2-55：收缴率分子（本月账期账单已收）+ 环比（百分点差）
+                MonthCycleReceived = 95000.00m,
+                CollectionRateTrend = "较上月 +1.2 个百分点",
                 OverdueTrend = "较上月 -2 户",
                 MaintenanceDue = 2,
                 DutyToday = 4,
@@ -376,6 +379,262 @@ namespace PropertyManagement.Client.Services
             ChargeItemDto item = _items.First(x => x.Id == id);
             item.Status = 1;
             return Task.CompletedTask;
+        }
+
+        // ---------- CHG-v1.1.2-26：价目表与计量变量（演示夹具） ----------
+
+        private readonly List<ChargeVariableDto> _variables = new List<ChargeVariableDto>
+        {
+            new ChargeVariableDto { Id = 1, VarCode = "MQ-01", VarName = "建筑面积", Unit = "㎡", ValueType = ChargeVariableValueType.Decimal, Source = ChargeVariableSource.Archive, ObjectScope = ChargeVariableScope.Property, FieldKey = "property.area", IsBuiltin = true, Status = 0, Sort = 1 },
+            new ChargeVariableDto { Id = 4, VarCode = "MQ-04", VarName = "月数", Unit = "月", ValueType = ChargeVariableValueType.Integer, Source = ChargeVariableSource.CycleDerived, ObjectScope = ChargeVariableScope.Any, IsBuiltin = true, Status = 0, Sort = 4 },
+            new ChargeVariableDto { Id = 6, VarCode = "MQ-06", VarName = "数量", Unit = "个", ValueType = ChargeVariableValueType.Integer, Source = ChargeVariableSource.Fixed, DefaultValue = 1m, ObjectScope = ChargeVariableScope.Any, IsBuiltin = true, Status = 0, Sort = 6 },
+            new ChargeVariableDto { Id = 9, VarCode = "MQ-09", VarName = "台数", Unit = "台", ValueType = ChargeVariableValueType.Integer, Source = ChargeVariableSource.Manual, ObjectScope = ChargeVariableScope.Custom, IsBuiltin = true, Status = 0, Sort = 9 }
+        };
+
+        private readonly List<ChargeStandardDto> _standards = new List<ChargeStandardDto>
+        {
+            new ChargeStandardDto
+            {
+                Id = 1, Name = "物业服务费", Category = "物业费", Status = 0, ItemCount = 1,
+                Variables = new List<ChargeVariableDto>(),
+                Specs = new List<ChargeStandardSpecDto>
+                {
+                    new ChargeStandardSpecDto { Id = 1, StandardId = 1, SpecName = "住宅", MatchUsage = 0, UnitPrice = 1.50m, Formula = "{v:1} * {v:4} * 单价", PriceUnit = "元/㎡·月", CycleName = "每月", EffectiveFrom = "2026-01-01", Status = 0 },
+                    new ChargeStandardSpecDto { Id = 2, StandardId = 1, SpecName = "商铺", MatchUsage = 1, UnitPrice = 3.00m, Formula = "{v:1} * {v:4} * 单价", PriceUnit = "元/㎡·月", CycleName = "每月", EffectiveFrom = "2026-01-01", Status = 0 },
+                    new ChargeStandardSpecDto { Id = 3, StandardId = 1, SpecName = "统一价", IsFallback = true, UnitPrice = 1.80m, Formula = "{v:1} * {v:4} * 单价", PriceUnit = "元/㎡·月", CycleName = "每月", EffectiveFrom = "2026-01-01", Status = 0 }
+                }
+            },
+            new ChargeStandardDto
+            {
+                Id = 2, Name = "门禁卡工本费", Category = "一次性", Status = 0, ItemCount = 1,
+                Variables = new List<ChargeVariableDto>(),
+                Specs = new List<ChargeStandardSpecDto>
+                {
+                    new ChargeStandardSpecDto { Id = 4, StandardId = 2, SpecName = "统一价", IsFallback = true, UnitPrice = 20.00m, Formula = "单价", PriceUnit = "元", CycleName = "一次性", EffectiveFrom = "2026-01-01", Status = 0 }
+                }
+            }
+        };
+
+        public Task<List<ChargeStandardDto>> GetChargeStandardsAsync(string keyword = null, string category = null, bool includeDisabled = true)
+        {
+            IEnumerable<ChargeStandardDto> list = _standards;
+            if (!string.IsNullOrWhiteSpace(keyword)) { list = list.Where(x => x.Name.Contains(keyword)); }
+            if (!includeDisabled) { list = list.Where(x => x.Status == 0); }
+            return Task.FromResult(list.Select(CloneStandard).ToList());
+        }
+
+        public Task<ChargeStandardDto> GetChargeStandardAsync(int id)
+        {
+            return Task.FromResult(CloneStandard(_standards.First(x => x.Id == id)));
+        }
+
+        public Task<ChargeStandardDto> CreateChargeStandardAsync(ChargeStandardRequest request)
+        {
+            var dto = new ChargeStandardDto
+            {
+                Id = _standards.Count + 1,
+                Name = request.Name,
+                Category = request.Category,
+                Remark = request.Remark,
+                Status = request.Status ?? 0,
+                Specs = new List<ChargeStandardSpecDto>(),
+                Variables = (request.VariableIds ?? new List<int>())
+                    .Select(id => _variables.FirstOrDefault(v => v.Id == id))
+                    .Where(v => v != null).ToList()
+            };
+            _standards.Add(dto);
+            return Task.FromResult(CloneStandard(dto));
+        }
+
+        public Task<ChargeStandardDto> UpdateChargeStandardAsync(int id, ChargeStandardRequest request)
+        {
+            ChargeStandardDto dto = _standards.First(x => x.Id == id);
+            dto.Name = request.Name;
+            dto.Category = request.Category;
+            dto.Remark = request.Remark;
+            dto.Status = request.Status ?? dto.Status;
+            if (request.VariableIds != null)
+            {
+                dto.Variables = request.VariableIds
+                    .Select(vid => _variables.FirstOrDefault(v => v.Id == vid))
+                    .Where(v => v != null).ToList();
+            }
+            return Task.FromResult(CloneStandard(dto));
+        }
+
+        public Task DeleteChargeStandardAsync(int id)
+        {
+            _standards.RemoveAll(x => x.Id == id);
+            return Task.CompletedTask;
+        }
+
+        public Task<ChargeStandardDto> ToggleChargeStandardAsync(int id, int status)
+        {
+            ChargeStandardDto dto = _standards.First(x => x.Id == id);
+            dto.Status = status;
+            return Task.FromResult(CloneStandard(dto));
+        }
+
+        public Task<ChargeStandardSpecDto> CreateChargeSpecAsync(int standardId, ChargeStandardSpecRequest request)
+        {
+            ChargeStandardDto standard = _standards.First(x => x.Id == standardId);
+            var spec = new ChargeStandardSpecDto
+            {
+                Id = _standards.SelectMany(x => x.Specs ?? new List<ChargeStandardSpecDto>()).Count() + 1,
+                StandardId = standardId,
+                SpecName = request.SpecName,
+                MatchUsage = request.MatchUsage,
+                MatchStatus = request.MatchStatus,
+                MatchSpaceType = request.MatchSpaceType,
+                MatchBuilding = request.MatchBuilding,
+                IsFallback = request.IsFallback,
+                UnitPrice = request.UnitPrice,
+                Formula = request.Formula,
+                PriceUnit = "元",
+                CycleName = request.CycleName,
+                EffectiveFrom = request.EffectiveFrom,
+                Remark = request.Remark,
+                Status = request.Status ?? 0
+            };
+            if (standard.Specs == null) { standard.Specs = new List<ChargeStandardSpecDto>(); }
+            if (request.DeprecateSameName)
+            {
+                foreach (ChargeStandardSpecDto old in standard.Specs.Where(x => x.SpecName == request.SpecName))
+                {
+                    old.Status = 1;
+                }
+            }
+            standard.Specs.Add(spec);
+            return Task.FromResult(spec);
+        }
+
+        public Task<ChargeStandardSpecDto> UpdateChargeSpecAsync(int id, ChargeStandardSpecRequest request)
+        {
+            ChargeStandardSpecDto spec = _standards.SelectMany(x => x.Specs ?? new List<ChargeStandardSpecDto>())
+                .First(x => x.Id == id);
+            spec.SpecName = request.SpecName;
+            spec.MatchUsage = request.MatchUsage;
+            spec.MatchStatus = request.MatchStatus;
+            spec.MatchSpaceType = request.MatchSpaceType;
+            spec.MatchBuilding = request.MatchBuilding;
+            spec.IsFallback = request.IsFallback;
+            spec.UnitPrice = request.UnitPrice;
+            spec.Formula = request.Formula;
+            spec.CycleName = request.CycleName;
+            spec.EffectiveFrom = request.EffectiveFrom;
+            spec.Remark = request.Remark;
+            spec.Status = request.Status ?? spec.Status;
+            return Task.FromResult(spec);
+        }
+
+        public Task DeleteChargeSpecAsync(int id)
+        {
+            foreach (ChargeStandardDto standard in _standards)
+            {
+                if (standard.Specs != null) { standard.Specs.RemoveAll(x => x.Id == id); }
+            }
+            return Task.CompletedTask;
+        }
+
+        public Task ToggleChargeSpecAsync(int id, int status)
+        {
+            ChargeStandardSpecDto spec = _standards.SelectMany(x => x.Specs ?? new List<ChargeStandardSpecDto>())
+                .First(x => x.Id == id);
+            spec.Status = status;
+            return Task.CompletedTask;
+        }
+
+        public Task<List<ChargeVariableDto>> GetChargeVariablesAsync(string keyword = null, bool includeDisabled = true)
+        {
+            IEnumerable<ChargeVariableDto> list = _variables;
+            if (!string.IsNullOrWhiteSpace(keyword)) { list = list.Where(x => x.VarName.Contains(keyword)); }
+            if (!includeDisabled) { list = list.Where(x => x.Status == 0); }
+            return Task.FromResult(list.ToList());
+        }
+
+        public Task<ChargeVariableDto> CreateChargeVariableAsync(ChargeVariableRequest request)
+        {
+            var dto = new ChargeVariableDto
+            {
+                Id = _variables.Count + 1,
+                VarCode = "MQ-" + (_variables.Count + 1).ToString("00"),
+                VarName = request.VarName,
+                Unit = request.Unit,
+                ValueType = request.ValueType,
+                Source = request.Source,
+                DefaultValue = request.DefaultValue,
+                ObjectScope = request.ObjectScope,
+                Remark = request.Remark,
+                Status = request.Status ?? 0
+            };
+            _variables.Add(dto);
+            return Task.FromResult(dto);
+        }
+
+        public Task<ChargeVariableDto> UpdateChargeVariableAsync(int id, ChargeVariableRequest request)
+        {
+            ChargeVariableDto dto = _variables.First(x => x.Id == id);
+            dto.VarName = request.VarName;
+            dto.Unit = request.Unit;
+            dto.ValueType = request.ValueType;
+            dto.Source = request.Source;
+            dto.DefaultValue = request.DefaultValue;
+            dto.ObjectScope = request.ObjectScope;
+            dto.Remark = request.Remark;
+            dto.Status = request.Status ?? dto.Status;
+            return Task.FromResult(dto);
+        }
+
+        public Task DeleteChargeVariableAsync(int id)
+        {
+            _variables.RemoveAll(x => x.Id == id);
+            return Task.CompletedTask;
+        }
+
+        public Task ToggleChargeVariableAsync(int id, int status)
+        {
+            ChargeVariableDto dto = _variables.First(x => x.Id == id);
+            dto.Status = status;
+            return Task.CompletedTask;
+        }
+
+        public Task<BillPreviewResult> PreviewBillsAsync(BillPreviewRequest request)
+        {
+            return Task.FromResult(new BillPreviewResult
+            {
+                Rows = new List<BillPreviewRowDto>(),
+                MatchedCount = 0,
+                FallbackCount = 0,
+                FailedCount = 0,
+                TotalAmount = 0m
+            });
+        }
+
+        public Task<ReportLogDto> ExportChargeItemsAsync(ChargeItemExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 1,
+                ReportType = "charge_item",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = request == null ? ExportFormat.Pdf : request.Format,
+                FilePath = "（演示模式不生成文件）"
+            });
+        }
+
+        private static ChargeStandardDto CloneStandard(ChargeStandardDto source)
+        {
+            return new ChargeStandardDto
+            {
+                Id = source.Id,
+                Name = source.Name,
+                Category = source.Category,
+                Remark = source.Remark,
+                Status = source.Status,
+                ItemCount = source.ItemCount,
+                Specs = source.Specs == null ? new List<ChargeStandardSpecDto>() : source.Specs.ToList(),
+                Variables = source.Variables == null ? new List<ChargeVariableDto>() : source.Variables.ToList()
+            };
         }
 
         public Task<List<DictItemDto>> GetDictItemsAsync(string typeCode)
@@ -577,6 +836,24 @@ namespace PropertyManagement.Client.Services
             return Task.CompletedTask;
         }
 
+        // CHG-v1.1.2-03：移出台账（仅影响台账可见性，演示客户端下等价于从台账列表移除）
+        public Task<int> DismissArrearsAsync(ArrearDismissRequest request)
+        {
+            List<int> ids = request == null || request.BillIds == null ? new List<int>() : request.BillIds;
+            int affected = _arrears.RemoveAll(x => ids.Contains(x.BillId));
+            return Task.FromResult(affected);
+        }
+
+        public Task<List<ArrearDismissDto>> QueryDismissedArrearsAsync()
+        {
+            return Task.FromResult(new List<ArrearDismissDto>());
+        }
+
+        public Task<int> RestoreArrearsAsync(ArrearDismissRequest request)
+        {
+            return Task.FromResult(0);
+        }
+
         public Task<PaymentStatisticsDto> GetPaymentStatisticsAsync()
         {
             return Task.FromResult(new PaymentStatisticsDto
@@ -770,6 +1047,20 @@ namespace PropertyManagement.Client.Services
             return Page(_ledger);
         }
 
+        /// <summary>CHG-v1.1.2-05：流水导出（演示客户端只返回一条导出记录，不落真实文件）。</summary>
+        public Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 1,
+                ReportType = "ledger",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = request == null ? ExportFormat.Excel : request.Format,
+                FilePath = "C:\\ProgramData\\PropertyManagement\\exports\\ledger-demo.xlsx",
+                CreatedAt = DateTime.Now
+            });
+        }
+
         public Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request)
         {
             return Task.FromResult(new FinancialReportDto
@@ -805,6 +1096,18 @@ namespace PropertyManagement.Client.Services
             {
                 Id = 2,
                 ReportType = "receipt",
+                Period = DateTime.Now.ToString("yyyy-MM-dd"),
+                Format = ExportFormat.Pdf
+            });
+        }
+
+        /// <summary>CHG-v1.1.2-41：演示实现——导出退款/减免/调整单据 PDF。</summary>
+        public Task<ReportLogDto> ExportRefundRecordAsync(RefundRecordExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 3,
+                ReportType = "refund",
                 Period = DateTime.Now.ToString("yyyy-MM-dd"),
                 Format = ExportFormat.Pdf
             });
@@ -879,7 +1182,10 @@ namespace PropertyManagement.Client.Services
                 ArrearAmount = amount - paid,
                 DueAt = due,
                 AgingDays = aging,
-                RemindChannel = remind
+                RemindChannel = remind,
+                // CHG-v1.1.2-54：账期与账单真实账期同源（Mock 按到期日所在自然月给出示例账期）
+                CycleStart = new DateTime(due.Year, due.Month, 1).ToString("yyyy-MM-dd"),
+                CycleEnd = new DateTime(due.Year, due.Month, DateTime.DaysInMonth(due.Year, due.Month)).ToString("yyyy-MM-dd")
             };
         }
 
@@ -1533,6 +1839,7 @@ namespace PropertyManagement.Client.Services
                 new DictTypeDto { Id = 1, TypeCode = "charge_method", TypeName = "计费方式" },
                 new DictTypeDto { Id = 2, TypeCode = "id_card_type", TypeName = "证件类型" },
                 new DictTypeDto { Id = 3, TypeCode = "parking_type", TypeName = "车位类型" }
+                , new DictTypeDto { Id = 4, TypeCode = "charge_variable", TypeName = "计量变量" }
             });
 
         public Task<DictTypeDto> CreateSystemDictTypeAsync(DictTypeRequest request) =>

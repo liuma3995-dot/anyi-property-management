@@ -126,7 +126,7 @@ namespace PropertyManagement.Server.Services
                 if (string.IsNullOrWhiteSpace(request.Name)) throw ApiException.ValidationFailed("名称不能为空");
                 if (string.IsNullOrWhiteSpace(request.Phone)) throw ApiException.ValidationFailed("号码不能为空");
                 if (id <= 0 && request.EntryType == PhoneEntryType.Employee && !request.EmployeeId.HasValue)
-                    throw ApiException.ValidationFailed("员工条目只能通过\"同步员工通讯录\"生成，不可手工新增（BR-TEL-01）");
+                throw ApiException.ValidationFailed("员工条目只能通过\"同步员工通讯录\"生成，不可手工新增");
                 string name = request.Name.Trim();
                 string phone = request.Phone.Trim();
                 ValidatePhone(phone, request.EntryType == PhoneEntryType.Emergency);
@@ -188,7 +188,7 @@ namespace PropertyManagement.Server.Services
                 var existing = _repo.GetEntry(c, id) ?? throw ApiException.NotFound("电话条目不存在");
                 PhoneEntryStatus status = request != null ? request.Status : PhoneEntryStatus.Enabled;
                 if (status == PhoneEntryStatus.Disabled && IsEmergencyEntry(existing))
-                    throw ApiException.Conflict("紧急电话（119/120/110）不可停用（BR-TEL-03）");
+                throw ApiException.Conflict("紧急电话（119/120/110）不可停用");
                 // 手工停用/启用：disable_source 归 0（离职联动停用只走同步与 ORG 离职事务路径）
                 _repo.SetEntryStatus(c, tx, id, status, 0);
                 return _repo.GetEntry(c, id);
@@ -199,7 +199,7 @@ namespace PropertyManagement.Server.Services
             {
                 var existing = _repo.GetEntry(c, id) ?? throw ApiException.NotFound("电话条目不存在");
                 if (!isTop && IsEmergencyEntry(existing))
-                    throw ApiException.Conflict("紧急电话默认置顶，不可取消（BR-TEL-03）");
+                throw ApiException.Conflict("紧急电话默认置顶，不可取消");
                 _repo.SetEntryTop(c, tx, id, isTop);
                 return _repo.GetEntry(c, id);
             });
@@ -328,10 +328,10 @@ namespace PropertyManagement.Server.Services
         {
             string normalized = NormalizePhone(phone);
             if (normalized.Length == 0 || !normalized.All(char.IsDigit))
-                throw ApiException.ValidationFailed("号码格式不正确（BR-TEL-04）");
+            throw ApiException.ValidationFailed("号码格式不正确");
             if (isEmergency || IsEmergencyNumber(normalized)) return; // 紧急短号（119/110/120）豁免
             if (MobileRegex.IsMatch(normalized) || LandlineRegex.IsMatch(normalized) || ShortNumberRegex.IsMatch(normalized)) return;
-            throw ApiException.ValidationFailed("号码格式不正确（BR-TEL-04：支持 11 位手机、座机（可含区号）、3-5 位短号）");
+            throw ApiException.ValidationFailed("号码格式不正确（支持 11 位手机、座机（可含区号）、3-5 位短号）");
         }
 
         /// <summary>保护判定（BR-TEL-03）：EntryType=紧急 OR 号码（去分隔符）∈{119,120,110}。</summary>

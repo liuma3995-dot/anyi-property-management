@@ -31,6 +31,7 @@
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="日期范围" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                            VerticalAlignment="Center" Margin="0,0,8,0" />
@@ -59,8 +60,11 @@
                 </Border>
                 <Button Grid.Column="9" Style="{StaticResource ButtonPrimary}" Content="查询" Command="{Binding SearchCommand}"
                         Margin="0,0,10,0" />
-                <Button Grid.Column="10" Style="{StaticResource LinkButton}" Content="导出" FontSize="13"
-                        VerticalAlignment="Center" Click="ExportButton_Click" />
+                <!-- CHG-v1.1.2-05：导出功能实现（原按钮只弹提示让用户去财务报表生成总表） -->
+                <Button Grid.Column="10" Style="{StaticResource LinkButton}" Content="导出Excel" FontSize="13"
+                        VerticalAlignment="Center" Command="{Binding ExportExcelCommand}" />
+                <Button Grid.Column="11" Style="{StaticResource LinkButton}" Content="导出PDF" FontSize="13"
+                        VerticalAlignment="Center" Margin="10,0,0,0" Command="{Binding ExportPdfCommand}" />
             </Grid>
         </Border>
 
@@ -97,6 +101,9 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
                         <DataGridTextColumn Header="项目" Width="*" Binding="{Binding Category}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.1.2-05 / CHG-v1.1.2-13：「楼栋/房号/单元」——
+                             房产取楼栋/单元/房号，车位取车位编号，业主直缴按业主名下主房产回填，跨模块引用基础信息档案 -->
+                        <DataGridTextColumn Header="楼栋/房号/单元" Width="150" Binding="{Binding ObjectText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="金额" Width="120" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="支付方式" Width="100" Binding="{Binding PayMethodText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="关联单据" Width="130" Binding="{Binding BizNo}" ElementStyle="{StaticResource GridCellText}" />
@@ -109,8 +116,11 @@
         </Border>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="4" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="4" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器，长提示不再被右侧裁切 -->
+        <StackPanel Grid.Row="4">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <!-- ============ 关联单据详情浮层（行点击，T4F-7-1） ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="5" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}">
@@ -127,6 +137,8 @@
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
                         <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="9" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="9" />
                             <RowDefinition Height="Auto" />
@@ -159,6 +171,9 @@
                         <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedRow.BizNo}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
                         <TextBlock Grid.Row="14" Grid.Column="0" Text="付款人" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
                         <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding SelectedRow.OwnerNameText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
+                        <!-- CHG-v1.1.2-05：详情同步展示「楼栋/房号」 -->
+                        <TextBlock Grid.Row="16" Grid.Column="0" Text="楼栋/房号/单元" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
+                        <TextBlock Grid.Row="16" Grid.Column="1" Text="{Binding SelectedRow.ObjectText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
                     </Grid>
 
                     <Button Style="{StaticResource ButtonPrimary}" Content="关闭" FontSize="13" Margin="0,22,0,0"

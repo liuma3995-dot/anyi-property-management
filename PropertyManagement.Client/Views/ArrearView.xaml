@@ -69,6 +69,7 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
@@ -112,9 +113,12 @@
                         VerticalAlignment="Center" Click="BatchRemindButton_Click" Margin="0,0,14,0" />
                 <Button Grid.Column="9" Style="{StaticResource LinkButton}" Content="导出台账" FontSize="13"
                         VerticalAlignment="Center" Click="ExportButton_Click" />
-                <Button Grid.Column="10" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
+                <!-- CHG-v1.1.2-03：已移出台账记录（可恢复）；台账「删除」语义已改为「移出台账」 -->
+                <Button Grid.Column="10" Style="{StaticResource LinkButton}" Content="已移出记录" FontSize="13"
+                        VerticalAlignment="Center" Command="{Binding OpenDismissedCommand}" Margin="14,0,0,0" />
+                <Button Grid.Column="11" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
                         Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                        BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}"
+                        BorderThickness="1" Content="批量移出" Command="{Binding BatchDeleteCommand}"
                         VerticalAlignment="Center" Margin="12,0,0,0" />
             </Grid>
         </Border>
@@ -140,7 +144,15 @@
                     <DataGridTextColumn Header="缴费对象" Width="110" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="业主" Width="100" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="欠费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="欠费期间" Width="120" Binding="{Binding PeriodText}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.1.2-54：欠费期间改引用账单真实账期；同年账期压缩显示，悬停给完整起止 -->
+                    <DataGridTemplateColumn Header="欠费期间" Width="152">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding PeriodText}" Style="{StaticResource GridCellText}"
+                                           ToolTip="{Binding PeriodFullText}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <DataGridTextColumn Header="欠费金额" Width="110" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTextColumn Header="最早欠期" Width="100" Binding="{Binding EarliestDueText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="账龄" Width="80">
@@ -186,7 +198,8 @@
                                     <Button Style="{StaticResource LinkButton}" Content="收款"
                                             Visibility="{Binding CanCollect, Converter={StaticResource BoolToVis}}"
                                             Click="CollectButton_Click" />
-                                    <Button Style="{StaticResource LinkButton}" Content="删除" Foreground="{StaticResource DangerBrush}"
+                                    <!-- CHG-v1.1.2-03：「删除」改为「移出台账」——只影响台账显示，不再删账单 -->
+                                    <Button Style="{StaticResource LinkButton}" Content="移出台账" Foreground="{StaticResource DangerBrush}"
                                             Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}" />
                                 </StackPanel>
@@ -198,8 +211,11 @@
         </Border>
 
         <!-- ============ 状态/错误条 ============ -->
-        <TextBlock Grid.Row="6" Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" />
-        <TextBlock Grid.Row="6" Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" />
+        <!-- CHG-v1.1.2-11：状态/错误条改为可换行容器，长提示不再被右侧裁切 -->
+        <StackPanel Grid.Row="6">
+            <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
+        </StackPanel>
 
         <!-- ============ 催缴弹层 ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsRemindVisible, Converter={StaticResource BoolToVis}}">
@@ -228,7 +244,7 @@
                         <TextBox Style="{StaticResource SearchTextBox}" Height="64" TextWrapping="Wrap"
                                  AcceptsReturn="True" VerticalContentAlignment="Top" Padding="10,8"
                                  Text="{Binding RemindNote, UpdateSourceTrigger=PropertyChanged}"
-                                 hc:InfoElement.Placeholder="催缴记录留痕（UC-FIN-007）" />
+                                 hc:InfoElement.Placeholder="催缴记录留痕（如已电话通知业主）" />
                     </Border>
 
                     <Grid>
@@ -246,50 +262,91 @@
             </Border>
         </Grid>
 
-        <!-- ============ 删除确认弹层（软删除 del_flag=1，保留查账轨迹） ============ -->
+        <!-- ============ 移出台账确认弹层（CHG-v1.1.2-03） ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
-                    <TextBlock Text="确认删除" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="确认移出台账" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}">
-                        <Run Text="确认删除欠费记录：" /><Run Text="{Binding ConfirmRow.PropertyNo, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ConfirmRow.OwnerName, Mode=OneWay}" /><Run Text=" · 欠费金额 " /><Run Text="{Binding ConfirmRow.AmountText, Mode=OneWay}" /><Run Text="？" />
+                        <Run Text="确认将欠费记录移出台账：" /><Run Text="{Binding ConfirmRow.PropertyNo, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ConfirmRow.OwnerName, Mode=OneWay}" /><Run Text=" · 欠费金额 " /><Run Text="{Binding ConfirmRow.AmountText, Mode=OneWay}" /><Run Text="？" />
                     </TextBlock>
                     <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                               Text="删除为软删除，保留查账轨迹。" />
+                               TextWrapping="Wrap"
+                               Text="仅从欠费台账移除：账单、收款登记、退款记录、财务报表与收支流水均不受影响，可随时恢复。" />
                     <Grid Margin="0,20,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmDeleteCommand}" />
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认移出" Command="{Binding ConfirmDeleteCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteCommand}" />
                     </Grid>
                 </StackPanel>
             </Border>
         </Grid>
 
-        <!-- 批量删除确认 -->
+        <!-- 批量移出台账确认 -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
-                    <TextBlock Text="确认批量删除" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="确认批量移出台账" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Text="{Binding BatchConfirmMessage}" Margin="0,12,0,0" FontSize="12" TextWrapping="Wrap"
                                Foreground="{StaticResource TextSecondaryBrush}" />
-                    <TextBlock Margin="0,6,0,0" FontSize="11" Foreground="{StaticResource TextMutedBrush}"
-                               Text="删除为软删除，保留查账轨迹。" />
                     <Grid Margin="0,20,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认删除" Command="{Binding ConfirmBatchDeleteCommand}" />
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认移出" Command="{Binding ConfirmBatchDeleteCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelBatchDeleteCommand}" />
                     </Grid>
                 </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ 已移出台账记录（CHG-v1.1.2-03：可恢复） ============ -->
+        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsDismissedVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="760" MaxHeight="520" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Style="{StaticResource CardBorder}" Padding="24,20">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="已移出台账的记录" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Grid.Row="1" Margin="0,8,0,12" FontSize="11" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Text="这些账单仍然存在（账单工作台、收款登记、退款记录、财务报表、收支流水一切照旧），只是不再出现在欠费台账列表。点「恢复台账」即可放回。" />
+                    <DataGrid Grid.Row="2" ItemsSource="{Binding DismissedItems}" IsReadOnly="True" MinHeight="180">
+                        <DataGrid.Columns>
+                            <DataGridTextColumn Header="房号" Width="90" Binding="{Binding PropertyText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="业主" Width="90" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="收费项目" Width="120" Binding="{Binding ChargeItemText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="欠费金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="移出时间" Width="130" Binding="{Binding CreatedText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTextColumn Header="操作人" Width="90" Binding="{Binding OperatorText}" ElementStyle="{StaticResource GridCellText}" />
+                            <DataGridTemplateColumn Header="操作" Width="100">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource LinkButton}" Content="恢复台账"
+                                                Command="{Binding DataContext.RestoreDismissedCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                CommandParameter="{Binding}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                    <Button Grid.Row="3" Style="{StaticResource ButtonSecondary}" Content="关闭" HorizontalAlignment="Right"
+                            Margin="0,16,0,0" Command="{Binding CloseDismissedCommand}" />
+                </Grid>
             </Border>
         </Grid>
     </Grid>

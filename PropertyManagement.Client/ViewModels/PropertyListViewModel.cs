@@ -62,6 +62,23 @@ namespace PropertyManagement.Client.ViewModels
                 }
             }
         }
+
+        /// <summary>
+        /// CHG-v1.1.2-48：用途文案（列表新增「用途」列）—— 收费规格的「适用条件 → 房产用途」按同一口径取值。
+        /// 注意与「状态（空置/已入住/装修中）」是两个维度。
+        /// </summary>
+        public string UsageText
+        {
+            get
+            {
+                switch (Dto.Usage)
+                {
+                    case PropertyUsage.Commercial: return "商铺";
+                    case PropertyUsage.Vacant: return "空置";
+                    default: return "住宅";
+                }
+            }
+        }
         public Brush StatusBrush { get { return Dto.Status == PropertyStatus.Occupied ? OkBrush : (Dto.Status == PropertyStatus.Renovating ? WarnBrush : MutedBrush); } }
         public Brush StatusBg { get { return Dto.Status == PropertyStatus.Occupied ? OkBg : (Dto.Status == PropertyStatus.Renovating ? WarnBg : MutedBg); } }
         public decimal Arrear { get { return Dto.CurrentArrear; } }

@@ -14,7 +14,8 @@ namespace PropertyManagement.Server.Services
 {
     /// <summary>
     /// 收款/收据/退款服务（D4-2 + D4-3，UC-FIN-003/004/011，P-06，BR-FIN-02/06/08/10）：
-    /// 收款登记（部分缴/超额转预存/预存自动抵扣）、收据打印与补打留痕、
+    /// 收款登记（全额/部分缴，收款金额不得超过账单未收金额 —— CHG-v1.1.2-51 下线「多缴转预存」）、
+    /// 收据模板导出与留痕、存量预存款查询与退还（预存款不再由收款产生）、
     /// 退款/减免/调整（原因必填、不超实缴、大额需确认）、预存款查询与退还。
     /// </summary>
     public class PaymentService
@@ -37,7 +38,7 @@ namespace PropertyManagement.Server.Services
             _audit = audit;
         }
 
-        // ---------- 收款登记（UC-FIN-003，P-06 简单版） ----------
+        // ---------- 收款登记（UC-FIN-003；CHG-v1.1.2-51：P-06「多缴转预存」已下线） ----------
         public PaymentDto CreatePayment(PaymentCreateRequest request,
             string operatorName = null, string ip = null)
         {
@@ -186,17 +187,25 @@ namespace PropertyManagement.Server.Services
                 _finance.DecreasePreDeposit(connection, transaction, ownerId, usedFromPreDeposit);
             }
 
-            // 本次实收：先抵剩余，超出部分转预存款（P-06）
+            // 本次实收（CHG-v1.1.2-51：下线「多缴自动转入预存账户」）
+            // 口径：收款金额不得超过该账单未收金额；「多缴 → 预存账户」这条业务链路整条移除，
+            // 超收一律拒绝并给出可读提示（原先「超出部分静默转入预存」会让用户看不到这笔钱去哪了）。
             decimal cash = item.Amount;
+            if (cash <= 0m)
+            {
+                throw ApiException.ValidationFailed("收款金额必须大于 0");
+            }
+            if (cash > remaining)
+            {
+                throw ApiException.ValidationFailed(
+                    "收款金额不能超过该账单未收金额 ¥" + remaining.ToString("0.00") +
+                    "，请调整后重新收款");
+            }
             decimal toBill = Math.Min(cash, remaining - usedFromPreDeposit);
+            // 业主预存余额抵扣后，等额现金回存预存账户（余额不变），仅存量预存款适用
             decimal excess = cash - toBill;
             if (excess > 0m)
             {
-                if (isCustomPayer)
-                {
-                    throw ApiException.ValidationFailed(
-                        "自定义缴费对象不支持超额转预存，请将收款金额调整为不超过应缴金额");
-                }
                 _finance.IncreasePreDeposit(connection, transaction, ownerId, excess);
             }
 
@@ -206,7 +215,7 @@ namespace PropertyManagement.Server.Services
             bill.Status = bill.PaidAmount >= bill.Amount
                 ? BillStatus.Paid
                 : (bill.PaidAmount > 0m ? BillStatus.Partial : bill.Status);
-            _finance.UpdateBillPaidAmount(connection, transaction, bill);
+            _finance.UpdateBillAmountAndPaid(connection, transaction, bill);
 
             if (bill.Status != oldStatus)
             {
@@ -336,16 +345,22 @@ namespace PropertyManagement.Server.Services
         public RefundAdjustmentDto CreateRefund(RefundAdjustmentRequest request,
             string operatorName = null, string ip = null)
         {
-            if (request == null || request.BillId <= 0)
+            if (request == null)
             {
-                throw ApiException.BadRequest("账单不能为空");
+                throw ApiException.BadRequest("请求不能为空");
             }
             ValidateRefundRequest(request);
+            // CHG-v1.1.2-04（负责人 2026-09-19 裁定 A）：账务调整允许不选关联账单，用于冲正/补收等无账单场景；
+            // 退款/减免仍必须关联账单（它们要冲减某张账单的实缴金额）。
+            if (request.BillId <= 0 && request.RefundType != RefundType.Adjustment)
+            {
+                throw ApiException.ValidationFailed("退款/减免必须选择关联账单；无账单的冲正/补收请在「账务调整」页签登记");
+            }
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
-                RefundAdjustmentDto refund = ApplyRefund(connection, transaction, request.BillId, request);
+                RefundAdjustmentDto refund = ApplyRefund(connection, transaction, request.BillId, request, operatorName);
                 transaction.Commit();
 
                 _audit.Write("REFUND_CREATE", "bill", refund.BillId.ToString(),
@@ -380,7 +395,7 @@ namespace PropertyManagement.Server.Services
                 var items = new List<RefundAdjustmentDto>();
                 foreach (int billId in billIds)
                 {
-                    items.Add(ApplyRefund(connection, transaction, billId, request));
+                    items.Add(ApplyRefund(connection, transaction, billId, request, operatorName));
                 }
                 transaction.Commit();
 
@@ -407,31 +422,64 @@ namespace PropertyManagement.Server.Services
             }
             if (string.IsNullOrWhiteSpace(request.Reason))
             {
-                throw ApiException.ValidationFailed("必须填写退款/减免原因（BR-FIN-06）");
+                throw ApiException.ValidationFailed("必须填写退款/减免原因");
             }
         }
 
         /// <summary>单张账单的退款/减免/调整核心（单张与批量共用）。</summary>
         private RefundAdjustmentDto ApplyRefund(IDbConnection connection, IDbTransaction transaction,
-            int billId, RefundAdjustmentRequest request)
+            int billId, RefundAdjustmentRequest request, string operatorName)
         {
             {
+                // CHG-v1.1.2-04：无关联账单的「账务调整」（冲正/补收）—— 只登记一笔调整记录，不动任何账单状态。
+                if (billId <= 0)
+                {
+                    return ApplyAdjustmentWithoutBill(connection, transaction, request, operatorName);
+                }
+
                 BillDto bill = _finance.GetBill(connection, billId);
                 if (bill == null)
                 {
                     throw ApiException.NotFound("账单不存在或已删除");
                 }
-                if (bill.Status == BillStatus.Reversed)
+                if (bill.Status == BillStatus.Draft)
                 {
-                    throw ApiException.ValidationFailed("账单已冲正，不能重复操作");
+                    throw ApiException.ValidationFailed("账单 " + bill.Id + " 尚未发布，不能登记退款/减免/调整");
+                }
+                // CHG-v1.1.2-07（负责人 2026-09-19 裁定 A）：减免/调整允许重复登记（累计不超实缴），
+                // 退款保留「已冲正不可重复」的拦截。
+                // CHG-v1.1.2-40：减免改为「调减应收」，同样不能在已冲正账单上登记（账务调整用于冲正/补收，保留）。
+                if (bill.Status == BillStatus.Reversed && request.RefundType != RefundType.Adjustment)
+                {
+                    throw ApiException.ValidationFailed("账单已冲正，不能重复退款/减免；无账单的冲正/补收请使用「账务调整」页签");
                 }
 
                 decimal paid = bill.PaidAmount;
-                if (request.Amount > paid)
+                decimal unreceived = bill.Amount - paid;   // 未收余额（应收 − 实缴）
+                int direction = ResolveAdjustDirection(request.RefundType, request.Method);
+                bool isDiscount = request.RefundType == RefundType.Discount;
+
+                if (isDiscount)
                 {
-                    // BR-FIN-06：退款不超实缴
+                    // CHG-v1.1.2-40（负责人 2026-09-20 反馈）：减免＝**直接调减账单应收**，与退款（冲减实缴）
+                    // 是两条独立链路。上游封顶取「未收余额」，保证减免后 应收 ≥ 实缴（不产生虚增的已缴/多收）。
+                    if (request.Amount > unreceived)
+                    {
+                        throw ApiException.ValidationFailed(
+                            "减免金额不能超过账单未收余额 " + Math.Max(0m, unreceived).ToString("0.00") +
+                            " 元（应收 " + bill.Amount.ToString("0.00") + " − 已缴 " + paid.ToString("0.00") + "）");
+                    }
+                }
+                else if (direction != 1 && request.Amount > paid)
+                {
+                    // CHG-v1.1.2-39：改为「实缴冲减」口径 —— paid_amount 记净实缴（历史冲减已扣除），
+                    // 因此本次金额直接与「当前净实缴」比较；「调增补收」方向（方式=补收/调增）表示补收，不受此限。
+                    // BR-FIN-06：退款/调减冲正累计不超实缴（CHG-v1.1.2-07 由「单次不超」改为「累计不超」）
+                    decimal already = _finance.SumPaidCutsByBill(connection, transaction, bill.Id);
                     throw ApiException.ValidationFailed(
-                        "退款/减免金额不能超过实缴金额 " + paid.ToString("0.00") + " 元（BR-FIN-06）");
+                        already > 0m
+                            ? "当前可冲减实缴仅剩 " + paid.ToString("0.00") + " 元（历史已冲减 " + already.ToString("0.00") + " 元），本次 " + request.Amount.ToString("0.00") + " 元已超出"
+                            : "退款金额不能超过实缴金额 " + paid.ToString("0.00") + " 元");
                 }
 
                 decimal threshold = ReadRefundThreshold(connection);
@@ -439,7 +487,7 @@ namespace PropertyManagement.Server.Services
                 {
                     // BR-FIN-10：大额退款权限控制（当前仅系统管理员角色，体现为阈值 + 确认标记）
                     throw ApiException.Forbidden(
-                        "金额超过 " + threshold.ToString("0.00") + " 元属大额退款，需负责人确认后再提交（BR-FIN-10）");
+                    "金额超过 " + threshold.ToString("0.00") + " 元属大额退款，需负责人确认后再提交");
                 }
 
                 var refund = new RefundAdjustmentDto
@@ -448,28 +496,115 @@ namespace PropertyManagement.Server.Services
                     RefundType = request.RefundType,
                     Amount = request.Amount,
                     Reason = request.Reason.Trim(),
+                    Method = string.IsNullOrWhiteSpace(request.Method) ? null : request.Method.Trim(),
+                    AdjustDir = direction,
                     AttachmentName = request.AttachmentName,
-                    AttachmentPath = request.AttachmentPath
+                    AttachmentPath = request.AttachmentPath,
+                    // CHG-v1.1.2-41：经办人随单据落库（导出 PDF / 审计追溯）
+                    OperatorName = operatorName
                 };
-                refund.RefNo = "RF-" + DateTime.Now.ToString("yyyyMMddHHmmss") + "-" + bill.Id;
+                // CHG-v1.1.2-07：减免/调整可重复登记 → 申请编号带毫秒，避免同一秒内多条记录编号相同
+                refund.RefNo = "RF-" + DateTime.Now.ToString("yyyyMMddHHmmssfff") + "-" + bill.Id;
 
                 refund.Id = _finance.InsertRefund(connection, transaction, refund);
                 refund.CreatedAt = DateTime.Now;
 
-                // 账单置为已冲正并留痕（状态模型：已缴/部分缴 → 已冲正）
+                // CHG-v1.1.2-39（负责人 2026-09-20 反馈）：不得把账单一律置为「已冲正」——原实现把账单改成 4，
+                // 而收款登记只列 未缴/部分缴/逾期，导致「仍有未收金额」的账单连同剩余欠款一起消失，钱收不回来。
+                // CHG-v1.1.2-40（负责人 2026-09-20 反馈）：两条落账链路彻底拆开 ——
+                //   退款 / 调整冲减 → 冲减 paid_amount（净实缴，补收方向为调增），应收不动；
+                //   减免          → 调减 amount（应收），实缴不动，不产生任何资金流出。
+                // 状态一律按「应收 / 净实缴」重算 → 有欠款就继续出现在收款登记与欠费台账。
                 BillStatus oldStatus = bill.Status;
-                bill.Status = BillStatus.Reversed;
-                _finance.UpdateBillPaidAmount(connection, transaction, bill);
+                decimal oldAmount = bill.Amount;
+                string detail;
+                if (isDiscount)
+                {
+                    bill.Amount = oldAmount - request.Amount;
+                    detail = "应收 " + oldAmount.ToString("0.00") + " → " + bill.Amount.ToString("0.00") +
+                             "，实缴 " + paid.ToString("0.00") + " 不变";
+                }
+                else
+                {
+                    decimal netPaid = direction == 1 ? paid + request.Amount : paid - request.Amount;
+                    if (netPaid < 0m) { netPaid = 0m; }
+                    bill.PaidAmount = netPaid;
+                    detail = "实缴 " + paid.ToString("0.00") + " → " + netPaid.ToString("0.00");
+                }
+                bill.Status = ResolveBillStatusByMoney(bill.Amount, bill.PaidAmount, bill.DueAt);
+                _finance.UpdateBillAmountAndPaid(connection, transaction, bill);
                 _finance.InsertBillStatusLog(connection, transaction, new BillStatusLogDto
                 {
                     BillId = bill.Id,
                     OldStatus = oldStatus,
-                    NewStatus = BillStatus.Reversed,
-                    Reason = request.RefundType + "：" + refund.Reason
+                    NewStatus = bill.Status,
+                    Reason = request.RefundType + "：" + refund.Reason + "（" + detail + "）"
                 });
 
                 return refund;
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-39/-40：按「应收 / 净实缴」重算账单状态 ——
+        /// 净实缴 ≥ 应收 → 已缴（应收被减免至 0 同样视为已缴清）；否则按到期日判逾期
+        /// （口径与 MarkOverdue 一致：**到期日次日起**才算逾期），再落 部分缴 / 待缴。
+        /// </summary>
+        private static BillStatus ResolveBillStatusByMoney(decimal amount, decimal paidAmount, DateTime dueAt)
+        {
+            if (paidAmount >= amount) { return BillStatus.Paid; }
+            if ((DateTime.Today - dueAt.Date).Days > 1) { return BillStatus.Overdue; }
+            return paidAmount > 0m ? BillStatus.Partial : BillStatus.Pending;
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-04：无关联账单的账务调整（冲正/补收）。
+        /// 口径：t_payment_refund.bill_id 记 0（库未开启外键约束），只落一条调整记录 + 审计留痕，
+        /// 不改动任何账单状态，也不影响收款登记/欠费台账/财务报表的历史口径。
+        /// </summary>
+        private RefundAdjustmentDto ApplyAdjustmentWithoutBill(IDbConnection connection, IDbTransaction transaction,
+            RefundAdjustmentRequest request, string operatorName)
+        {
+            decimal threshold = ReadRefundThreshold(connection);
+            if (request.Amount > threshold && !request.ConfirmedByManager)
+            {
+                throw ApiException.Forbidden(
+                    "金额超过 " + threshold.ToString("0.00") + " 元属大额调整，需负责人确认后再提交");
+            }
+
+            var refund = new RefundAdjustmentDto
+            {
+                BillId = 0,
+                RefundType = request.RefundType,
+                Amount = request.Amount,
+                Reason = request.Reason.Trim(),
+                Method = string.IsNullOrWhiteSpace(request.Method) ? null : request.Method.Trim(),
+                AdjustDir = ResolveAdjustDirection(request.RefundType, request.Method),
+                AttachmentName = request.AttachmentName,
+                AttachmentPath = request.AttachmentPath,
+                // CHG-v1.1.2-41：经办人随单据落库（导出 PDF / 审计追溯）
+                OperatorName = operatorName
+            };
+            refund.RefNo = "RF-" + DateTime.Now.ToString("yyyyMMddHHmmssfff") + "-0";
+            refund.Id = _finance.InsertRefund(connection, transaction, refund);
+            refund.CreatedAt = DateTime.Now;
+            return refund;
+        }
+
+        /// <summary>
+        /// CHG-v1.1.2-12：账务调整的 +/− 由「方式」决定 ——
+        /// 「调增补收」= 1（计入收入方向）、「调减冲正」= 2（冲减方向）、其它/未指定 = 0。
+        /// 非调整类型（退款/减免）恒为 0。
+        /// </summary>
+        private static int ResolveAdjustDirection(RefundType type, string method)
+        {
+            if (type != RefundType.Adjustment) { return 0; }
+            string text = method == null ? string.Empty : method.Trim();
+            if (text.IndexOf("补收", StringComparison.Ordinal) >= 0 ||
+                text.IndexOf("调增", StringComparison.Ordinal) >= 0) { return 1; }
+            if (text.IndexOf("冲正", StringComparison.Ordinal) >= 0 ||
+                text.IndexOf("调减", StringComparison.Ordinal) >= 0) { return 2; }
+            return 0;
         }
 
         public PageResult<RefundAdjustmentDto> QueryRefunds(PageRequest query)

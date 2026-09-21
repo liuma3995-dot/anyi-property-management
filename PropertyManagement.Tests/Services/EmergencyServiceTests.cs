@@ -26,7 +26,7 @@ namespace PropertyManagement.Tests.Services
             }, "admin"));
 
             Assert.Equal(ErrorCode.ValidationFailed, ex.Code);
-            Assert.Contains("BR-EMG-01", ex.Message);
+            Assert.Contains("请选择应急场景", ex.Message);
         }
 
         [Fact]

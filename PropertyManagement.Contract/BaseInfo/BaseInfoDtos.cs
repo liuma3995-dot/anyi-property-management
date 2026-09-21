@@ -159,6 +159,11 @@ namespace PropertyManagement.Contract.BaseInfo
         public string FileName { get; set; }
         public int Total { get; set; }
         public int Success { get; set; }
+        /// <summary>
+        /// CHG-v1.1.2-01：覆盖条数 —— 命中既有记录（房产/业主/车位/关系）并按导入文件覆盖更新的行数。
+        /// 与 <see cref="Success"/>（新增条数）分开统计，便于用户核对「重复数据做覆盖处理」的效果。
+        /// </summary>
+        public int Updated { get; set; }
         public int Fail { get; set; }
         public string ErrorFile { get; set; }
         public ImportStatus Status { get; set; }

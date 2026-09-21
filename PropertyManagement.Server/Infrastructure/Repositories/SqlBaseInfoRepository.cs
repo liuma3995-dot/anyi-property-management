@@ -719,7 +719,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             "COALESCE(pr.room_no, '') AS BindingProperty, COALESCE(o.name, '') AS OwnerName, " +
             "p.monthly_rent AS MonthlyRent, p.rent_mode AS RentMode, p.rent_to AS RentTo, " +
             "CASE p.status WHEN 0 THEN '已售' WHEN 1 THEN '已租' WHEN 2 THEN '空置' ELSE '维修中' END AS StatusText, " +
-            "CASE p.space_type WHEN 0 THEN '产权' WHEN 1 THEN '人防' ELSE '临时' END AS SpaceTypeText, " +
+            "CASE p.space_type WHEN 0 THEN '产权' WHEN 1 THEN '普通' ELSE '临时' END AS SpaceTypeText, " +
             "p.del_flag AS DelFlag, p.created_at AS CreatedAt, p.updated_at AS UpdatedAt";
 
         public ParkingSpaceDto GetParking(IDbConnection connection, int id)
@@ -849,6 +849,14 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 new { id, status = (int)status, success, fail, errorFile }, transaction);
         }
 
+        /// <summary>导入批次「覆盖」计数（CHG-v1.1.2-01：重复数据做覆盖处理）。</summary>
+        public void UpdateImportLogUpdated(IDbConnection connection, IDbTransaction transaction, int id, int updated)
+        {
+            connection.Execute(
+                "UPDATE t_import_log SET updated_count = @updated WHERE id = @id",
+                new { id, updated }, transaction);
+        }
+
         public ImportLogDto GetImportLog(IDbConnection connection, int id)
         {
             return connection.QueryFirstOrDefault<ImportLogDto>(ImportLogSelectSql + " WHERE l.id = @id", new { id });
@@ -874,7 +882,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         private const string ImportLogSelectSql =
             "SELECT l.id, l.module AS Module, " +
             "CASE l.module WHEN 0 THEN '房产' WHEN 1 THEN '业主' WHEN 2 THEN '车位' ELSE '业主-房产关系' END AS ModuleText, " +
-            "l.file_name AS FileName, l.total AS Total, l.success AS Success, l.fail AS Fail, " +
+            "l.file_name AS FileName, l.total AS Total, l.success AS Success, l.updated_count AS Updated, l.fail AS Fail, " +
             "l.error_file AS ErrorFile, l.status AS Status, " +
             "CASE l.status WHEN 0 THEN '校验中' WHEN 1 THEN '成功' WHEN 2 THEN '部分成功' ELSE '失败' END AS StatusText, " +
             "l.created_by AS CreatedBy, l.created_at AS CreatedAt FROM t_import_log l";

@@ -311,7 +311,7 @@
                 <Border Grid.Column="4" Style="{StaticResource CardBorder}" Padding="20,16" VerticalAlignment="Top"
                         Visibility="{Binding CanEdit, Converter={StaticResource BoolToVis}}">
                     <StackPanel>
-                        <TextBlock Text="结案（UC-DIS-004/005）" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
+                    <TextBlock Text="结案" FontSize="14" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,10" />
                         <StackPanel>
                             <RadioButton GroupName="closeType" Content="调解成功（签订协议）" FontSize="12" IsChecked="{Binding IsCloseMediated, Mode=TwoWay}" Margin="0,0,0,8" />
                             <RadioButton GroupName="closeType" Content="调解终止（无法达成）" FontSize="12" IsChecked="{Binding IsCloseSettled, Mode=TwoWay}" Margin="0,0,0,8" />
