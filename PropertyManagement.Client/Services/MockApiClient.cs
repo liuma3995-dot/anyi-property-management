@@ -213,7 +213,23 @@ namespace PropertyManagement.Client.Services
 
         public Task<DashboardDto> GetDashboardAsync(string period)
         {
-            return GetDashboardAsync();
+            // CHG-v1.2.0-26：演示口径同样支持「按年」（period = yyyy → Annual = true，年度金额 = 月度 × 12）
+            bool annual = !string.IsNullOrWhiteSpace(period) && period.Trim().Length == 4;
+            var dto = GetDashboardAsync().Result;
+            dto.Period = string.IsNullOrWhiteSpace(period)
+                ? DateTime.Today.ToString("yyyy-MM")
+                : period.Trim();
+            dto.Annual = annual;
+            if (annual)
+            {
+                dto.MonthReceivable = dto.MonthReceivable * 12m;
+                dto.MonthReceived = dto.MonthReceived * 12m;
+                dto.MonthCycleReceived = dto.MonthCycleReceived * 12m;
+                dto.ReceivableTrend = "较上年 +6.8%";
+                dto.CollectionRateTrend = "较上年 +1.2 个百分点";
+                dto.OverdueTrend = "较上年 -2 户";
+            }
+            return Task.FromResult(dto);
         }
 
         public Task<TodoCenterDto> GetTodosAsync(int limit = 20)
@@ -1061,6 +1077,20 @@ namespace PropertyManagement.Client.Services
             });
         }
 
+        /// <summary>CHG-v1.2.0-25：支出明细导出（演示客户端只返回一条导出记录，不落真实文件）。</summary>
+        public Task<ReportLogDto> ExportExpensesAsync(ExpenseExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 1,
+                ReportType = "expense",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = request == null ? ExportFormat.Pdf : request.Format,
+                FilePath = "C:\\ProgramData\\PropertyManagement\\exports\\expenses-demo.pdf",
+                CreatedAt = DateTime.Now
+            });
+        }
+
         public Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request)
         {
             return Task.FromResult(new FinancialReportDto
@@ -1110,6 +1140,58 @@ namespace PropertyManagement.Client.Services
                 ReportType = "refund",
                 Period = DateTime.Now.ToString("yyyy-MM-dd"),
                 Format = ExportFormat.Pdf
+            });
+        }
+
+        /// <summary>CHG-v1.2.0-13：演示实现——业主档案导出 PDF（本年度缴费概况 + 缴费明细）。</summary>
+        public Task<ReportLogDto> ExportOwnerProfilePdfAsync(int ownerId, int? year)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 4,
+                ReportType = "owner_profile",
+                Period = (year ?? DateTime.Today.Year) + "-" + ownerId,
+                Format = ExportFormat.Pdf,
+                FilePath = "owner_profile_demo.pdf"
+            });
+        }
+
+        /// <summary>CHG-v1.2.0-17：演示实现——业主档案导出 PDF（全部业主）。</summary>
+        public Task<ReportLogDto> ExportAllOwnerProfilesPdfAsync(int? year)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 5,
+                ReportType = "owner_profile",
+                Period = (year ?? DateTime.Today.Year) + "-ALL",
+                Format = ExportFormat.Pdf,
+                FilePath = "owner_profile_all_demo.pdf"
+            });
+        }
+
+        /// <summary>CHG-v1.2.0-31：演示实现——应缴明细批量删除已结清记录（归档）。</summary>
+        public Task<BillArchiveResultDto> ArchiveSettledBillsAsync(SettledBillArchiveRequest request)
+        {
+            int count = request == null || request.BillIds == null ? 0 : request.BillIds.Count;
+            return Task.FromResult(new BillArchiveResultDto
+            {
+                ArchivedCount = count,
+                SkippedCount = 0,
+                SkippedItems = new List<string>(),
+                Message = "已清理 " + count + " 条已结清记录（演示数据）"
+            });
+        }
+
+        /// <summary>CHG-v1.2.0-32：演示实现——应缴明细导出 PDF。</summary>
+        public Task<ReportLogDto> ExportArrearDetailsPdfAsync(ArrearDetailExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 6,
+                ReportType = "arrear_detail",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = ExportFormat.Pdf,
+                FilePath = "arrear_detail_demo.pdf"
             });
         }
 
@@ -1183,6 +1265,8 @@ namespace PropertyManagement.Client.Services
                 DueAt = due,
                 AgingDays = aging,
                 RemindChannel = remind,
+                // CHG-v1.2.0-24：台账「状态」列取账单状态（逾期口径：到期日之后超过 1 天）
+                Status = paid > 0 ? 1 : (aging > 1 ? 2 : 0),
                 // CHG-v1.1.2-54：账期与账单真实账期同源（Mock 按到期日所在自然月给出示例账期）
                 CycleStart = new DateTime(due.Year, due.Month, 1).ToString("yyyy-MM-dd"),
                 CycleEnd = new DateTime(due.Year, due.Month, DateTime.DaysInMonth(due.Year, due.Month)).ToString("yyyy-MM-dd")
@@ -1309,6 +1393,9 @@ namespace PropertyManagement.Client.Services
             });
 
         public Task<byte[]> DownloadImportErrorsAsync(int id) =>
+            Task.FromResult(new byte[0]);
+
+        public Task<byte[]> DownloadImportReceiptAsync(int id) =>
             Task.FromResult(new byte[0]);
 
         public Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request) =>

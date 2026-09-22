@@ -505,6 +505,21 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand<BillBatchRow> PublishCommand { get; }
         public IAsyncRelayCommand ConfirmPublishCommand { get; }
         public IRelayCommand CancelPublishCommand { get; }
+
+        /// <summary>
+        /// CHG-v1.2.0-23：账单数据发生变化（发布 / 删除 / 重推）→ 通知外层刷新顶部铃铛待办数。
+        /// 待办中心的「欠费催缴」直接由 t_bill 派生，出账发布后必须即时同步，否则要手动点铃铛才更新。
+        /// </summary>
+        public event Action DataChanged;
+
+        private void RaiseDataChanged()
+        {
+            Action handler = DataChanged;
+            if (handler != null)
+            {
+                handler();
+            }
+        }
         public IAsyncRelayCommand<BillBatchRow> EditCommand { get; }
         public IRelayCommand<BillBatchRow> ViewCommand { get; }
         public IRelayCommand CloseViewCommand { get; }
@@ -682,6 +697,7 @@ namespace PropertyManagement.Client.ViewModels
             CustomPayers.Clear();   // CHG-v1.1.0-18：自定义缴费对象手工行同样清空
             ClearObjectMeasures();  // CHG-v1.1.2-34：档案对象的行内手填计量参数同样清空
             ClearPriceOverrides();  // CHG-v1.1.2-50：出账改价同样清空（每次进入弹窗从价目表单价起步）
+            ClearSpecPicks();       // CHG-v1.2.0-12：手选规格同样清空（每次进入弹窗从「自动匹配」起步）
             _objectKeyword = string.Empty;
             OnPropertyChanged(nameof(ObjectKeyword));
             ApplyDefaultObjectKind();
@@ -743,10 +759,12 @@ namespace PropertyManagement.Client.ViewModels
             if (IsCustomChargeObject)
             {
                 ClearPriceOverrides();   // CHG-v1.1.2-50：切换收费项目不沿用上一个项目的改后价
+                ClearSpecPicks();        // CHG-v1.2.0-12：手选规格同样不沿用
                 await ReloadCustomPayerTemplateAsync();
                 return;
             }
             ClearPriceOverrides();   // CHG-v1.1.2-50：切换收费项目不沿用上一个项目的改后价
+            ClearSpecPicks();        // CHG-v1.2.0-12：手选规格同样不沿用
             await LoadStandardMeasureVarsAsync();
             await ReloadBillObjectsAsync();
         }
@@ -823,6 +841,15 @@ namespace PropertyManagement.Client.ViewModels
                 if (row != null && row.Dto != null)
                 {
                     OnPriceOverrideTextChanged(ObjectKey(row.Dto.Id), row.UnitPriceOverrideText);
+                }
+            }
+            else if (e.PropertyName == nameof(BillObjectRow.SelectedSpec))
+            {
+                // CHG-v1.2.0-12：行内手选规格 → 写回「类型:ID」并重新试算（试算与生成同口径）
+                var row = sender as BillObjectRow;
+                if (row != null && row.Dto != null)
+                {
+                    OnSpecSelectionChanged(ObjectKey(row.Dto.Id), row.SelectedSpecId);
                 }
             }
         }
@@ -1042,6 +1069,8 @@ namespace PropertyManagement.Client.ViewModels
                 await RefreshSummaryAsync();
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + log.Id + " 已发布";
             }, null);
+            // CHG-v1.2.0-23：发布成功后即时刷新顶部铃铛待办数
+            RaiseDataChanged();
         }
 
         /// <summary>
@@ -1202,6 +1231,7 @@ namespace PropertyManagement.Client.ViewModels
                     await RefreshSummaryAsync();
                     StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已批量删除 " + rows.Count + " 个批次（软删，轨迹保留）";
                 }, null);
+                RaiseDataChanged(); // CHG-v1.2.0-23：批次删除后待办数同步
                 return;
             }
             if (row == null) { return; }
@@ -1212,6 +1242,7 @@ namespace PropertyManagement.Client.ViewModels
                 await RefreshSummaryAsync();
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + row.BatchNoText + " 已删除（软删，轨迹保留）";
             }, null);
+            RaiseDataChanged(); // CHG-v1.2.0-23：批次删除后待办数同步
         }
 
         /// <summary>批量删除批次（任意状态均可删；软删批次及其账单，已缴/部分缴流水不回退）。</summary>
@@ -1298,6 +1329,7 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 resultMessage = message;
             }, null);
+            RaiseDataChanged(); // CHG-v1.2.0-23：重推成功后待办数同步
             if (resultMessage != null)
             {
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + resultMessage;

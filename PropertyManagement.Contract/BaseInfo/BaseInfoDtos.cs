@@ -182,6 +182,23 @@ namespace PropertyManagement.Contract.BaseInfo
         public string Suggestion { get; set; }
     }
 
+    /// <summary>
+    /// 导入回执行（逐行处理结果，CHG-v1.2.0-01）。
+    /// 每一行数据行都会在这里留一条记录：新增 / 覆盖（写清覆盖了谁、改了什么）/ 失败（原因与建议）。
+    /// 用途：批次列表「下载回执」导出 Excel，让用户能追溯同名业主/重复房产被覆盖的对象。
+    /// </summary>
+    public class ImportRowResultDto
+    {
+        public int RowNo { get; set; }
+        public ImportRowResult Result { get; set; }
+        /// <summary>业务对象标识，如「1号楼1单元101」「张伟（档案 #8，电话 13800008888）」。</summary>
+        public string ObjectKey { get; set; }
+        /// <summary>覆盖明细：「字段：旧值 → 新值」，多字段用「；」分隔。</summary>
+        public string ChangeSummary { get; set; }
+        public string Reason { get; set; }
+        public string Suggestion { get; set; }
+    }
+
     /// <summary>导入结果（批次 + 错误清单预览）。</summary>
     public class ImportResultDto
     {

@@ -72,7 +72,9 @@ namespace PropertyManagement.Client.ViewModels
             DownloadTemplateCommand = new AsyncRelayCommand(DownloadTemplateAsync);
             SelectFileCommand = new RelayCommand(SelectFile);
             ImportCommand = new AsyncRelayCommand(ImportAsync);
-            DownloadErrorsCommand = new AsyncRelayCommand<ImportLogRow>(DownloadErrorsAsync);
+            // v1.2.0（CHG-v1.2.0-01）：按钮「下载回执」改为导出逐行回执（新增/覆盖/失败），
+            // 不再复用「错误清单」——旧实现只在有失败行时才给下载，覆盖型批次拿不到任何凭据。
+            DownloadErrorsCommand = new AsyncRelayCommand<ImportLogRow>(DownloadReceiptAsync);
             ReImportCommand = new AsyncRelayCommand<ImportLogRow>(ReImportAsync);
             RefreshCommand = new AsyncRelayCommand(LoadAsync);
             BatchDeleteRecordsCommand = new RelayCommand(BatchDeleteRecords);
@@ -405,15 +407,19 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        private async Task DownloadErrorsAsync(ImportLogRow row)
+        /// <summary>
+        /// 下载导入回执（v1.2.0 CHG-v1.2.0-01）：逐行写明 新增 / 覆盖（覆盖了谁、改了哪些字段）/ 失败。
+        /// 无论批次有没有失败行都可下载 —— 这是「同名业主被覆盖了谁」的凭据。
+        /// </summary>
+        private async Task DownloadReceiptAsync(ImportLogRow row)
         {
-            if (row == null || row.Fail == 0) { MessageBox.Show("该批次无错误清单", "提示", MessageBoxButton.OK, MessageBoxImage.Information); return; }
+            if (row == null) return;
             bool saved = false;
             string savedPath = string.Empty;
             await RunAsync(async () =>
             {
-                var bytes = await Api.DownloadImportErrorsAsync(row.Id);
-                var dialog = new SaveFileDialog { Filter = "Excel 文件|*.xlsx", FileName = "导入错误_" + row.BatchNo + ".xlsx" };
+                var bytes = await Api.DownloadImportReceiptAsync(row.Id);
+                var dialog = new SaveFileDialog { Filter = "Excel 文件|*.xlsx", FileName = "导入回执_" + row.BatchNo + ".xlsx" };
                 if (dialog.ShowDialog() == true)
                 {
                     string saveError;
@@ -426,11 +432,11 @@ namespace PropertyManagement.Client.ViewModels
                     saved = true;
                     savedPath = dialog.FileName;
                 }
-            }, "正在生成错误清单…");
+            }, "正在生成导入回执…");
             if (saved)
             {
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "错误清单已下载：" + savedPath;
-                MessageBox.Show("错误清单已下载到：" + savedPath, "下载成功", MessageBoxButton.OK, MessageBoxImage.Information);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "导入回执已下载：" + savedPath;
+                MessageBox.Show("导入回执已下载到：" + savedPath, "下载成功", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
     }

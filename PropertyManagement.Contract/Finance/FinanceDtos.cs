@@ -209,6 +209,14 @@ namespace PropertyManagement.Contract.Finance
         public string BuildingNo { get; set; }
         /// <summary>CHG-v1.1.0-12：房号。</summary>
         public string RoomNo { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-33：单元号（业主-房产关系绑定的房产若带单元，取该房产的单元）。
+        /// 与 BuildingNo / RoomNo 同源同序（同一套主房产），供收款登记 / 退款页的
+        /// 「楼栋/单元/房号」组合展示用。
+        /// </summary>
+        public string UnitNo { get; set; }
+
         /// <summary>CHG-v1.1.0-12：车位编号（车位账单展示用）。</summary>
         public string SpaceNo { get; set; }
         /// <summary>
@@ -307,6 +315,25 @@ namespace PropertyManagement.Contract.Finance
         public int Count { get; set; }
     }
 
+    /// <summary>
+    /// 收款登记「应缴明细·批量删除已结清记录」结果（CHG-v1.2.0-31）。
+    /// 归档只影响应缴明细列表可见性；未结清记录会被拒绝并计入 SkippedUnsettled。
+    /// </summary>
+    public class BillArchiveResultDto
+    {
+        /// <summary>已归档（从应缴明细移除）的已结清账单条数。</summary>
+        public int ArchivedCount { get; set; }
+
+        /// <summary>被拒绝的账单条数（未结清、已删除或不存在）。</summary>
+        public int SkippedCount { get; set; }
+
+        /// <summary>被拒绝的明细说明（如「BILL-0007 未结清」），供页面提示。</summary>
+        public List<string> SkippedItems { get; set; }
+
+        /// <summary>结果文案（中文，页面直接展示）。</summary>
+        public string Message { get; set; }
+    }
+
     /// <summary>退款/减免/调整批量登记结果（CHG-v1.1.0-13：一组账单各登记一条记录）。</summary>
     public class RefundBatchResultDto
     {
@@ -316,6 +343,12 @@ namespace PropertyManagement.Contract.Finance
         public int Count { get; set; }
         /// <summary>合计金额（每张金额 × 张数）。</summary>
         public decimal TotalAmount { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-35：本次批量登记中，有多少张账单因「重新变为未结清」而**自动解除已结清归档**
+        /// （这些账单会重新出现在收款登记「应缴明细」，可继续收款）。
+        /// </summary>
+        public int ArchiveReleasedCount { get; set; }
     }
 
     /// <summary>收据（t_receipt，UC-FIN-011，BR-FIN-08 收据号唯一）。</summary>
@@ -349,6 +382,14 @@ namespace PropertyManagement.Contract.Finance
         public string AttachmentName { get; set; }
         public string AttachmentPath { get; set; }
         public string PropertyNo { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-35：本次退款/调整冲减后该账单**重新变为未结清**，其「已结清归档」标记被自动解除
+        /// → 账单重新出现在收款登记「应缴明细」（可继续收款）。
+        /// 背景：归档只针对「已结清」记录，退款会让归档记录重新欠费，若不解锁则下拉显示欠费笔数、
+        /// 应缴明细却是空的（负责人 2026-09-22 反馈）。
+        /// </summary>
+        public bool ArchiveReleased { get; set; }
     }
 
     /// <summary>
@@ -574,7 +615,31 @@ namespace PropertyManagement.Contract.Finance
         public DateTime DueAt { get; set; }
         public int AgingDays { get; set; }
         public string RemindChannel { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-24：账单状态（见 <see cref="PropertyManagement.Contract.Enums.BillStatus"/>）。
+        /// 台账页「状态」列据此显示 —— 逾期口径由服务端 MarkOverdue 在查询前统一落库
+        /// （到期日之后超过 1 天才算逾期），台账不再出现「已逾期却显示未缴」。
+        /// </summary>
+        public int Status { get; set; }
+
         public string BuildingNo { get; set; }  // T4F-6-1：楼栋（筛选用，来源 t_building.building_no）
+
+        /// <summary>
+        /// CHG-v1.2.0-27：楼栋/房号（跨模块引用基础信息档案，口径同「收支明细流水」的「楼栋/房号/单元」列：
+        /// `1号楼/1单元/101`，无单元则 `1号楼/101`）。
+        /// 房产账单取本房产；车位账单与**业主直缴**账单「只要行上有业主」即按**业主-房产关系**回查主房产；
+        /// 自定义缴费对象（无档案）为空。
+        /// </summary>
+        public string BuildingPath { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-27：缴费对象类型 —— `property`（房产）｜`parking`（车位）｜`owner`（业主直缴）｜
+        /// `custom`（自定义缴费对象）。前端据此决定「业主」列留空的文案：
+        /// 房产行为「—（空置）」，非业主类缴费对象为「—」（避免把广告商等外部对象误标成空置房产）。
+        /// </summary>
+        public string ObjectKind { get; set; }
+
         /// <summary>
         /// CHG-v1.1.2-54：账单期间起止（账单真实账期，来源 t_billing_cycle）。
         /// 台账「欠费期间」列改为直接引用该账期 —— 原实现按到期日倒推一个月推算，

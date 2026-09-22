@@ -33,10 +33,13 @@ namespace PropertyManagement.Client.ViewModels
 
         // ---- R17：顶栏搜索 / 待办中心 / 个人信息 ----
         private readonly DispatcherTimer _searchTimer;
+        private readonly DispatcherTimer _todoTimer;
         private bool _searchBusy;
         private bool _isSearchOpen;
         private string _searchSummary = string.Empty;
         private bool _isTodoCenterOpen;
+        /// <summary>CHG-v1.2.0-28：仪表盘统计口径（月 `yyyy-MM` / 年 `yyyy`）—— 切页返回后沿用，直到点「回到本月」。</summary>
+        private string _dashboardPeriod;
         private int _todoTotal;
         private string _todoSummary = "待办 0 项";
         private string _todoDetail = "欠费 0  ·  纠纷 0  ·  到期 0";
@@ -304,6 +307,12 @@ namespace PropertyManagement.Client.ViewModels
                 await RunSearchAsync();
             };
 
+            // CHG-v1.2.0-23：顶部铃铛待办数自动同步 —— ① 定时轮询（到期/逾期随时间自然变化）
+            // ② 出账/收款等动作后由页面 VM 触发（DataChanged）③ 每次切页兜底刷新。
+            _todoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+            _todoTimer.Tick += (sender, args) => _ = RefreshTodosAsync();
+            _todoTimer.Start();
+
             SelectNode(NavNodes.First());
             _ = InitializeAsync();
             _ = LoadProfileAsync();
@@ -419,8 +428,16 @@ namespace PropertyManagement.Client.ViewModels
                 _selectedPage = null;
                 PageTitle = "仪表盘";
                 PagePath = "首页  /  工作概览";
-                    CurrentViewModel = new DashboardViewModel(_api, NavigateTo, NavigateToPageWithKeyword,
-                        OpenTodoCenterFromDashboard, () => UserName);
+                // CHG-v1.2.0-28：把上次选择的统计口径传回仪表盘（切页返回不再跳回当天数据）；
+                // 当前页若仍是仪表盘则再兜底读一次它的口径。
+                var previousDashboard = CurrentViewModel as DashboardViewModel;
+                if (previousDashboard != null && !string.IsNullOrWhiteSpace(previousDashboard.SelectedPeriod))
+                {
+                    _dashboardPeriod = previousDashboard.SelectedPeriod;
+                }
+                CurrentViewModel = new DashboardViewModel(_api, NavigateTo, NavigateToPageWithKeyword,
+                    OpenTodoCenterFromDashboard, () => UserName, _dashboardPeriod,
+                    period => _dashboardPeriod = period);
             }
             else
             {
@@ -478,6 +495,9 @@ namespace PropertyManagement.Client.ViewModels
             PageTitle = page.Title;
             PagePath = "首页  /  " + node.Title + "  /  " + page.Title;
             CurrentViewModel = CreatePageViewModel(page.Key, node.Title);
+
+            // CHG-v1.2.0-23：切页兜底刷新待办数（退款/减免、设备登记、纠纷处理等模块同样会影响待办）
+            _ = RefreshTodosAsync();
         }
 
         /// <summary>按导航页 Key 创建页面 VM；财务 8 页走真实页面，其余模块暂用占位页（M4）。</summary>
@@ -499,8 +519,19 @@ namespace PropertyManagement.Client.ViewModels
                 switch (pageKey)
                 {
                     case "收费项目维护": return new ChargeItemsViewModel(_api);
-                    case "账单工作台": return new BillWorkbenchViewModel(_api, NavigateToFinancePage);
-                    case "收款登记": return new PaymentEntryViewModel(_api);
+                    case "账单工作台":
+                    {
+                        // CHG-v1.2.0-23：出账/发布后即时刷新顶部铃铛待办数（原来要手动点铃铛才会更新）
+                        var billVm = new BillWorkbenchViewModel(_api, NavigateToFinancePage);
+                        billVm.DataChanged += () => _ = RefreshTodosAsync();
+                        return billVm;
+                    }
+                    case "收款登记":
+                    {
+                        var payVm = new PaymentEntryViewModel(_api);
+                        payVm.DataChanged += () => _ = RefreshTodosAsync();
+                        return payVm;
+                    }
                     case "退款/减免/调整": return new RefundAdjustmentViewModel(_api);
                     case "支出登记": return new ExpenseViewModel(_api);
                     case "欠费台账": return new ArrearViewModel(_api);
@@ -954,6 +985,10 @@ namespace PropertyManagement.Client.ViewModels
 
             SessionManager.Instance.Clear();
             IsUserMenuOpen = false;
+            // CHG-v1.2.0-23：登出即停掉待办轮询（避免旧实例在登出后继续请求）
+            _todoTimer.Stop();
+            // CHG-v1.2.0-28：登出清掉统计口径记忆（下次登录回到当前月）
+            _dashboardPeriod = null;
             LogoutRequested?.Invoke();
         }
     }

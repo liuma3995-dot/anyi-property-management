@@ -30,6 +30,41 @@ namespace PropertyManagement.Client.Views
         private void PageGrid_Loaded(object sender, RoutedEventArgs e)
         {
             ApplyRecordsTableHeight();
+            HookHostWindow();
+        }
+
+        // ==================== CHG-v1.2.0-36：浮层跟随窗口 ====================
+        // 问题（负责人 2026-09-22 反馈）：点开「关联对象」下拉后拖动客户端窗口，下拉浮层会与窗口**分离**
+        // （停在原地）。根因：ComboBox 下拉与「关联账单」多选浮层都是 WPF Popup（独立顶层窗口），
+        // 窗口位置变化不会自动触发它们重新定位。
+        // 处置：窗口位置变化时统一**收起**已展开的浮层 —— 用户拖动窗口即结束本次选择，不会再出现错位浮层。
+        private Window _hostWindow;
+
+        private void HookHostWindow()
+        {
+            Window host = Window.GetWindow(this);
+            if (ReferenceEquals(host, _hostWindow)) { return; }
+            if (_hostWindow != null) { _hostWindow.LocationChanged -= HostWindow_LocationChanged; }
+            _hostWindow = host;
+            if (_hostWindow != null) { _hostWindow.LocationChanged += HostWindow_LocationChanged; }
+        }
+
+        private void HostWindow_LocationChanged(object sender, System.EventArgs e)
+        {
+            CloseFlyouts();
+        }
+
+        /// <summary>
+        /// 窗口位置变化时的处理：收起「关联对象」下拉（WPF ComboBox 的下拉是独立 Popup，不会自动跟随窗口）。
+        /// CHG-v1.2.0-37：关联账单多选浮层已改为**窗口内元素**（BillPickerFlyout），会随窗口一起移动，
+        /// 因此不再需要在这里收起它。
+        /// </summary>
+        private void CloseFlyouts()
+        {
+            if (RefundObjectCombo != null && RefundObjectCombo.IsDropDownOpen)
+            {
+                RefundObjectCombo.IsDropDownOpen = false;
+            }
         }
 
         /// <summary>
@@ -41,6 +76,39 @@ namespace PropertyManagement.Client.Views
         private void PageGrid_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             ApplyRecordsTableHeight();
+            // CHG-v1.2.0-37：浮层为窗口内元素 —— 窗口尺寸变化时同步重算位置/高度
+            UpdateBillFlyoutPlacement();
+        }
+
+        // ==================== CHG-v1.2.0-37：关联账单多选浮层（窗口内元素） ====================
+        /// <summary>
+        /// 把浮层贴在「关联账单」选择器正下方，并限制宽度与最大高度（超出窗口可用高度时压缩高度，内部滚动）。
+        /// 浮层与页面同属一棵可视树 → 永远在软件窗口内部，不会浮到其它窗口之上、也不会随窗口拖动而分离。
+        /// </summary>
+        private void UpdateBillFlyoutPlacement()
+        {
+            if (BillPickerFlyout == null || RefundBillSelector == null || PageGrid == null) { return; }
+            if (BillPickerFlyout.Visibility != Visibility.Visible) { return; }
+            try
+            {
+                Point topLeft = RefundBillSelector.TransformToAncestor(PageGrid)
+                    .Transform(new Point(0, 0));
+                double width = System.Math.Max(320, RefundObjectCombo == null ? 320 : RefundObjectCombo.ActualWidth);
+                double top = topLeft.Y + RefundBillSelector.ActualHeight + 2;
+
+                // 可用高度：页面高度（含外边距）− 浮层顶部 − 底部留白；下限 180，上限 300
+                double pageBottom = PageGrid.ActualHeight + PageGrid.Margin.Top + PageGrid.Margin.Bottom;
+                double available = pageBottom - top - 10;
+                double maxHeight = System.Math.Max(180, System.Math.Min(300, available));
+
+                BillPickerFlyout.Margin = new Thickness(topLeft.X, top, 0, 0);
+                BillPickerFlyout.Width = width;
+                BillPickerFlyout.MaxHeight = maxHeight;
+            }
+            catch (System.InvalidOperationException)
+            {
+                // 控件尚未接入可视树（布局未完成）时忽略本次定位，下一次尺寸/打开时会重算
+            }
         }
 
         private void ApplyRecordsTableHeight()
@@ -90,15 +158,28 @@ namespace PropertyManagement.Client.Views
             if (DataContext is RefundAdjustmentViewModel vm)
             {
                 vm.IsBillPickerOpen = !vm.IsBillPickerOpen;
+                // CHG-v1.2.0-37：展开瞬间按选择器位置定位（窗口内浮层）
+                if (vm.IsBillPickerOpen)
+                {
+                    Dispatcher.BeginInvoke(new System.Action(() =>
+                    {
+                        UpdateBillFlyoutPlacement();
+                    }), System.Windows.Threading.DispatcherPriority.Loaded);
+                }
             }
         }
 
-        /// <summary>点击选择器之外的区域时收起浮层（Popup 为独立窗口，故只在页面内处理）。</summary>
+        /// <summary>
+        /// 点击「选择器与浮层」之外的区域时收起浮层。
+        /// CHG-v1.2.0-37：浮层已是**窗口内元素** —— 勾选浮层里的复选框属于浮层内部，**不再收起浮层**
+        /// （原 Popup 版本下 Popup 的子元素不在选择器子树内，导致「点一次勾选就关闭、删除旧账单要点多次」）。
+        /// </summary>
         private void Root_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
             if (!(DataContext is RefundAdjustmentViewModel vm) || !vm.IsBillPickerOpen) { return; }
             var source = e.OriginalSource as DependencyObject;
             if (IsDescendantOf(RefundBillSelector, source)) { return; }   // 选择器自身：交给 Click 处理
+            if (IsDescendantOf(BillPickerFlyout, source)) { return; }      // 浮层内部（勾选/删除）：保持展开
             vm.IsBillPickerOpen = false;
         }
 

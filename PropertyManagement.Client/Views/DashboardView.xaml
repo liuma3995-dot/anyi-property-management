@@ -48,6 +48,75 @@
                 </Setter.Value>
             </Setter>
         </Style>
+        <!-- CHG-v1.2.0-21：月份下拉里的「月份格」（选中态高亮 = 当前统计口径月份） -->
+        <Style x:Key="MonthCellButton" TargetType="Button">
+            <Setter Property="Background" Value="#F7F4EE" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="6"
+                                BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <!-- 月份格文字：选中态反白（与 PrimaryBrush 底色配套） -->
+        <Style x:Key="MonthCellText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                    <Setter Property="Foreground" Value="White" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+        <!-- CHG-v1.2.0-26：「全年」格（年度口径）—— 高亮绑 IsAnnualPeriod（弹层 DataContext 为仪表盘 VM） -->
+        <Style x:Key="AnnualCellButton" TargetType="Button">
+            <Setter Property="Background" Value="#F7F4EE" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bg" Background="{TemplateBinding Background}" CornerRadius="6"
+                                BorderBrush="Transparent" BorderThickness="1">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <DataTrigger Binding="{Binding IsAnnualPeriod}" Value="True">
+                                <Setter TargetName="Bg" Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </DataTrigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bg" Property="BorderBrush" Value="{StaticResource PrimaryBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="AnnualCellText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding IsAnnualPeriod}" Value="True">
+                    <Setter Property="Foreground" Value="White" />
+                    <Setter Property="FontWeight" Value="SemiBold" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
     </UserControl.Resources>
 
     <Grid Margin="24,20">
@@ -78,7 +147,8 @@
             <!-- R17：月份选择器（可交互下拉，切换统计口径月份） -->
             <Grid Grid.Column="1" VerticalAlignment="Center">
                 <Button x:Name="MonthPickerButton" Command="{Binding ToggleMonthPickerCommand}"
-                        AutomationProperties.Name="统计月份"
+                        AutomationProperties.Name="统计周期（月 / 年）"
+                        ToolTip="切换统计周期：可选月份，也可选「全年」按年度统计"
                         Height="34" Padding="12,0" Cursor="Hand"
                         Background="{StaticResource SurfaceBrush}"
                         BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1">
@@ -108,35 +178,87 @@
                 <Popup IsOpen="{Binding IsMonthPickerOpen, Mode=TwoWay}" PlacementTarget="{Binding ElementName=MonthPickerButton}"
                        Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                     <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
-                            BorderThickness="1" CornerRadius="8" Padding="6" Margin="0,6,0,0">
-                        <ListBox x:Name="MonthList" Width="180" MaxHeight="248" BorderThickness="0"
-                                 ItemsSource="{Binding Months}" Background="Transparent"
-                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
-                            <ListBox.ItemContainerStyle>
-                                <Style TargetType="ListBoxItem">
-                                    <Setter Property="Padding" Value="0" />
-                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </ListBox.ItemContainerStyle>
-                            <ListBox.ItemTemplate>
-                                <DataTemplate>
-                                    <Button Command="{Binding DataContext.SelectMonthCommand, RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                            AutomationProperties.Name="{Binding Text}"
-                                            CommandParameter="{Binding}" Padding="10,6" Cursor="Hand"
-                                            HorizontalContentAlignment="Left">
-                                        <Button.Template>
-                                            <ControlTemplate TargetType="Button">
-                                                <Border Background="Transparent" Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
-                                                </Border>
-                                            </ControlTemplate>
-                                        </Button.Template>
-                                        <TextBlock Text="{Binding Text}" FontSize="12"
-                                                   Foreground="{StaticResource TextPrimaryBrush}" />
-                                    </Button>
-                                </DataTemplate>
-                            </ListBox.ItemTemplate>
-                        </ListBox>
+                            BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,6,0,0">
+                        <!-- CHG-v1.2.0-21：月份下拉支持「选年份」—— 顶部 < 年份 > 翻年 + 12 个月份格 -->
+                        <StackPanel Width="234">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <Button Grid.Column="0" Command="{Binding ShiftPickerYearCommand}" CommandParameter="-1"
+                                        AutomationProperties.Name="上一年" Width="26" Height="26" Cursor="Hand"
+                                        Background="#F7F4EE">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                                <Path Data="{StaticResource Icon.ChevronRight}" Style="{StaticResource IconStroke}"
+                                                      Stroke="{StaticResource TextSecondaryBrush}" Width="14" Height="14"
+                                                      RenderTransformOrigin="0.5,0.5">
+                                                    <Path.RenderTransform>
+                                                        <ScaleTransform ScaleX="-1" ScaleY="1" />
+                                                    </Path.RenderTransform>
+                                                </Path>
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                                <TextBlock Grid.Column="1" Text="{Binding PickerYearText}" FontSize="12" FontWeight="SemiBold"
+                                           Foreground="{StaticResource TextPrimaryBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                <Button Grid.Column="2" Command="{Binding ShiftPickerYearCommand}" CommandParameter="1"
+                                        AutomationProperties.Name="下一年" Width="26" Height="26" Cursor="Hand"
+                                        IsEnabled="{Binding CanPickNextYear}" Background="#F7F4EE">
+                                    <Button.Template>
+                                        <ControlTemplate TargetType="Button">
+                                            <Border Background="{TemplateBinding Background}" CornerRadius="6">
+                                                <Path Data="{StaticResource Icon.ChevronRight}" Style="{StaticResource IconStroke}"
+                                                      Stroke="{StaticResource TextSecondaryBrush}" Width="14" Height="14" />
+                                            </Border>
+                                        </ControlTemplate>
+                                    </Button.Template>
+                                </Button>
+                            </Grid>
+
+                            <!-- CHG-v1.2.0-26：全年（年度口径）—— 统计年度应收/已收/收缴率 -->
+                            <Button Height="30" Margin="3,9,3,0" Cursor="Hand"
+                                    Style="{StaticResource AnnualCellButton}"
+                                    AutomationProperties.Name="全年"
+                                    Command="{Binding SelectAnnualCommand}">
+                                <TextBlock Text="全年（按年统计）" Style="{StaticResource AnnualCellText}" />
+                            </Button>
+
+                            <ItemsControl ItemsSource="{Binding Months}" Margin="0,9,0,0">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <UniformGrid Columns="3" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Button Style="{StaticResource MonthCellButton}" Margin="3" Height="30"
+                                                Command="{Binding DataContext.SelectMonthCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                AutomationProperties.Name="{Binding Period}"
+                                                CommandParameter="{Binding}">
+                                            <TextBlock Text="{Binding Text}" Style="{StaticResource MonthCellText}" />
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <Button Content="回到本月" FontSize="11" Margin="3,9,3,0" Height="26" Cursor="Hand"
+                                    Foreground="{StaticResource PrimaryBrush}"
+                                    Command="{Binding BackToCurrentMonthCommand}">
+                                <Button.Template>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Background="#F2F7F5" CornerRadius="6">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Button.Template>
+                            </Button>
+                        </StackPanel>
                     </Border>
                 </Popup>
             </Grid>
@@ -194,7 +316,7 @@
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="待收欠费" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
-                                   ToolTip="欠费余额为实时口径，不随月份切换" />
+                                   ToolTip="欠费余额为实时口径，不随统计周期（月 / 年）切换" />
                         <TextBlock Text="{Binding ArrearAmountText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding ArrearTrend}" FontSize="9"
@@ -214,7 +336,7 @@
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
                         <TextBlock Text="逾期户数" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
-                                   ToolTip="逾期户数为实时口径，不随月份切换（环比按所选月份计算）" />
+                                   ToolTip="逾期户数为实时口径，不随统计周期（月 / 年）切换（环比按所选周期计算）" />
                         <TextBlock Text="{Binding OverdueCountText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding OverdueTrend}" FontSize="9"
@@ -344,7 +466,8 @@
                     <ColumnDefinition Width="10" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
-                <Button Grid.Column="0" Command="{Binding QuickEntryCommand}" CommandParameter="finance"
+                <!-- CHG-v1.2.0-22：快捷入口按「模块｜页面」精确跳转（原只传模块 key，落到模块首个子页 → 跳错页） -->
+                <Button Grid.Column="0" Command="{Binding QuickEntryCommand}" CommandParameter="finance|收款登记"
                         Style="{StaticResource ButtonPrimary}" Height="38">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.HandCoins}" Style="{StaticResource IconStroke}"
@@ -353,7 +476,7 @@
                                    Margin="9,0,0,0" />
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="2" Command="{Binding QuickEntryCommand}" CommandParameter="emergency"
+                <Button Grid.Column="2" Command="{Binding QuickEntryCommand}" CommandParameter="emergency|场景与步骤维护"
                         Style="{StaticResource QuickCardButton}" Height="38">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.Siren}" Style="{StaticResource IconStroke}"
@@ -362,7 +485,7 @@
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="9,0,0,0" />
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="4" Command="{Binding QuickEntryCommand}" CommandParameter="dispute"
+                <Button Grid.Column="4" Command="{Binding QuickEntryCommand}" CommandParameter="dispute|纠纷登记"
                         Style="{StaticResource QuickCardButton}" Height="38">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.FilePlus}" Style="{StaticResource IconStroke}"
@@ -371,7 +494,7 @@
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="9,0,0,0" />
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="6" Command="{Binding QuickEntryCommand}" CommandParameter="phonebook"
+                <Button Grid.Column="6" Command="{Binding QuickEntryCommand}" CommandParameter="phonebook|电话查询"
                         Style="{StaticResource QuickCardButton}" Height="38">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.PhoneCall}" Style="{StaticResource IconStroke}"
@@ -380,7 +503,7 @@
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="9,0,0,0" />
                     </StackPanel>
                 </Button>
-                <Button Grid.Column="8" Command="{Binding QuickEntryCommand}" CommandParameter="finance"
+                <Button Grid.Column="8" Command="{Binding QuickEntryCommand}" CommandParameter="finance|账单工作台"
                         Style="{StaticResource QuickCardButton}" Height="38">
                     <StackPanel Orientation="Horizontal">
                         <Path Data="{StaticResource Icon.Files}" Style="{StaticResource IconStroke}"

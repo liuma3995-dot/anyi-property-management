@@ -70,7 +70,9 @@ namespace PropertyManagement.Client.Services
 
         // ==================== R17 顶部栏与仪表盘交互 ====================
 
-        /// <summary>仪表盘统计（period = yyyy-MM，空则当前月）。</summary>
+        /// <summary>
+        /// 仪表盘统计：period = `yyyy-MM`（按月口径）或 `yyyy`（**按年口径**，CHG-v1.2.0-26），空则当前月。
+        /// </summary>
         public Task<DashboardDto> GetDashboardAsync(string period)
         {
             return GetAsync<DashboardDto>("common/dashboard" + Query(new { period }));
@@ -417,6 +419,12 @@ namespace PropertyManagement.Client.Services
             return PostAsync<LedgerExportRequest, ReportLogDto>("reports/ledger/export", request);
         }
 
+        /// <summary>CHG-v1.2.0-25：支出登记明细导出（PDF，按页面当前筛选条件）。</summary>
+        public Task<ReportLogDto> ExportExpensesAsync(ExpenseExportRequest request)
+        {
+            return PostAsync<ExpenseExportRequest, ReportLogDto>("reports/expenses/export", request);
+        }
+
         /// <summary>CHG-v1.1.0-14：导出收据打印模板。</summary>
         public Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request)
         {
@@ -427,6 +435,34 @@ namespace PropertyManagement.Client.Services
         public Task<ReportLogDto> ExportRefundRecordAsync(RefundRecordExportRequest request)
         {
             return PostAsync<RefundRecordExportRequest, ReportLogDto>("reports/refund-record", request);
+        }
+
+        /// <summary>CHG-v1.2.0-13：业主档案导出 PDF（本年度缴费概况 + 账单/收款明细）。</summary>
+        public Task<ReportLogDto> ExportOwnerProfilePdfAsync(int ownerId, int? year)
+        {
+            return PostAsync<OwnerProfileExportRequest, ReportLogDto>(
+                "reports/owners/" + ownerId + "/profile-pdf",
+                new OwnerProfileExportRequest { Year = year });
+        }
+
+        /// <summary>CHG-v1.2.0-17：业主档案导出 PDF —— 全部业主（汇总 + 逐户明细）。</summary>
+        public Task<ReportLogDto> ExportAllOwnerProfilesPdfAsync(int? year)
+        {
+            return PostAsync<OwnerProfileExportRequest, ReportLogDto>(
+                "reports/owners/profile-pdf-all",
+                new OwnerProfileExportRequest { Year = year });
+        }
+
+        /// <summary>CHG-v1.2.0-31：收款登记「应缴明细」批量删除已结清记录（归档）。</summary>
+        public Task<BillArchiveResultDto> ArchiveSettledBillsAsync(SettledBillArchiveRequest request)
+        {
+            return PostAsync<SettledBillArchiveRequest, BillArchiveResultDto>("billing/bills/archive-settled", request);
+        }
+
+        /// <summary>CHG-v1.2.0-32：收款登记「应缴明细」导出 PDF（按缴费对象）。</summary>
+        public Task<ReportLogDto> ExportArrearDetailsPdfAsync(ArrearDetailExportRequest request)
+        {
+            return PostAsync<ArrearDetailExportRequest, ReportLogDto>("reports/arrear-details/export", request);
         }
 
         // ==================== M5 基础信息与导入 ====================
@@ -586,6 +622,11 @@ namespace PropertyManagement.Client.Services
         public Task<byte[]> DownloadImportErrorsAsync(int id)
         {
             return GetRawBytesAsync("baseinfo/imports/" + id + "/errors");
+        }
+
+        public Task<byte[]> DownloadImportReceiptAsync(int id)
+        {
+            return GetRawBytesAsync("baseinfo/imports/" + id + "/receipt");
         }
 
         public Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request)

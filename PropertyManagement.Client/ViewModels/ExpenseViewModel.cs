@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.Common;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
@@ -115,6 +116,7 @@ namespace PropertyManagement.Client.ViewModels
             CancelBudgetCommand = new RelayCommand(() => IsBudgetFormVisible = false);
             AddCategoryCommand = new AsyncRelayCommand(AddCategoryAsync);
             DeleteCategoryCommand = new AsyncRelayCommand(DeleteCategoryAsync);
+            ExportCommand = new AsyncRelayCommand(ExportAsync);
             _ = LoadAsync();
         }
 
@@ -162,6 +164,9 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand AddCategoryCommand { get; }
 
         public IAsyncRelayCommand DeleteCategoryCommand { get; }
+
+        /// <summary>CHG-v1.2.0-25：导出当前筛选条件下的支出明细（PDF）。</summary>
+        public IAsyncRelayCommand ExportCommand { get; }
 
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
 
@@ -637,6 +642,57 @@ namespace PropertyManagement.Client.ViewModels
                 IsConfirmVisible = false;
                 await LoadAsync();
             }, "支出已删除（软删除留痕）");
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-25：导出支出明细 PDF —— 口径 = **当前筛选条件下的明细**（关键字 / 类别 / 状态），
+        /// 与表格所见一致；服务端渲染（PDFsharp + 中文字体）并写导出留痕，随后由客户端另存到本机。
+        /// </summary>
+        private async Task ExportAsync()
+        {
+            if (Items.Count == 0)
+            {
+                ErrorText = "当前筛选条件下没有支出记录，无需导出";
+                StatusText = string.Empty;
+                return;
+            }
+
+            await RunAsync(async () =>
+            {
+                int categoryId = SelectedFilterIndex > 0 && SelectedFilterIndex < CategoryOptions.Count
+                    ? CategoryOptions[SelectedFilterIndex].Id
+                    : 0;
+
+                ReportLogDto log = await Api.ExportExpensesAsync(new ExpenseExportRequest
+                {
+                    Format = ExportFormat.Pdf,
+                    Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim(),
+                    CategoryId = categoryId,
+                    StatusFilter = SelectedStatusFilter
+                });
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("PDF 导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存支出登记明细（PDF）",
+                    Filter = "PDF 文件|*.pdf",
+                    FileName = "支出登记明细_" + DateTime.Now.ToString("yyyyMMddHHmm") + ".pdf"
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "PDF 已在服务端生成（导出日志 " + log.Id +
+                        "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "支出明细已导出：" + dialog.FileName;
+                MessageBox.Show("支出明细已导出到：" + dialog.FileName, "导出成功",
+                    MessageBoxButton.OK, MessageBoxImage.Information);
+            }, null);
         }
     }
 }

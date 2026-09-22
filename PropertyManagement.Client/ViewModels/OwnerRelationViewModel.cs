@@ -82,8 +82,8 @@ namespace PropertyManagement.Client.ViewModels
         private OwnerRelationRow _releaseRow;
         private string _releaseReason = string.Empty;
         private bool _isBatchVisible;
-        private string _batchPropertySearchText = string.Empty;
-        private string _batchOwnerSearchText = string.Empty;
+        /// <summary>批量解除的检索关键字（v1.2.0 第 3 轮：原来的「房号 / 业主」两个搜索框合并为一个）。</summary>
+        private string _batchSearchText = string.Empty;
         private bool _isBatchSelectAll;
         private List<OwnerPropertyRelationDto> _batchSource = new List<OwnerPropertyRelationDto>();
         private readonly DispatcherTimer _searchDebounce;
@@ -106,8 +106,7 @@ namespace PropertyManagement.Client.ViewModels
             ConfirmReleaseCommand = new AsyncRelayCommand(ConfirmReleaseAsync);
             OpenBatchCommand = new RelayCommand(() =>
             {
-                BatchPropertySearchText = string.Empty;
-                BatchOwnerSearchText = string.Empty;
+                BatchSearchText = string.Empty;
                 _isBatchSelectAll = false;
                 OnPropertyChanged(nameof(IsBatchSelectAll));
                 IsBatchVisible = true;
@@ -237,8 +236,11 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsReleaseVisible { get { return _releaseRow != null; } }
         public string ReleaseReason { get { return _releaseReason; } set { SetProperty(ref _releaseReason, value); } }
         public bool IsBatchVisible { get { return _isBatchVisible; } set { SetProperty(ref _isBatchVisible, value); } }
-        public string BatchPropertySearchText { get { return _batchPropertySearchText; } set { if (SetProperty(ref _batchPropertySearchText, value)) { ApplyBatchFilter(); } } }
-        public string BatchOwnerSearchText { get { return _batchOwnerSearchText; } set { if (SetProperty(ref _batchOwnerSearchText, value)) { ApplyBatchFilter(); } } }
+        /// <summary>
+        /// 批量解除检索框（v1.2.0 第 3 轮）：一个框同时匹配 房号/房产编号 与 业主姓名/电话，
+        /// 替代原先「输入房号 / 输入姓名」两个搜索框。
+        /// </summary>
+        public string BatchSearchText { get { return _batchSearchText; } set { if (SetProperty(ref _batchSearchText, value)) { ApplyBatchFilter(); } } }
         /// <summary>批量解除「全选」：勾选/取消勾选全部批次行。</summary>
         public bool IsBatchSelectAll
         {
@@ -402,24 +404,26 @@ namespace PropertyManagement.Client.ViewModels
                 var page = await Api.QueryRelationsAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 1000, RelStatus = OwnerRelStatus.Active });
                 _batchSource = page.Items;
                 ApplyBatchFilter();
-                OnPropertyChanged(nameof(BatchPropertySearchText));
-                OnPropertyChanged(nameof(BatchOwnerSearchText));
+                OnPropertyChanged(nameof(BatchSearchText));
             }, "批量解除列表已加载");
         }
 
         private void ApplyBatchFilter()
         {
-            string qp = string.IsNullOrWhiteSpace(_batchPropertySearchText) ? string.Empty : _batchPropertySearchText.Trim();
-            string qo = string.IsNullOrWhiteSpace(_batchOwnerSearchText) ? string.Empty : _batchOwnerSearchText.Trim();
+            // v1.2.0 第 3 轮：单框检索 —— 一个关键字同时匹配 房号/房产编号 与 业主姓名/电话
+            string q = string.IsNullOrWhiteSpace(_batchSearchText) ? string.Empty : _batchSearchText.Trim();
             BatchRelations.Clear();
             _isBatchSelectAll = false;
             OnPropertyChanged(nameof(IsBatchSelectAll));
             foreach (var dto in _batchSource)
             {
                 string path = string.IsNullOrEmpty(dto.PropertyUnitPath) ? dto.PropertyRoomNo : dto.PropertyUnitPath;
-                bool op = qp.Length == 0 || (path ?? string.Empty).Contains(qp) || (dto.PropertyRoomNo ?? string.Empty).Contains(qp);
-                bool oo = qo.Length == 0 || (dto.OwnerName ?? string.Empty).Contains(qo) || (dto.OwnerPhone ?? string.Empty).Contains(qo);
-                if (op && oo)
+                bool hit = q.Length == 0
+                    || (path ?? string.Empty).Contains(q)
+                    || (dto.PropertyRoomNo ?? string.Empty).Contains(q)
+                    || (dto.OwnerName ?? string.Empty).Contains(q)
+                    || (dto.OwnerPhone ?? string.Empty).Contains(q);
+                if (hit)
                 {
                     var row = new BatchRelationRow { Dto = dto };
                     row.PropertyChanged += OnBatchRowPropertyChanged;

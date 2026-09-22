@@ -505,8 +505,12 @@ namespace PropertyManagement.Server.Services
         {
             // 导入批次错误清单：父行 t_import_log 已不存在则错误行无意义
             { "t_import_error", "DELETE FROM t_import_error WHERE import_id NOT IN (SELECT id FROM t_import_log)" },
+            // 导入回执逐行结果（CHG-v1.2.0-01）：父行 t_import_log 已不存在则回执行无意义
+            { "t_import_row", "DELETE FROM t_import_row WHERE import_id NOT IN (SELECT id FROM t_import_log)" },
             // 支出关联对象：父行 t_expense 已不存在则关联行无意义
-            { "t_expense_object_rel", "DELETE FROM t_expense_object_rel WHERE expense_id NOT IN (SELECT id FROM t_expense)" }
+            { "t_expense_object_rel", "DELETE FROM t_expense_object_rel WHERE expense_id NOT IN (SELECT id FROM t_expense)" },
+            // 收款登记「已结清记录归档」标记（CHG-v1.2.0-31）：账单行被物理清理后归档标记无意义
+            { "t_bill_archive", "DELETE FROM t_bill_archive WHERE bill_id NOT IN (SELECT id FROM t_bill)" }
         };
 
         /// <summary>清理单表软删留痕（表无 del_flag 列时返回 0）。</summary>

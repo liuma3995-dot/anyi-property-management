@@ -48,6 +48,24 @@ namespace PropertyManagement.Server.Domain.Repositories
         // ---------- 业主（UC-INF-003） ----------
         OwnerDto GetOwner(IDbConnection connection, int id);
         PageResult<OwnerDto> QueryOwners(IDbConnection connection, BaseInfoQueryRequest query, out int total);
+
+        /// <summary>
+        /// 取单个业主并附带**指定年度**的应缴/已缴/欠费统计（CHG-v1.2.0-11 / -13）：
+        /// 业主档案 PDF 与页面概况同源，避免两处各算一套。
+        /// </summary>
+        OwnerDto GetOwnerWithYearStats(IDbConnection connection, int id, int year);
+
+        /// <summary>
+        /// 业主列表 + **指定年度**统计（一次批量统计，CHG-v1.2.0-19）：
+        /// 「全部业主汇总缴费明细」PDF 用它一次取全量数据，避免逐户查询（N+1）。
+        /// </summary>
+        List<OwnerDto> QueryOwnersWithYearStats(IDbConnection connection, BaseInfoQueryRequest query, int year, out int total);
+
+        /// <summary>
+        /// 业主名下房产路径（一次批量查询，CHG-v1.2.0-20）：「全部业主汇总缴费明细」PDF 的「楼栋/房号」列。
+        /// 格式与「收支明细流水」同口径：`1号楼/1单元/101`（无单元时省略单元段）；一位业主多处房产全部返回，顺序按关系建档顺序。
+        /// </summary>
+        Dictionary<int, List<string>> QueryOwnerPropertyPaths(IDbConnection connection, IEnumerable<int> ownerIds);
         int InsertOwner(IDbConnection connection, IDbTransaction transaction, OwnerDto dto);
         void UpdateOwner(IDbConnection connection, IDbTransaction transaction, OwnerDto dto);
         void SoftDeleteOwner(IDbConnection connection, IDbTransaction transaction, int id);
@@ -83,7 +101,11 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         // ---------- 导入（UC-INF-006，BR-INF-05） ----------
         int InsertImportLog(IDbConnection connection, IDbTransaction transaction, ImportLogDto dto);
-        void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, ImportStatus status, int success, int fail, string errorFile);
+        /// <summary>
+        /// 回写批次结果。total 在解析完成后才知道（INSERT 时只能先写 0），
+        /// v1.2.0 修复：旧实现漏写 total → 批次列表「总行数」恒为 0、回执抬头汇总也不准。
+        /// </summary>
+        void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, int total, ImportStatus status, int success, int fail, string errorFile);
 
         /// <summary>导入批次「覆盖」计数（CHG-v1.1.2-01：重复数据做覆盖处理）。</summary>
         void UpdateImportLogUpdated(IDbConnection connection, IDbTransaction transaction, int id, int updated);
@@ -95,6 +117,10 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         void InsertImportErrors(IDbConnection connection, IDbTransaction transaction, IEnumerable<ImportErrorItemDto> errors, int importId);
         List<ImportErrorItemDto> ListImportErrors(IDbConnection connection, int importId);
+
+        /// <summary>导入回执逐行结果落库（CHG-v1.2.0-01）。</summary>
+        void InsertImportRows(IDbConnection connection, IDbTransaction transaction, IEnumerable<ImportRowResultDto> rows, int importId);
+        List<ImportRowResultDto> ListImportRows(IDbConnection connection, int importId);
 
         // ---------- 导出（UC-INF-007） ----------
         int InsertExportLog(IDbConnection connection, IDbTransaction transaction, string module, int format, string filePath);

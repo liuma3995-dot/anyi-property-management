@@ -141,6 +141,13 @@ namespace PropertyManagement.Contract.Finance
         /// 为空＝按价目表规格单价计价（默认）；有值＝该缴费对象本次出账按此单价计价并写入账单快照。
         /// </summary>
         public decimal? UnitPriceOverride { get; set; }
+        /// <summary>
+        /// CHG-v1.2.0-12：档案对象（房产 / 车位 / 业主）的出账行**手选规格**。
+        /// 为空＝按价目表自动匹配（原有口径）；有值＝该行按此规格计价并写入账单快照。
+        /// 背景（负责人 2026-09-21）：同一价目表里不同规格价格不同，自动匹配只认「适用条件 + 兜底」，
+        /// 现场需要按行指定规格（如不同楼栋/车位类型走不同价）。
+        /// </summary>
+        public int? SpecId { get; set; }
     }
 
     /// <summary>CHG-v1.1.2-26：启停请求（0 启用 / 1 停用），收费标准、规格、计量变量共用。</summary>
@@ -243,6 +250,48 @@ namespace PropertyManagement.Contract.Finance
         public DateTime? DueFrom { get; set; }
         public DateTime? DueTo { get; set; }
         public bool ArrearsOnly { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-31：排除「已归档」账单（收款登记「应缴明细」记录管理口径）。
+        /// 归档只影响本列表可见性，账单与收款/退款/财报/流水/业主档案数据完全不变；
+        /// 其它模块（账单工作台等）不传该标记，保持原行为。
+        /// </summary>
+        public bool ExcludeArchived { get; set; }
+    }
+
+    /// <summary>
+    /// 收款登记「应缴明细」批量删除已结清记录（CHG-v1.2.0-31）。
+    /// 语义 = 归档：只把账单从「应缴明细」列表移除，**不触碰**账单本身、
+    /// 收款记录、退款记录、财务报表、收支明细流水与业主档案缴费概况。
+    /// 未结清（含部分缴 / 逾期 / 未缴）的账单会被服务端逐条拒绝。
+    /// </summary>
+    public class SettledBillArchiveRequest
+    {
+        /// <summary>要清理的账单主键（来自「应缴明细」已结清行）。</summary>
+        public List<int> BillIds { get; set; }
+    }
+
+    /// <summary>
+    /// 收款登记「应缴明细」导出 PDF 请求（CHG-v1.2.0-32）。
+    /// 口径 = 当前所选缴费对象的**全部应缴明细（含已结清）**，
+    /// 供用户在清理（归档）记录之前先导出归档。
+    /// </summary>
+    public class ArrearDetailExportRequest
+    {
+        /// <summary>缴费人（业主）主键（与 PayerName 二选一，优先级高于对象维度）。</summary>
+        public int? PayerOwnerId { get; set; }
+
+        /// <summary>自定义缴费对象名称（租户/广告商等无档案对象）。</summary>
+        public string PayerName { get; set; }
+
+        /// <summary>无缴费人时的兜底对象维度：业主直缴账单的业主主键。</summary>
+        public int? OwnerId { get; set; }
+
+        /// <summary>无缴费人时的兜底对象维度：房产（或车位）主键。</summary>
+        public int? PropertyId { get; set; }
+
+        /// <summary>缴费对象展示名（业主姓名 / 自定义缴费对象名称），仅用于 PDF 抬头。</summary>
+        public string PayerDisplay { get; set; }
     }
 
     /// <summary>收款登记请求（UC-FIN-003：全额/部分缴/超额转预存 P-06）。</summary>
@@ -342,6 +391,20 @@ namespace PropertyManagement.Contract.Finance
         public string AttachmentName { get; set; }
 
         public string AttachmentPath { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-37：**逐张金额**（多选 / 全选登记时使用）—— 金额输入框显示的是「合计」，
+        /// 提交时按每张账单各自的登记上限（退款/调整＝实缴，减免＝未收余额）逐张核销。
+        /// 为空时回落旧口径：<see cref="Amount"/> 视作「每张金额」。
+        /// </summary>
+        public List<RefundBatchItemRequest> Items { get; set; }
+    }
+
+    /// <summary>批量登记的逐张金额（CHG-v1.2.0-37）：账单主键 + 该张本次登记金额。</summary>
+    public class RefundBatchItemRequest
+    {
+        public int BillId { get; set; }
+        public decimal Amount { get; set; }
     }
 
     /// <summary>
@@ -356,6 +419,21 @@ namespace PropertyManagement.Contract.Finance
 
         /// <summary>导出备注（可选，如「用于业委会备案」；写入 PDF 备注栏）。</summary>
         public string Remark { get; set; }
+    }
+
+    /// <summary>
+    /// 业主档案导出 PDF 请求（CHG-v1.2.0-13）。
+    /// 内容 = 本年度缴费概况 + 缴费明细记录（账单明细 + 收款明细）；金额与口径一律由服务端回查。
+    /// </summary>
+    public class OwnerProfileExportRequest
+    {
+        /// <summary>统计年度（按账单到期日所属年度）；为空 = 当前年度。</summary>
+        public int? Year { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-17：业主主键。&gt;0 = 只导出该业主；为空 / 0 = **导出全部业主**的缴费明细记录。
+        /// </summary>
+        public int? OwnerId { get; set; }
     }
 
     /// <summary>预存款余额退还请求（P-06 简单版）。</summary>
@@ -441,5 +519,26 @@ namespace PropertyManagement.Contract.Finance
     {
         public LedgerQueryRequest Query { get; set; }
         public ExportFormat Format { get; set; }
+    }
+
+    /// <summary>
+    /// 支出登记明细导出请求（CHG-v1.2.0-25）。
+    /// 口径与页面一致：导出**当前筛选条件下的支出明细**（关键字 / 类别 / 状态），不导出全库。
+    /// 本期只落 PDF（Excel 总表仍由财务报表模块提供）。
+    /// </summary>
+    public class ExpenseExportRequest
+    {
+        public ExportFormat Format { get; set; }
+
+        /// <summary>关键字：命中摘要 / 分类 / 收款方 / 支出编号（ZC-0001）。</summary>
+        public string Keyword { get; set; }
+
+        /// <summary>支出分类 id（0 / null = 全部分类）。</summary>
+        public int? CategoryId { get; set; }
+
+        /// <summary>
+        /// 状态口径与页面下拉一致：0 = 全部，1 = 仅未删除（已支付），2 = 仅已删除。
+        /// </summary>
+        public int StatusFilter { get; set; }
     }
 }

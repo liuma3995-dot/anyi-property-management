@@ -375,16 +375,17 @@ namespace PropertyManagement.Tests.Services
         // ===================== v1.1.0 导入模板与解析（F-05~F-08b） =====================
 
         [Fact]
-        public void BuildTemplate_房产模板_移除用途列且含示例行与说明页()
+        public void BuildTemplate_房产模板_含用途列与示例行与说明页()
         {
             byte[] file = _service.BuildTemplate(ImportModule.Property);
             using (var stream = new MemoryStream(file))
             using (var workbook = new XLWorkbook(stream))
             {
                 IXLWorksheet sheet = workbook.Worksheets.First();
-                List<string> headers = Enumerable.Range(1, 5).Select(c => sheet.Cell(1, c).GetString()).ToList();
+                List<string> headers = Enumerable.Range(1, 6).Select(c => sheet.Cell(1, c).GetString()).ToList();
 
-                Assert.DoesNotContain(headers, h => h.Contains("用途"));
+                // v1.2.0（CHG-v1.2.0-03）：房产模板恢复「用途」列（选填）——收费规格的适用条件按房产用途判定
+                Assert.Contains(headers, h => h.StartsWith("用途") && !h.EndsWith("*"));
                 Assert.Contains(headers, h => h.StartsWith("楼栋号"));
                 Assert.Contains(headers, h => h.StartsWith("建筑面积"));
                 Assert.Contains(headers, h => h.StartsWith("单元号") && !h.EndsWith("*"));   // 单元号选填
@@ -394,7 +395,8 @@ namespace PropertyManagement.Tests.Services
         }
 
         [Theory]
-        [InlineData(ImportModule.Property, "", 5)]
+        // v1.2.0（CHG-v1.2.0-03）：房产模板恢复「用途」列 → 5 列变 6 列
+        [InlineData(ImportModule.Property, "", 6)]
         [InlineData(ImportModule.Owner, "", 9)]
         // v1.1.2：车位模板下线「租金 / 租期至」两列（停车费统一由价目表定价）→ 9 列变 7 列
         [InlineData(ImportModule.Parking, "", 7)]

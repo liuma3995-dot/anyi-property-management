@@ -1,4 +1,5 @@
 <UserControl x:Class="PropertyManagement.Client.Views.PaymentEntryView"
+             Loaded="Root_Loaded"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
@@ -135,13 +136,16 @@
                                   VerticalAlignment="Center" />
                             <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
                                      Text="{Binding PropertySearchKeyword, UpdateSourceTrigger=PropertyChanged}"
-                                     hc:InfoElement.Placeholder="快捷搜索：姓名 / 楼栋 / 房号 / 车位编号（如 张伟、101、B1-001）"
+                                     hc:InfoElement.Placeholder="快捷搜索：姓名 / 楼栋 / 单元 / 房号 / 车位编号（如 张伟、101、B1-001）"
                                      Margin="8,0,0,0" />
                         </Grid>
                     </Border>
+                    <!-- CHG-v1.2.0-33：缴费对象文案改为「姓名 · 楼栋/单元/房号 · 欠费 N 笔」，
+                         更长 → 补悬停提示，避免左面板宽度不足时看不出完整缴费对象 -->
                     <ComboBox x:Name="PaymentObjectCombo" Height="34" FontSize="12" VerticalContentAlignment="Center"
                               ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}"
-                              DisplayMemberPath="DisplayText" />
+                              DisplayMemberPath="DisplayText"
+                              ToolTip="{Binding SelectedProperty.DisplayText}" />
 
                     <!-- 三合计（应收/已收/未收） -->
                     <Grid Margin="0,14,0,0">
@@ -311,6 +315,42 @@
                                Foreground="{StaticResource PrimaryBrush}" />
                 </Grid>
 
+                <!-- CHG-v1.2.0-31/-32：应缴明细「记录管理」工具栏 —— 清理已结清记录（归档）+ 清理前导出归档件 -->
+                <Grid Grid.Row="1" Margin="0,0,0,8">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" FontSize="11" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextMutedBrush}"
+                               Text="{Binding SettledBillCount, StringFormat=已结清记录 {0} 条（清理只从本列表移除，账务记录保留）}" />
+                    <Button Grid.Column="2" Height="34" FontSize="12" Content="导出应缴明细 PDF"
+                            VerticalAlignment="Center" Command="{Binding ExportArrearDetailsCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                <Setter Property="Foreground" Value="{StaticResource PrimaryBrush}" />
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                    <Button Grid.Column="4" Height="34" FontSize="12" Content="批量删除已结清"
+                            VerticalAlignment="Center" Command="{Binding RequestArchiveSettledCommand}">
+                        <Button.Style>
+                            <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding CanArchiveSettled}" Value="False">
+                                        <Setter Property="Foreground" Value="#B9C2CF" />
+                                        <Setter Property="Cursor" Value="Arrow" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Button.Style>
+                    </Button>
+                </Grid>
+
                 <!-- 应缴明细表 -->
                 <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="0">
                     <!-- CHG-v1.1.0-24：列宽受 MinWidth 约束，窗口较窄时改为横向滚动（而非压缩列导致日期/金额被裁切） -->
@@ -349,11 +389,27 @@
                             <!-- CHG-v1.1.0-13：按业主聚合后，逐行标明欠费所属缴费对象（房/车位/业主直缴） -->
                             <!-- CHG-v1.1.0-24：缴费对象列 120→96（值约 4-6 字，96px 含 24px 内边距仍可完整显示），
                                  腾出的宽度补给「账单期间」与金额列，消除同表多列日期/金额被裁切 -->
-                            <DataGridTextColumn Header="缴费对象" Width="96" MinWidth="96" Binding="{Binding ObjectText}" ElementStyle="{StaticResource GridCellText}" />
+                            <!-- CHG-v1.2.0-33：逐行缴费对象补出「单元」后文案更长 → 加宽至 118 并补悬停提示（完整值始终可查） -->
+                            <DataGridTextColumn Header="缴费对象" Width="118" MinWidth="118" Binding="{Binding ObjectText}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                        <Setter Property="ToolTip" Value="{Binding ObjectText}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <!-- CHG-v1.1.0-24：收费项目列设置最小宽度，避免列总宽超出面板时被压成 0（1366 窗口下横向滚动优于内容不可见） -->
-                            <DataGridTextColumn Header="收费项目" Width="*" MinWidth="110" Binding="{Binding Dto.ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
+                            <!-- CHG-v1.2.0-33：弹性列补悬停提示（长项目名在窄面板下仍可查看完整值） -->
+                            <DataGridTextColumn Header="收费项目" Width="*" MinWidth="110" Binding="{Binding Dto.ChargeItemName}">
+                                <DataGridTextColumn.ElementStyle>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                        <Setter Property="ToolTip" Value="{Binding Dto.ChargeItemName}" />
+                                    </Style>
+                                </DataGridTextColumn.ElementStyle>
+                            </DataGridTextColumn>
                             <!-- CHG-v1.1.0-24：账单期间紧凑显示 + 加宽至 148px（原 92px 减 24px 内边距后不足以显示完整期间，实测紧凑文本渲染 116px） -->
-                            <DataGridTextColumn Header="账单期间" Width="148" MinWidth="148" Binding="{Binding CyclePeriodText}"
+                            <!-- CHG-v1.2.0-33：缴费对象列补单元需 +22px，从本列回收 8px（同口径实测仍可完整显示
+                                 「2026-01-01~12-31」紧凑文本与跨年账期 116px），保证 1366 下无横向滚动 -->
+                            <DataGridTextColumn Header="账单期间" Width="140" MinWidth="140" Binding="{Binding CyclePeriodText}"
                                                 ElementStyle="{StaticResource GridCellTextWithTip}" />
                             <DataGridTextColumn Header="应收" Width="86" MinWidth="86" Binding="{Binding Dto.Amount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
                             <DataGridTextColumn Header="已收" Width="86" MinWidth="86" Binding="{Binding Dto.PaidAmount, StringFormat=¥{0:N2}}" ElementStyle="{StaticResource GridCellText}" />
@@ -485,6 +541,30 @@
                         <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认入账"
                                 Command="{Binding ConfirmPaymentCommand}" />
                         <Button Grid.Column="2" Content="取消" Command="{Binding CancelConfirmCommand}"
+                                FontSize="13" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- ============ 清理已结清记录（归档）确认弹窗（CHG-v1.2.0-31） ============ -->
+        <Grid Grid.RowSpan="3" Background="#66000000" Visibility="{Binding IsArchiveConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="460" Style="{StaticResource CardBorder}" Padding="24,20" VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="清理已结清记录" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding ArchiveConfirmText}" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,16,0,0"
+                               HorizontalAlignment="Left" TextWrapping="Wrap" LineHeight="19" />
+                    <Grid Margin="0,22,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}"
+                                Content="确认清理" Command="{Binding ConfirmArchiveSettledCommand}" />
+                        <Button Grid.Column="2" Content="取消" Command="{Binding CancelArchiveSettledCommand}"
                                 FontSize="13" />
                     </Grid>
                 </StackPanel>

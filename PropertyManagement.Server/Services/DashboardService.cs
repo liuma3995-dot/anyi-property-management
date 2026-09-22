@@ -46,14 +46,19 @@ namespace PropertyManagement.Server.Services
         }
 
         /// <summary>
-        /// 仪表盘统计（R17：支持按月份查看财务口径）。
-        /// period 为 yyyy-MM（空/非法回退当前月）：作用「本月应收/已收/收缴率/趋势/收缴概览」；
-        /// 待办与运营指标（应急/纠纷/设备/值班）保持实时口径，避免历史月份出现假的"当前状态"。
+        /// 仪表盘统计（R17：支持按月份查看财务口径；CHG-v1.2.0-26：**再支持按年份**）。
+        /// period 为 `yyyy-MM`（按月）或 `yyyy`（按年），空/非法回退当前月：作用「本期应收/已收/收缴率/趋势/收缴概览」；
+        /// 待办与运营指标（应急/纠纷/设备/值班）保持实时口径，避免历史周期出现假的"当前状态"。
         /// </summary>
         public DashboardDto GetDashboard(string period)
         {
-            DateTime monthStart = ResolveMonthStart(period, out string periodText);
-            string previousPeriod = monthStart.AddMonths(-1).ToString("yyyy-MM");
+            DateTime windowStart = ResolvePeriodStart(period, out string periodText, out bool annual);
+            DateTime windowEnd = annual ? windowStart.AddYears(1) : windowStart.AddMonths(1);
+            // 上一周期：按月比上月，按年比上年
+            DateTime previousStart = annual ? windowStart.AddYears(-1) : windowStart.AddMonths(-1);
+            string previousPeriod = annual
+                ? previousStart.Year.ToString(CultureInfo.InvariantCulture)
+                : previousStart.ToString("yyyy-MM");
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             {
@@ -63,6 +68,7 @@ namespace PropertyManagement.Server.Services
                     Todos = new List<TodoItemDto>(),
                     TodoCountByKind = new Dictionary<string, int>(),
                     Period = periodText,
+                    Annual = annual,
                     ReceivableTrend = string.Empty,
                     ReceivedTrend = string.Empty,
                     OverdueTrend = string.Empty
@@ -107,47 +113,50 @@ namespace PropertyManagement.Server.Services
                     "<= date('now','localtime','+30 day'))");
 
                 // CHG-v1.1.2-55：应收/已收/收缴率口径校正
-                // ①「本月应收」＝**账期归属本月**的账单应收（按月账单按账期起始月归月，原实现按到期日归月）；
-                // ②「本月已收」＝本月**实收现金净额**，与财务报表「收入合计」同源（原实现只算收款毛额，
+                // ①「本期应收」＝**账期归属本期**的账单应收（按账期起始日归期，原实现按到期日归期）；
+                // ②「本期已收」＝本期**实收现金净额**，与财务报表「收入合计」同源（原实现只算收款毛额，
                 //    未扣退款/调减冲正、未计调增补收 → 与财务报表差 0.35 这类小额差异）；
-                // ③ 收缴率＝本月账期账单「已收 / 应收」（分子分母同源），不再出现「已收按收款日 + 应收按到期日」
+                // ③ 收缴率＝本期账期账单「已收 / 应收」（分子分母同源），不再出现「已收按收款日 + 应收按到期日」
                 //    导致的 >100%（实测曾出现 926.5%）。
-                string monthScope = "FROM t_bill b LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
-                                    "WHERE b.del_flag = 0 " +
-                                    "AND strftime('%Y-%m', COALESCE(cy.start_date, b.due_at)) = @period";
-                dto.MonthReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + monthScope,
+                // CHG-v1.2.0-26：同一套口径支持**按年**（strftime('%Y') 归年），月度/年度只是归期粒度不同。
+                string periodFormat = annual ? "%Y" : "%Y-%m";
+                string periodScope = "FROM t_bill b LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                                     "WHERE b.del_flag = 0 " +
+                                     "AND strftime('" + periodFormat + "', COALESCE(cy.start_date, b.due_at)) = @period";
+                dto.MonthReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + periodScope,
                     new { period = periodText });
-                dto.MonthCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + monthScope,
+                dto.MonthCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + periodScope,
                     new { period = periodText });
-                dto.MonthReceived = SumReportIncome(connection, monthStart, monthStart.AddMonths(1));
+                dto.MonthReceived = SumReportIncome(connection, windowStart, windowEnd);
 
                 dto.CollectionRate = dto.MonthReceivable > 0
                     ? Math.Round(dto.MonthCycleReceived / dto.MonthReceivable * 100m, 1)
                     : 0m;
 
-                // 环比：与上一月对比（应收/已收按百分比，逾期户数按户数差）
-                decimal previousReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + monthScope,
+                // 环比：与上一周期对比（应收/已收按百分比，逾期户数按户数差）
+                decimal previousReceivable = Sum(connection, "SELECT COALESCE(SUM(b.amount), 0) " + periodScope,
                     new { period = previousPeriod });
-                decimal previousCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + monthScope,
+                decimal previousCycleReceived = Sum(connection, "SELECT COALESCE(SUM(b.paid_amount), 0) " + periodScope,
                     new { period = previousPeriod });
-                decimal previousReceived = SumReportIncome(connection, monthStart.AddMonths(-1), monthStart);
-                dto.ReceivableTrend = PercentTrend(dto.MonthReceivable, previousReceivable);
-                dto.ReceivedTrend = PercentTrend(dto.MonthReceived, previousReceived);
+                decimal previousReceived = SumReportIncome(connection, previousStart, windowStart);
+                dto.ReceivableTrend = PercentTrend(dto.MonthReceivable, previousReceivable, annual);
+                dto.ReceivedTrend = PercentTrend(dto.MonthReceived, previousReceived, annual);
                 // 收缴率环比改用「百分点差」（原实现借用了应收环比，语义不对）
                 decimal previousRate = previousReceivable > 0
                     ? Math.Round(previousCycleReceived / previousReceivable * 100m, 1)
                     : 0m;
-                dto.CollectionRateTrend = RateTrend(dto.CollectionRate, previousRate);
+                dto.CollectionRateTrend = RateTrend(dto.CollectionRate, previousRate, annual);
 
                 int currentOverdue = Count(connection,
                     "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
-                    "AND strftime('%Y-%m', due_at) = @period", new { period = periodText });
+                    "AND strftime('" + periodFormat + "', due_at) = @period", new { period = periodText });
                 // BUG 修正：上月逾期户数原样用了本月的 @period（复制粘贴笔误），导致「较上月」恒为 0 户
                 int previousOverdue = Count(connection,
                     "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
-                    "AND strftime('%Y-%m', due_at) = @period", new { period = previousPeriod });
+                    "AND strftime('" + periodFormat + "', due_at) = @period", new { period = previousPeriod });
                 int overdueDelta = currentOverdue - previousOverdue;
-                dto.OverdueTrend = "较上月 " + (overdueDelta >= 0 ? "+" : string.Empty) + overdueDelta + " 户";
+                dto.OverdueTrend = (annual ? "较上年 " : "较上月 ") +
+                    (overdueDelta >= 0 ? "+" : string.Empty) + overdueDelta + " 户";
 
                 dto.RecentReminders = connection
                     .Query<ReminderDto>(
@@ -185,40 +194,61 @@ namespace PropertyManagement.Server.Services
             return _finance.SumReportIncome(connection, from, to, null);
         }
 
-        /// <summary>收缴率环比（百分点差，如 +1.2 个百分点）。</summary>
-        private static string RateTrend(decimal current, decimal previous)
+        /// <summary>收缴率环比（百分点差，如「较上月 +1.2 个百分点」/「较上年 +1.2 个百分点」）。</summary>
+        private static string RateTrend(decimal current, decimal previous, bool annual)
         {
             decimal delta = Math.Round(current - previous, 1);
-            return "较上月 " + (delta >= 0 ? "+" : string.Empty) +
+            return (annual ? "较上年 " : "较上月 ") + (delta >= 0 ? "+" : string.Empty) +
                    delta.ToString("0.#", CultureInfo.InvariantCulture) + " 个百分点";
         }
 
-        /// <summary>环比文案：上月为 0 时以 +100%/0% 兜底，避免除零。</summary>
-        private static string PercentTrend(decimal current, decimal previous)
+        /// <summary>
+        /// 环比文案（CHG-v1.2.0-26：按年口径写「较上年」，按月写「较上月」）；
+        /// 上一周期为 0 时以 +100%/0% 兜底，避免除零。
+        /// </summary>
+        private static string PercentTrend(decimal current, decimal previous, bool annual)
         {
+            string label = annual ? "较上年 " : "较上月 ";
             if (previous <= 0m)
             {
-                return current > 0m ? "较上月 +100%" : "较上月 0%";
+                return current > 0m ? label + "+100%" : label + "0%";
             }
 
             decimal delta = Math.Round((current - previous) / previous * 100m, 1);
-            return "较上月 " + (delta >= 0 ? "+" : string.Empty) + delta.ToString("0.#", CultureInfo.InvariantCulture) + "%";
+            return label + (delta >= 0 ? "+" : string.Empty) + delta.ToString("0.#", CultureInfo.InvariantCulture) + "%";
         }
 
-        /// <summary>解析统计月份（yyyy-MM；空/非法回退当前月）。</summary>
-        private static DateTime ResolveMonthStart(string period, out string periodText)
+        /// <summary>
+        /// 解析统计周期（CHG-v1.2.0-26）：
+        /// `yyyy-MM` → 该月 1 号（按月）；`yyyy`（4 位年）→ 该年 1 月 1 号（**按年**）；空/非法回退当前月。
+        /// </summary>
+        private static DateTime ResolvePeriodStart(string period, out string periodText, out bool annual)
         {
+            var today = DateTime.Today;
+            string raw = (period ?? string.Empty).Trim();
+
+            // 按年：仅 4 位数字（如 2026）
+            int year;
+            if (raw.Length == 4 && int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out year) &&
+                year >= 1900 && year <= 2999)
+            {
+                annual = true;
+                periodText = year.ToString(CultureInfo.InvariantCulture);
+                return new DateTime(year, 1, 1);
+            }
+
             DateTime parsed;
-            if (!string.IsNullOrWhiteSpace(period) &&
-                DateTime.TryParseExact(period.Trim() + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            if (raw.Length > 0 &&
+                DateTime.TryParseExact(raw + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
                     DateTimeStyles.None, out parsed))
             {
+                annual = false;
                 periodText = parsed.ToString("yyyy-MM", CultureInfo.InvariantCulture);
                 return parsed;
             }
 
-            var today = DateTime.Today;
-            var start = new DateTime(today.Year, today.Month, 1);
+            annual = false;
+            DateTime start = new DateTime(today.Year, today.Month, 1);
             periodText = start.ToString("yyyy-MM", CultureInfo.InvariantCulture);
             return start;
         }

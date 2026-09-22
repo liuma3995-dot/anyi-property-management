@@ -1,4 +1,4 @@
-<UserControl x:Class="PropertyManagement.Client.Views.ArrearView"
+﻿<UserControl x:Class="PropertyManagement.Client.Views.ArrearView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
@@ -127,25 +127,43 @@
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
             <DataGrid ItemsSource="{Binding Items}" IsReadOnly="True">
                 <DataGrid.Columns>
-                    <DataGridTemplateColumn Width="40">
-                        <DataGridTemplateColumn.HeaderTemplate>
-                            <DataTemplate>
-                                <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
-                                          VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.HeaderTemplate>
+                    <!-- CHG-v1.2.0-29：勾选列改用已验证的 GridCheckCell + GridCheckBox（去单元格 12px 内边距）并加宽到 52，
+                         修复「表头全选框 / 行勾选框被单元格内边距挤压、贴边裁切」的遮挡问题 -->
+                    <DataGridTemplateColumn Width="52" MinWidth="52" CellStyle="{StaticResource GridCheckCell}">
+                        <DataGridTemplateColumn.Header>
+                            <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                      Style="{StaticResource GridCheckBox}" ToolTip="全选 / 取消全选" />
+                        </DataGridTemplateColumn.Header>
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
-                                <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}" Click="RowCheckBox_Click" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                <!-- 只读 DataGrid 中 CheckBox 的 IsChecked 绑定不回写源，由 Click 显式同步到行对象 -->
+                                <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Style="{StaticResource GridCheckBox}"
+                                          Click="RowCheckBox_Click" />
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <!-- CHG-v1.1.0-12：列头由「房产」改为「缴费对象」（含房产/车位/业主直缴，显示口径见 PropertyNo） -->
-                    <DataGridTextColumn Header="缴费对象" Width="110" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="业主" Width="100" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="欠费项目" Width="*" Binding="{Binding ChargeItemName}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="缴费对象" Width="100" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="业主" Width="88" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.2.0-27：新增「楼栋/房号」列（房产账单取本房产；车位/业主直缴按业主-房产关系回查） -->
+                    <DataGridTemplateColumn Header="楼栋/房号" Width="132">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding BuildingPathText}" Style="{StaticResource GridCellText}"
+                                           ToolTip="{Binding BuildingPathText}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="欠费项目" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding ChargeItemName}" Style="{StaticResource GridCellText}"
+                                           ToolTip="{Binding ChargeItemName}" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                     <!-- CHG-v1.1.2-54：欠费期间改引用账单真实账期；同年账期压缩显示，悬停给完整起止 -->
-                    <DataGridTemplateColumn Header="欠费期间" Width="152">
+                    <DataGridTemplateColumn Header="欠费期间" Width="138">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding PeriodText}" Style="{StaticResource GridCellText}"
@@ -153,9 +171,9 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="欠费金额" Width="110" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="最早欠期" Width="100" Binding="{Binding EarliestDueText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTemplateColumn Header="账龄" Width="80">
+                    <DataGridTextColumn Header="欠费金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="最早欠期" Width="92" Binding="{Binding EarliestDueText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="账龄" Width="76">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Background="{Binding AgingBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
@@ -165,7 +183,18 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="催缴状态" Width="100">
+                    <!-- CHG-v1.2.0-24：新增「状态」列 —— 逾期 / 部分缴 / 待缴（逾期 = 到期日之后超过 1 天） -->
+                    <DataGridTemplateColumn Header="状态" Width="76">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate>
+                                <Border Background="{Binding StatusBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
+                                    <TextBlock Text="{Binding StatusText}" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{Binding StatusBrush}" />
+                                </Border>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="催缴状态" Width="96">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Background="{Binding RemindBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
@@ -175,7 +204,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="操作" Width="180">
+                    <DataGridTemplateColumn Header="操作" Width="168">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">

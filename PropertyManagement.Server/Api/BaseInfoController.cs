@@ -204,6 +204,17 @@ namespace PropertyManagement.Server.Api
             return FileResponse(bytes, "导入错误_" + id + ".xlsx");
         }
 
+        /// <summary>
+        /// 导入回执（v1.2.0 CHG-v1.2.0-01）：逐行处理结果（新增/覆盖了谁改了哪些字段/失败原因）。
+        /// 与错误清单的区别：无论有没有失败行，每一批都能下载回执。
+        /// </summary>
+        [HttpGet] [Route("imports/{id:int}/receipt")]
+        public HttpResponseMessage DownloadImportReceipt(int id)
+        {
+            byte[] bytes = _service.BuildImportReceiptExcel(id);
+            return FileResponse(bytes, "导入回执_" + id + "_" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".xlsx");
+        }
+
         /// <summary>导入批次记录批量删除（v1.1.0-⑤）：软删留痕，记录不再出现在批次列表。</summary>
         [HttpPost] [Route("imports/batch-delete")]
         public ApiResponse<RecordBatchDeleteResultDto> BatchDeleteImports(RecordBatchDeleteRequest request) =>

@@ -64,10 +64,12 @@
 
                 <Button Margin="0,20,0,0" Style="{StaticResource ButtonPrimary}" Height="34" Content="生成报表"
                         Command="{Binding GenerateCommand}" />
-                <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Content="导出 Excel"
-                        Command="{Binding ExportExcelCommand}" />
-                <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Content="导出 PDF"
-                        Command="{Binding ExportPdfCommand}" />
+                <!-- CHG-v1.2.0-38：ButtonSecondary 模板的内边距（16,8）在 Height=34 时只剩 16px 内容高度，
+                     14px 中文字被上下裁掉（「导」字首笔被遮挡）→ 本页两个导出按钮改用纵向 0 内边距 -->
+                <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Padding="16,0"
+                        FontSize="13" Content="导出 Excel" Command="{Binding ExportExcelCommand}" />
+                <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Padding="16,0"
+                        FontSize="13" Content="导出 PDF" Command="{Binding ExportPdfCommand}" />
             </StackPanel>
         </Border>
 

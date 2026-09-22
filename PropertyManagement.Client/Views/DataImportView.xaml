@@ -134,11 +134,14 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="导入时间" Width="140" Binding="{Binding TimeText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTemplateColumn Header="操作" Width="130">
+                    <!-- v1.2.0（CHG-v1.2.0-01）：「下载回执」改为逐行回执（新增/覆盖/失败），任何批次都可下载 -->
+                    <DataGridTemplateColumn Header="操作" Width="150" MinWidth="150">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
-                                    <Button Style="{StaticResource LinkButton}" Content="下载回执" Command="{Binding DataContext.DownloadErrorsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource LinkButton}" Content="下载回执"
+                                            ToolTip="逐行回执：新增 / 覆盖了谁、改了哪些字段 / 失败原因"
+                                            Command="{Binding DataContext.DownloadErrorsCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
                                     <Button Style="{StaticResource LinkButton}" Content="重传" Command="{Binding DataContext.ReImportCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}" CommandParameter="{Binding}" />
                                 </StackPanel>
                             </DataTemplate>

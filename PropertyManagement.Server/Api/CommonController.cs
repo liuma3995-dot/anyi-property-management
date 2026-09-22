@@ -19,7 +19,10 @@ namespace PropertyManagement.Server.Api
             _searchService = new GlobalSearchService();
         }
 
-        /// <param name="period">统计月份 yyyy-MM（R17 仪表盘月份选择器；空=当前月）。</param>
+        /// <param name="period">
+        /// 统计周期：`yyyy-MM` = 按月；`yyyy` = 按年（CHG-v1.2.0-26，仪表盘日历「全年」）；
+        /// 空 = 当前月。返回体 <c>Annual</c> 告知实际生效粒度。
+        /// </param>
         [HttpGet]
         [Route("dashboard")]
         public ApiResponse<DashboardDto> Dashboard(string period = null)

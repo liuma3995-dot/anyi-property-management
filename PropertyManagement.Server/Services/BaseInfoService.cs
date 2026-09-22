@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -558,7 +559,11 @@ namespace PropertyManagement.Server.Services
                         : (success > 0 ? ImportStatus.PartialSuccess : ImportStatus.Failed));
                 string errorFile = fail > 0 ? BuildErrorFile(log.Id, errors) : null;
 
-                _repo.UpdateImportLog(connection, transaction, log.Id, status, success, fail, errorFile);
+                // v1.2.0（CHG-v1.2.0-01）：逐行回执落库（新增/覆盖/失败）——「下载回执」据此导出
+                if (count.Rows.Count > 0)
+                    _repo.InsertImportRows(connection, transaction, count.Rows, log.Id);
+
+                _repo.UpdateImportLog(connection, transaction, log.Id, total, status, success, fail, errorFile);
                 _repo.UpdateImportLogUpdated(connection, transaction, log.Id, updated);
                 if (fail > 0) _repo.InsertImportErrors(connection, transaction, errors, log.Id);
                 transaction.Commit();
@@ -673,21 +678,135 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        /// <summary>
+        /// 导入回执（v1.2.0 CHG-v1.2.0-01）：逐行处理结果导出。
+        /// 背景（负责人 2026-09-21）：重复数据改走「覆盖处理」后，同名业主被覆盖没有任何凭据，
+        /// 后续查找同名条件变得困难；本回执逐行写明 新增 / 覆盖（覆盖了谁、改了哪几个字段、旧值→新值）/ 失败。
+        /// </summary>
+        public byte[] BuildImportReceiptExcel(int importId)
+        {
+            ImportLogDto log = GetImportLog(importId);
+            List<ImportRowResultDto> rows = WithConnection(c => _repo.ListImportRows(c, importId));
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.Worksheets.Add("导入回执");
+
+                var title = sheet.Cell(1, 1);
+                title.Value = "导入回执（批次 #" + log.Id + "）";
+                title.Style.Font.Bold = true;
+                title.Style.Font.FontSize = 13;
+
+                sheet.Cell(2, 1).Value =
+                    "数据类型：" + ModuleLabel(log.Module)
+                    + "　文件：" + (log.FileName ?? string.Empty)
+                    + "　总行数：" + log.Total + "　新增：" + log.Success + "　覆盖：" + log.Updated
+                    + "　失败：" + log.Fail
+                    + "　导入时间：" + log.CreatedAt.ToString("yyyy-MM-dd HH:mm:ss");
+
+                string[] headers = { "行号", "处理结果", "对象", "覆盖 / 变更明细", "失败原因", "处理建议" };
+                const int headerRow = 4;
+                for (int i = 0; i < headers.Length; i++)
+                {
+                    var head = sheet.Cell(headerRow, i + 1);
+                    head.Value = headers[i];
+                    head.Style.Font.Bold = true;
+                    head.Style.Fill.BackgroundColor = XLColor.FromHtml("#F1F3F7");
+                    head.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                }
+
+                int r = headerRow + 1;
+                foreach (ImportRowResultDto row in rows)
+                {
+                    sheet.Cell(r, 1).Value = row.RowNo;
+                    sheet.Cell(r, 2).Value = ImportRowResultText(row.Result);
+                    sheet.Cell(r, 3).Value = row.ObjectKey ?? string.Empty;
+                    sheet.Cell(r, 4).Value = row.ChangeSummary ?? string.Empty;
+                    sheet.Cell(r, 5).Value = row.Reason ?? string.Empty;
+                    sheet.Cell(r, 6).Value = row.Suggestion ?? string.Empty;
+                    if (row.Result == ImportRowResult.Updated)
+                    {
+                        // 覆盖行高亮：用户一眼能看出「这一批覆盖了哪些记录」
+                        sheet.Range(r, 1, r, headers.Length).Style.Fill.BackgroundColor = XLColor.FromHtml("#FEF7E6");
+                    }
+                    else if (row.Result == ImportRowResult.Failed)
+                    {
+                        sheet.Range(r, 1, r, headers.Length).Style.Fill.BackgroundColor = XLColor.FromHtml("#FDECEC");
+                    }
+                    r++;
+                }
+
+                if (rows.Count == 0)
+                {
+                    sheet.Cell(r, 1).Value = "—";
+                    sheet.Cell(r, 2).Value =
+                        log.Total > 0
+                            ? "该批次导入于 v1.2.0 之前，未留存逐行回执（请重新导入以取得完整回执）"
+                            : "本批次没有数据行（文件只有表头/示例行）";
+                    r++;
+                }
+
+                sheet.Cell(r + 1, 1).Value =
+                    "说明：1)「新增」= 新入库的记录；2)「覆盖」= 命中既有记录并按文件里填了值的字段更新（明细写明 字段：旧值 → 新值）；"
+                    + "3)「失败」= 该行未入库，按「失败原因/处理建议」修正后可重传；4) 每行的覆盖/新增都会写入变更留痕（渠道：批量导入）。";
+                sheet.Cell(r + 1, 1).Style.Alignment.WrapText = true;
+                sheet.Range(r + 1, 1, r + 1, headers.Length).Merge();
+
+                sheet.Column(1).Width = 8;
+                sheet.Column(2).Width = 10;
+                sheet.Column(3).Width = 34;
+                sheet.Column(4).Width = 52;
+                sheet.Column(5).Width = 38;
+                sheet.Column(6).Width = 38;
+                sheet.Range(headerRow + 1, 3, Math.Max(headerRow + 1, r), 6).Style.Alignment.WrapText = true;
+                sheet.SheetView.FreezeRows(headerRow);
+
+                using (var stream = new MemoryStream())
+                {
+                    workbook.SaveAs(stream);
+                    return stream.ToArray();
+                }
+            }
+        }
+
+        private static string ImportRowResultText(ImportRowResult result)
+        {
+            switch (result)
+            {
+                case ImportRowResult.Updated: return "覆盖";
+                case ImportRowResult.Failed: return "失败";
+                default: return "新增";
+            }
+        }
+
         public byte[] BuildTemplate(ImportModule module)
         {
             List<ImportField> fields = TemplateFields(module);
             using (var workbook = new XLWorkbook())
             {
+                // v1.2.0（CHG-v1.2.0-05）：模板字体统一为「微软雅黑 11」。
+                // 旧模板是 Calibri：中文字符靠字体回退渲染，在不同机器/不同列上字重与字宽不一致，
+                // 现场反馈「业主那列字体太大」即由此而来；改为中文字体后全表口径一致。
+                workbook.Style.Font.FontName = TemplateFontName;
+                workbook.Style.Font.FontSize = TemplateFontSize;
+
                 var sheet = workbook.Worksheets.Add("模板");
                 for (int i = 0; i < fields.Count; i++)
                 {
                     var head = sheet.Cell(1, i + 1);
                     head.Value = fields[i].Required ? fields[i].Header + "*" : fields[i].Header;
+                    head.Style.Font.FontName = TemplateFontName;
+                    head.Style.Font.FontSize = TemplateFontSize;
                     head.Style.Font.Bold = true;
                     head.Style.Fill.BackgroundColor = fields[i].Required
                         ? XLColor.FromHtml("#FDF0DC") : XLColor.FromHtml("#F1F3F7");
                     head.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                    sheet.Column(i + 1).Width = 18;
+                    head.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    // 列宽按表头字数自适应（旧口径一律 18 宽，「单元号」等短列过宽、「业主证件号」等长列过挤）
+                    sheet.Column(i + 1).Width =
+                        Math.Min(24, Math.Max(12, (fields[i].Header.Length + 1) * 2.8));
+                    // 编号/证件号/电话/房号列按「文本」格式：从原始档案粘贴时不会被 Excel 转成科学计数法或丢前导零
+                    if (IsTextColumn(fields[i].Header))
+                        sheet.Column(i + 1).Style.NumberFormat.Format = "@";
                 }
 
                 // 示例行（v1.1.0 F-08b）：首列以「示例：」开头，导入时自动跳过（IsExampleRow）
@@ -695,8 +814,22 @@ namespace PropertyManagement.Server.Services
                 {
                     var cell = sheet.Cell(2, i + 1);
                     cell.Value = i == 0 ? ("示例：" + fields[i].Example) : fields[i].Example;
+                    cell.Style.Font.FontName = TemplateFontName;
+                    cell.Style.Font.FontSize = TemplateExampleFontSize;   // 比表头小一号：示例不抢表头/正文的视觉
                     cell.Style.Font.Italic = true;
                     cell.Style.Font.FontColor = XLColor.FromHtml("#8A8F98");
+                }
+                // v1.2.0（CHG-v1.2.0-05）：预留数据区（第 3~302 行）预置模板字体，
+                // 让「录入」或「选择性粘贴 → 值」进来的内容一律是微软雅黑 11，不再被源文件的大字号带跑。
+                // 空白行导入时由 IsBlankRow 跳过，不影响 total 计数。
+                for (int r = 3; r <= 302; r++)
+                {
+                    for (int i = 0; i < fields.Count; i++)
+                    {
+                        var cell = sheet.Cell(r, i + 1);
+                        cell.Style.Font.FontName = TemplateFontName;
+                        cell.Style.Font.FontSize = TemplateFontSize;
+                    }
                 }
                 sheet.SheetView.FreezeRows(2);
 
@@ -725,7 +858,14 @@ namespace PropertyManagement.Server.Services
                 doc.Cell(fields.Count + 3, 1).Value =
                     "说明：1) 「是否必填」为「必填」的列必须填写，其余留空即可；" +
                     "2) 「模板」工作表第 2 行为示例，导入时自动跳过，请从第 3 行起录入真实数据；" +
-                    "3) 表头顺序可自行调整，导入按表头名识别列（旧版模板仍可继续使用）。";
+                    "3) 表头顺序可自行调整，导入按表头名识别列（旧版模板仍可继续使用）；" +
+                    "4) 原始档案资料可直接整段复制粘贴：日期、数字、全角字符、千分位、空白行都能正常校验，" +
+                    "其中「证件号 / 电话 / 编号 / 房号」列已预置为文本格式；" +
+                    "5) 同名业主按「证件号 → 电话 → 姓名」判定：同名但补充信息不重复时按不同业主处理，" +
+                    "仍无法区分的会在结果里提示补充证件号或电话；" +
+                    "6) 导入后可在「导入批次记录」下载回执，逐行查看 新增 / 覆盖（覆盖了谁、改了哪些字段）/ 失败；" +
+                    "7) 整段复制原始档案时建议用「选择性粘贴 → 值」，数据区已按微软雅黑 11 预置，" +
+                    "粘贴为值即可保持模板字体（直接粘贴会带入源文件字号）。";
                 doc.Cell(fields.Count + 3, 1).Style.Alignment.WrapText = true;
                 doc.Range(fields.Count + 3, 1, fields.Count + 3, 4).Merge();
 
@@ -751,9 +891,22 @@ namespace PropertyManagement.Server.Services
             return new ImportField { Header = header, Required = required, Example = example, Note = note };
         }
 
+        /// <summary>模板字体口径（v1.2.0 CHG-v1.2.0-05）：中文界面统一微软雅黑，表头 11、示例行 10。</summary>
+        private const string TemplateFontName = "微软雅黑";
+        private const double TemplateFontSize = 11;
+        private const double TemplateExampleFontSize = 10;
+
+        /// <summary>按「文本」格式预置的列（v1.2.0）：长数字（证件号/电话/编号/房号）粘贴后不被 Excel 改写。</summary>
+        private static bool IsTextColumn(string header)
+        {
+            if (string.IsNullOrEmpty(header)) return false;
+            return header.Contains("证件号") || header.Contains("电话")
+                || header.Contains("编号") || header.Contains("房号");
+        }
+
         /// <summary>
         /// 各导入类型的字段清单（v1.1.0 必填矩阵，负责人 2026-09-16 确认）：
-        /// 房产＝楼栋号/房号/建筑面积（单元号选填，**移除「用途」列**）；
+        /// 房产＝楼栋号/房号/建筑面积（单元号、用途选填；「用途」列于 v1.2.0 CHG-v1.2.0-03 恢复）；
         /// 车位＝车位编号；业主＝姓名（联系电话放开为选填）；业主-房产关系＝楼栋号/房号/业主姓名。
         /// </summary>
         private static List<ImportField> TemplateFields(ImportModule module)
@@ -767,6 +920,9 @@ namespace PropertyManagement.Server.Services
                         F("单元号", false, "", "选填。老旧小区无单元请留空；填写时须与楼栋下已维护的单元号一致"),
                         F("房号", true, "101", "必填。有单元时同单元内不得重复；无单元时同楼栋内不得重复"),
                         F("建筑面积", true, "138.66", "必填。正数，最多 2 位小数（系统按原值计算，不做四舍五入）"),
+                        // v1.2.0（CHG-v1.2.0-03）：恢复「用途」列 —— 收费规格的「适用条件 → 房产用途」按该列判定，
+                        // 房产列表已展示用途，模板却不给列 → 现场无法通过导入维护用途。选填，留空按「住宅」。
+                        F("用途", false, "住宅", "选填。住宅 / 商铺 / 空置，留空按「住宅」"),
                         F("状态", false, "空置", "选填。空置 / 已入住 / 装修中，留空按「空置」")
                     };
                 case ImportModule.Owner:
@@ -863,6 +1019,81 @@ namespace PropertyManagement.Server.Services
             return col < 1 ? string.Empty : Cell(sheet, row, col);
         }
 
+        /// <summary>
+        /// 整行是否为空（v1.2.0 CHG-v1.2.0-04）。
+        /// 用户常把原始档案整段复制进模板，末尾会带上「只有格式没有内容」的行；
+        /// 这类行不应被当成数据行报「必填项不能为空」。
+        /// </summary>
+        private static bool IsBlankRow(params string[] cells)
+        {
+            foreach (string text in cells)
+            {
+                if (!string.IsNullOrWhiteSpace(text)) return false;
+            }
+            return true;
+        }
+
+        /// <summary>回执「对象」列文案：房产/关系用 楼栋+单元+房号，业主/车位直接用业务主键。</summary>
+        private static string KeyLabel(string buildingNo, string unitNo, string roomNo)
+        {
+            string building = (buildingNo ?? string.Empty).Trim();
+            string unit = (unitNo ?? string.Empty).Trim();
+            string room = (roomNo ?? string.Empty).Trim();
+            string label = building + unit + room;
+            return label.Length == 0 ? "（未填写楼栋/房号）" : label;
+        }
+
+        /// <summary>
+        /// 业主「常住地址」是否与本行「楼栋[+单元]+房号」指向同一处房产（v1.2.0 第 2 轮）。
+        /// 用于业主-房产关系导入时区分同名业主：地址如「1号楼1单元101」与楼栋「1号楼」房号「101」视为同一处。
+        /// </summary>
+        private static bool AddressMatchesProperty(string address, string buildingNo, string unitNo, string roomNo)
+        {
+            string a = Compact(address);
+            string building = Compact(buildingNo);
+            string unit = Compact(unitNo);
+            string room = Compact(roomNo);
+            if (a.Length == 0 || building.Length == 0 || room.Length == 0) return false;
+            if (IndexOfToken(a, building) < 0) return false;
+            if (IndexOfToken(a, room) < 0) return false;
+            return unit.Length == 0 || IndexOfToken(a, unit) >= 0;
+        }
+
+        /// <summary>去空白、全角空格（地址比对用）。</summary>
+        private static string Compact(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return string.Empty;
+            var sb = new StringBuilder(text.Length);
+            foreach (char ch in text)
+            {
+                if (char.IsWhiteSpace(ch) || ch == '\u3000' || ch == '\u00A0') continue;
+                sb.Append(ch);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 按「数字边界」查找短串：避免「11号楼」被「1号楼」命中、「1101」被「101」命中。
+        /// 左侧为数字一律不算命中；右侧仅当**查找串以数字结尾**时才校验（如「1号楼908」中的「1号楼」后面紧跟房号数字，属正常）。
+        /// </summary>
+        private static int IndexOfToken(string text, string token)
+        {
+            if (string.IsNullOrEmpty(text) || string.IsNullOrEmpty(token) || token.Length > text.Length) return -1;
+            bool checkRight = char.IsDigit(token[token.Length - 1]);
+            int from = 0;
+            while (from <= text.Length - token.Length)
+            {
+                int idx = text.IndexOf(token, from, StringComparison.Ordinal);
+                if (idx < 0) return -1;
+                int end = idx + token.Length;
+                bool leftOk = idx == 0 || !char.IsDigit(text[idx - 1]);
+                bool rightOk = !checkRight || end >= text.Length || !char.IsDigit(text[end]);
+                if (leftOk && rightOk) return idx;
+                from = idx + 1;
+            }
+            return -1;
+        }
+
         /// <summary>模板示例行判定：首列以「示例」开头（v1.1.0 F-08b 约定，导入时自动跳过）。</summary>
         private static bool IsExampleRow(IXLWorksheet sheet, int row, int firstCol)
         {
@@ -943,6 +1174,62 @@ namespace PropertyManagement.Server.Services
         {
             public int Inserted;
             public int Updated;
+
+            /// <summary>
+            /// 逐行回执（v1.2.0 CHG-v1.2.0-01）：每一行数据行都留一条「新增/覆盖/失败」记录，
+            /// 导入完成后落库 t_import_row，批次列表「下载回执」导出 Excel。
+            /// </summary>
+            public readonly List<ImportRowResultDto> Rows = new List<ImportRowResultDto>();
+
+            /// <param name="note">可选提示（回执「处理建议」列）：如同名业主兜底配对的核对提醒。</param>
+            public void AddInserted(int rowNo, string objectKey, string note = null)
+            {
+                Inserted++;
+                Rows.Add(new ImportRowResultDto
+                {
+                    RowNo = rowNo, Result = ImportRowResult.Inserted, ObjectKey = objectKey, Suggestion = note
+                });
+            }
+
+            public void AddUpdated(int rowNo, string objectKey, IList<string> changes, string note = null)
+            {
+                Updated++;
+                Rows.Add(new ImportRowResultDto
+                {
+                    RowNo = rowNo,
+                    Result = ImportRowResult.Updated,
+                    ObjectKey = objectKey,
+                    Suggestion = note,
+                    ChangeSummary = changes == null || changes.Count == 0
+                        ? "覆盖：文件内容与库内一致，未产生字段变化"
+                        : "覆盖：" + string.Join("；", changes)
+                });
+            }
+
+            public void AddFailed(int rowNo, string objectKey, IEnumerable<ImportErrorItemDto> rowErrors)
+            {
+                var list = (rowErrors ?? Enumerable.Empty<ImportErrorItemDto>()).ToList();
+                Rows.Add(new ImportRowResultDto
+                {
+                    RowNo = rowNo,
+                    Result = ImportRowResult.Failed,
+                    ObjectKey = objectKey,
+                    Reason = string.Join("；", list.Select(e => e.Reason)
+                        .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct()),
+                    Suggestion = string.Join("；", list.Select(e => e.Suggestion)
+                        .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct())
+                });
+            }
+        }
+
+        /// <summary>回执「对象」列：业主用 姓名 +（档案号／证件号／电话），解决同名业主无法分辨的问题。</summary>
+        private static string OwnerKeyLabel(string name, int? ownerId, string idCard, string phone)
+        {
+            var parts = new List<string>();
+            if (ownerId.HasValue && ownerId.Value > 0) parts.Add("档案 #" + ownerId.Value);
+            if (!string.IsNullOrWhiteSpace(idCard)) parts.Add("证件号 " + idCard.Trim());
+            if (!string.IsNullOrWhiteSpace(phone)) parts.Add("电话 " + phone.Trim());
+            return (name ?? string.Empty).Trim() + (parts.Count == 0 ? string.Empty : "（" + string.Join("，", parts) + "）");
         }
 
         private ImportCount ImportProperties(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
@@ -953,6 +1240,7 @@ namespace PropertyManagement.Server.Services
             int colUnit = ColIndex(map, "单元号", "单元");
             int colRoom = ColIndex(map, "房号");
             int colArea = ColIndex(map, "建筑面积", "面积");
+            int colUsage = ColIndex(map, "用途");           // v1.2.0（CHG-v1.2.0-03）：模板恢复「用途」列（选填）
             int colStatus = ColIndex(map, "状态");
 
             var count = new ImportCount();
@@ -965,7 +1253,11 @@ namespace PropertyManagement.Server.Services
                 string unitNo = CellAt(sheet, row, colUnit);       // v1.1.0 F-05：单元号选填（老旧小区无单元）
                 string roomNo = CellAt(sheet, row, colRoom);
                 string areaText = CellAt(sheet, row, colArea);
+                string usageText = CellAt(sheet, row, colUsage);
                 string statusText = CellAt(sheet, row, colStatus);
+                // v1.2.0（CHG-v1.2.0-04）：模板预留的空白行（只有样式没有内容）直接跳过，不报「楼栋号不能为空」
+                if (IsBlankRow(buildingNo, unitNo, roomNo, areaText, usageText, statusText)) { row++; continue; }
+                string keyLabel = KeyLabel(buildingNo, unitNo, roomNo);
 
                 var rowErrors = new List<ImportErrorItemDto>();
                 if (string.IsNullOrWhiteSpace(buildingNo)) rowErrors.Add(Err(row, "楼栋号", buildingNo, "楼栋号不能为空", "填写正确的楼栋号"));
@@ -973,6 +1265,9 @@ namespace PropertyManagement.Server.Services
                 decimal area;
                 if (!AreaValue.TryParseLoose(areaText, out area) || area <= 0)
                     rowErrors.Add(Err(row, "建筑面积", areaText, "建筑面积必须为正数", "填写数字，如 88.5"));
+                PropertyUsage propUsage = PropertyUsage.Residential;
+                if (!string.IsNullOrWhiteSpace(usageText) && !TryParseLabeled(usageText, PropertyUsageMap, out propUsage))
+                    rowErrors.Add(Err(row, "用途", usageText, "用途不合法（住宅/商铺/空置）", "填写 住宅/商铺/空置，或留空按住宅"));
                 PropertyStatus propStatus = PropertyStatus.Vacant;
                 if (!string.IsNullOrWhiteSpace(statusText) && !TryParseLabeled(statusText, PropertyStatusMap, out propStatus))
                     rowErrors.Add(Err(row, "状态", statusText, "状态不合法（空置/已入住/装修中）", "填写 空置/已入住/装修中"));
@@ -1010,14 +1305,18 @@ namespace PropertyManagement.Server.Services
                                 _repo.InsertProperty(c, tx, new PropertyDto
                                 {
                                     BuildingId = buildingId.Value, UnitId = unitId, RoomNo = roomNo,
-                                    Area = area, Usage = PropertyUsage.Residential, Status = propStatus
+                                    Area = area,
+                                    Usage = string.IsNullOrWhiteSpace(usageText) ? PropertyUsage.Residential : propUsage,
+                                    Status = propStatus
                                 });
-                                count.Inserted++;
+                                count.AddInserted(row, keyLabel);
                                 errors.AddRange(rowErrors);
                                 row++;
                                 continue;
                             }
                             PropertyStatus newStatus = string.IsNullOrWhiteSpace(statusText) ? before.Status : propStatus;
+                            PropertyUsage newUsage = string.IsNullOrWhiteSpace(usageText) ? before.Usage : propUsage;
+                            var changes = new List<string>();
                             _repo.UpdateProperty(c, tx, new PropertyDto
                             {
                                 Id = before.Id,
@@ -1025,16 +1324,28 @@ namespace PropertyManagement.Server.Services
                                 UnitId = unitId,
                                 RoomNo = roomNo,
                                 Area = area,
-                                Usage = before.Usage,   // 模板已不含「用途」列 → 保留库内用途，不因导入被改写
+                                Usage = newUsage,       // 模板「用途」列留空 → 保留库内用途，不因导入被改写
                                 Status = newStatus
                             });
                             if (before.Area != area)
+                            {
                                 WriteChangeLog(c, tx, BaseChangeObjectType.Property, before.Id, "建筑面积",
                                     before.Area.ToString("0.####"), area.ToString("0.####"), "批量导入");
+                                changes.Add("建筑面积：" + AreaValue.Format(before.Area) + " → " + AreaValue.Format(area));
+                            }
+                            if (before.Usage != newUsage)
+                            {
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Property, before.Id, "用途",
+                                    UsageText(before.Usage), UsageText(newUsage), "批量导入");
+                                changes.Add("用途：" + UsageText(before.Usage) + " → " + UsageText(newUsage));
+                            }
                             if (before.Status != newStatus)
+                            {
                                 WriteChangeLog(c, tx, BaseChangeObjectType.Property, before.Id, "状态",
                                     StatusText(before.Status), StatusText(newStatus), "批量导入");
-                            count.Updated++;
+                                changes.Add("状态：" + StatusText(before.Status) + " → " + StatusText(newStatus));
+                            }
+                            count.AddUpdated(row, keyLabel + "（房产 #" + before.Id + "）", changes);
                         }
                         else
                         {
@@ -1044,13 +1355,14 @@ namespace PropertyManagement.Server.Services
                                 UnitId = unitId,
                                 RoomNo = roomNo,
                                 Area = area,
-                                Usage = PropertyUsage.Residential,   // v1.1.0：模板不再提供「用途」列，统一按住宅入库
+                                Usage = string.IsNullOrWhiteSpace(usageText) ? PropertyUsage.Residential : propUsage,
                                 Status = propStatus
                             });
-                            count.Inserted++;
+                            count.AddInserted(row, keyLabel);
                         }
                     }
                 }
+                if (rowErrors.Count > 0) count.AddFailed(row, keyLabel, rowErrors);
                 errors.AddRange(rowErrors);
                 row++;
             }
@@ -1086,6 +1398,10 @@ namespace PropertyManagement.Server.Services
                 string emergencyPhone = CellAt(sheet, row, colEmergencyPhone);
                 string checkIn = CellAt(sheet, row, colCheckIn);
                 string statusText = CellAt(sheet, row, colStatus);
+                // v1.2.0（CHG-v1.2.0-04）：模板预留空白行跳过
+                if (IsBlankRow(name, idType, idCard, phone, address, emergency, emergencyPhone, checkIn, statusText))
+                { row++; continue; }
+                string ownerKey = OwnerKeyLabel(name, null, idCard, phone);
 
                 var rowErrors = new List<ImportErrorItemDto>();
                 if (string.IsNullOrWhiteSpace(name)) rowErrors.Add(Err(row, "姓名", name, "姓名不能为空", "填写姓名"));
@@ -1102,27 +1418,18 @@ namespace PropertyManagement.Server.Services
                     string n = name.Trim();
                     string ph = string.IsNullOrWhiteSpace(phone) ? string.Empty : phone.Trim();
                     string ic = string.IsNullOrWhiteSpace(idCard) ? string.Empty : idCard.Trim();
-                    // 查重口径（v1.1.0 起）：证件号 → 电话 → 仅姓名，用于**定位同一业主**。
-                    // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：
-                    //   命中唯一既有业主 → 覆盖处理（只覆盖文件里填了值的字段），不再报「该业主已存在」；
-                    //   同名命中多条且无证件号/电话 → 无法判定对象，按裁定 ⑨ 仍报错，不做自造合并。
-                    var sameNameIds = c.Query<int>(
-                        ic.Length > 0
-                            ? "SELECT id FROM t_owner WHERE name = @name AND id_card = @idCard AND del_flag = 0"
-                            : (ph.Length > 0
-                                ? "SELECT id FROM t_owner WHERE name = @name AND phone = @phone AND del_flag = 0"
-                                : "SELECT id FROM t_owner WHERE name = @name AND del_flag = 0"),
-                        new { name = n, idCard = ic, phone = ph }, tx).ToList();
-
-                    if (sameNameIds.Count > 1)
+                    // 查重口径（v1.1.0 起，v1.2.0 CHG-v1.2.0-02 放宽）：证件号 → 电话 → 姓名 +「补充信息是否为空」。
+                    // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：命中唯一既有业主 → 覆盖处理，不再报「该业主已存在」。
+                    // v1.2.0（负责人 2026-09-21 反馈「同名判定过严」）：同名多条时，
+                    //   若只有一名同名业主既没证件号也没电话，而本行也没填 → 判定为该名（两者只是名字重复，其它信息不重复）。
+                    OwnerMatch match = MatchOwnerForImport(c, tx, n, ic, ph);
+                    if (match.Ambiguous)
                     {
-                        rowErrors.Add(Err(row, "姓名", n,
-                            ic.Length > 0 || ph.Length > 0 ? "证件号/电话对应到多名业主，无法确定覆盖对象" : "存在同名业主，无法确定是否为同一人",
-                            "补充「证件号」或「联系电话」后再导入"));
+                        rowErrors.Add(Err(row, "姓名", n, match.Reason, match.Suggestion));
                     }
-                    else if (sameNameIds.Count == 1)
+                    else if (match.OwnerId.HasValue)
                     {
-                        OwnerDto before = LoadOwner(c, tx, sameNameIds[0]);
+                        OwnerDto before = LoadOwner(c, tx, match.OwnerId.Value);
                         if (before == null)
                         {
                             rowErrors.Add(Err(row, "姓名", n, "该业主已被删除，请重新核对业主档案", "先在「业主档案」确认后再导入"));
@@ -1144,17 +1451,39 @@ namespace PropertyManagement.Server.Services
                                 Status = string.IsNullOrWhiteSpace(statusText) ? before.Status : ownerStatus
                             };
                             _repo.UpdateOwner(c, tx, after);
-                            LogOwnerChanges(c, tx, before, after, "批量导入");
+                            List<string> changes = LogOwnerChanges(c, tx, before, after, "批量导入");
+                            // 证件号/证件类型是「同名业主区分」的关键字段：导入覆盖时单独留痕并写进回执
+                            // （档案页维护沿用原有留痕口径，不在此改动）
+                            if (!Equals(before.IdCard, after.IdCard))
+                            {
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "证件号",
+                                    before.IdCard, after.IdCard, "批量导入");
+                                changes.Add("证件号：" + Show(before.IdCard) + " → " + Show(after.IdCard));
+                            }
+                            if (before.IdCardType != after.IdCardType)
+                            {
+                                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "证件类型",
+                                    IdCardTypeName(before.IdCardType), IdCardTypeName(after.IdCardType), "批量导入");
+                                changes.Add("证件类型：" + IdCardTypeName(before.IdCardType) + " → " + IdCardTypeName(after.IdCardType));
+                            }
                             if (!Equals(before.CheckInDate, after.CheckInDate))
+                            {
                                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "入住日期",
                                     before.CheckInDate.HasValue ? before.CheckInDate.Value.ToString("yyyy-MM-dd") : string.Empty,
                                     after.CheckInDate.HasValue ? after.CheckInDate.Value.ToString("yyyy-MM-dd") : string.Empty,
                                     "批量导入");
+                                changes.Add("入住日期：" + (before.CheckInDate.HasValue ? before.CheckInDate.Value.ToString("yyyy-MM-dd") : "（空）")
+                                    + " → " + (after.CheckInDate.HasValue ? after.CheckInDate.Value.ToString("yyyy-MM-dd") : "（空）"));
+                            }
                             if (before.Status != after.Status)
+                            {
                                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "状态",
                                     before.Status == OwnerStatus.Living ? "在住" : "搬离",
                                     after.Status == OwnerStatus.Living ? "在住" : "搬离", "批量导入");
-                            count.Updated++;
+                                changes.Add("状态：" + (before.Status == OwnerStatus.Living ? "在住" : "搬离")
+                                    + " → " + (after.Status == OwnerStatus.Living ? "在住" : "搬离"));
+                            }
+                            count.AddUpdated(row, OwnerKeyLabel(before.Name, before.Id, before.IdCard, before.Phone), changes);
                         }
                     }
                     else
@@ -1171,9 +1500,10 @@ namespace PropertyManagement.Server.Services
                             CheckInDate = ParseDate(checkIn),
                             Status = ownerStatus
                         });
-                        count.Inserted++;
+                        count.AddInserted(row, ownerKey);
                     }
                 }
+                if (rowErrors.Count > 0) count.AddFailed(row, ownerKey, rowErrors);
                 errors.AddRange(rowErrors);
                 row++;
             }
@@ -1205,6 +1535,10 @@ namespace PropertyManagement.Server.Services
                 string bindBuildingNo = CellAt(sheet, row, colBindBuilding);
                 string bindUnitNo = CellAt(sheet, row, colBindUnit);
                 string bindRoomNo = CellAt(sheet, row, colBindRoom);
+                // v1.2.0（CHG-v1.2.0-04）：模板预留空白行跳过
+                if (IsBlankRow(spaceNo, area, typeText, statusText, bindBuildingNo, bindUnitNo, bindRoomNo))
+                { row++; continue; }
+                string spaceKey = string.IsNullOrWhiteSpace(spaceNo) ? "（未填写车位编号）" : spaceNo.Trim();
 
                 var rowErrors = new List<ImportErrorItemDto>();
                 if (string.IsNullOrWhiteSpace(spaceNo)) rowErrors.Add(Err(row, "车位编号", spaceNo, "车位编号不能为空", "填写车位编号"));
@@ -1258,6 +1592,7 @@ namespace PropertyManagement.Server.Services
                             rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位", "更换房产"));
                             if (rowErrors.Count == 0)
                             {
+                                var changes = new List<string>();
                                 _repo.UpdateParking(c, tx, new ParkingSpaceDto
                                 {
                                     Id = before.Id,
@@ -1272,18 +1607,31 @@ namespace PropertyManagement.Server.Services
                                     RentTo = before.RentTo               // 模板已下线「租期至」列 → 保留库内原值
                                 });
                                 if (before.Status != newStatus)
+                                {
                                     WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "状态",
                                         ParkingStatusLabel(before.Status), ParkingStatusLabel(newStatus), "批量导入");
+                                    changes.Add("状态：" + ParkingStatusLabel(before.Status) + " → " + ParkingStatusLabel(newStatus));
+                                }
                                 if (before.SpaceType != newType)
+                                {
                                     WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "类型",
                                         ParkingTypeLabel(before.SpaceType), ParkingTypeLabel(newType), "批量导入");
+                                    changes.Add("类型：" + ParkingTypeLabel(before.SpaceType) + " → " + ParkingTypeLabel(newType));
+                                }
                                 if (!Equals(before.Area, area) && !string.IsNullOrWhiteSpace(area))
+                                {
                                     WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "区域", before.Area, area, "批量导入");
+                                    changes.Add("区域：" + Show(before.Area) + " → " + Show(area));
+                                }
                                 if (before.PropertyId != effPropertyId)
+                                {
                                     WriteChangeLog(c, tx, BaseChangeObjectType.Parking, before.Id, "绑定房产",
                                         before.PropertyId.HasValue ? before.PropertyId.Value.ToString() : string.Empty,
                                         effPropertyId.HasValue ? effPropertyId.Value.ToString() : string.Empty, "批量导入");
-                                count.Updated++;
+                                    changes.Add("绑定房产：" + (before.PropertyId.HasValue ? "#" + before.PropertyId.Value : "（未绑定）")
+                                        + " → " + (effPropertyId.HasValue ? "#" + effPropertyId.Value : "（未绑定）"));
+                                }
+                                count.AddUpdated(row, spaceKey + "（车位 #" + before.Id + "）", changes);
                             }
                         }
                     }
@@ -1329,10 +1677,11 @@ namespace PropertyManagement.Server.Services
                                 MonthlyRent = null,
                                 RentTo = null
                             });
-                            count.Inserted++;
+                            count.AddInserted(row, spaceKey);
                         }
                     }
                 }
+                if (rowErrors.Count > 0) count.AddFailed(row, spaceKey, rowErrors);
                 errors.AddRange(rowErrors);
                 row++;
             }
@@ -1356,6 +1705,8 @@ namespace PropertyManagement.Server.Services
             int colStatus = ColIndex(map, "状态");
 
             var count = new ImportCount();
+            // v1.2.0 第 3 轮：同批次内同名业主的占用表 —— 文件里不同楼栋/房号的同名业主逐一配对未被占用的档案
+            var usedOwnerIds = new HashSet<int>();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -1372,6 +1723,11 @@ namespace PropertyManagement.Server.Services
                 string startText = CellAt(sheet, row, colStart);
                 string endText = CellAt(sheet, row, colEnd);
                 string statusText = CellAt(sheet, row, colStatus);
+                // v1.2.0（CHG-v1.2.0-04）：模板预留空白行跳过
+                if (IsBlankRow(buildingNo, unitNo, roomNo, ownerName, ownerIdCard, ownerPhone,
+                        relTypeText, shareText, startText, endText, statusText))
+                { row++; continue; }
+                string relKey = KeyLabel(buildingNo, unitNo, roomNo) + " / " + OwnerKeyLabel(ownerName, null, ownerIdCard, ownerPhone);
 
                 var rowErrors = new List<ImportErrorItemDto>();
                 if (string.IsNullOrWhiteSpace(buildingNo)) rowErrors.Add(Err(row, "楼栋号", buildingNo, "楼栋号不能为空", "填写楼栋号"));
@@ -1381,7 +1737,10 @@ namespace PropertyManagement.Server.Services
                 if (!string.IsNullOrWhiteSpace(relTypeText) && !TryParseLabeled(relTypeText, OwnerRelTypeMap, out relType))
                     rowErrors.Add(Err(row, "关系类型", relTypeText, "关系类型不合法（业主/共有人/租户备案）", "填写 业主/共有人/租户备案"));
                 decimal share = 0;
-                if (!string.IsNullOrWhiteSpace(shareText) && !decimal.TryParse(shareText, out share)) rowErrors.Add(Err(row, "份额", shareText, "数字格式不正确", "填写 0~100"));
+                if (!string.IsNullOrWhiteSpace(shareText) &&
+                    !decimal.TryParse(AreaValue.Normalize(shareText), NumberStyles.AllowDecimalPoint,
+                        CultureInfo.InvariantCulture, out share))
+                    rowErrors.Add(Err(row, "份额", shareText, "数字格式不正确", "填写 0~100"));
                 OwnerRelStatus relStatus = OwnerRelStatus.Active;
                 bool hasStatusText = !string.IsNullOrWhiteSpace(statusText);
                 if (hasStatusText && !TryParseLabeled(statusText, OwnerRelStatusMap, out relStatus))
@@ -1391,14 +1750,30 @@ namespace PropertyManagement.Server.Services
                 {
                     string propLabel = buildingNo.Trim() + (string.IsNullOrWhiteSpace(unitNo) ? string.Empty : unitNo.Trim()) + roomNo.Trim();
                     int? propertyId = ResolvePropertyByKeyLoose(c, tx, buildingNo.Trim(), unitNo, roomNo.Trim());
-                    int? ownerId = ResolveOwner(c, tx, ownerName.Trim(), ownerIdCard, ownerPhone);
+                    // v1.2.0（CHG-v1.2.0-02 / 第 2 轮）：与「业主」模板共用同一套同名判定，并额外把**本行楼栋/房号**作为区分依据
+                    // —— 不同楼栋/房号的同名业主属不同业主（先按本房产已绑定的同名业主判定，再按常住地址比对）。
+                    OwnerMatch ownerMatch = MatchOwnerForImport(c, tx, ownerName, ownerIdCard, ownerPhone,
+                        propertyId, buildingNo, unitNo, roomNo, relType, usedOwnerIds);
+                    int? ownerId = ownerMatch.OwnerId;
+                    if (ownerId.HasValue) usedOwnerIds.Add(ownerId.Value);
+                    // 兜底配对的行：回执里写明配对到哪个档案，并提示核对（同名业主只能靠档案号/电话分辨）
+                    string pairNote = ownerMatch.PairedByOrder && ownerId.HasValue
+                        ? "同名业主按文件顺序配对到 档案 #" + ownerId.Value
+                          + (string.IsNullOrWhiteSpace(ownerPhone) ? "（本行未填业主电话）" : "（电话 " + ownerPhone.Trim() + "）")
+                          + "：请核对同名业主是否对应正确；如不对，请在本行补填「业主电话」或「业主证件号」后重传"
+                        : null;
                     if (!propertyId.HasValue)
                         rowErrors.Add(Err(row, "房号", propLabel,
                             string.IsNullOrWhiteSpace(unitNo) ? "找不到唯一对应的房产" : "找不到该房产",
                             string.IsNullOrWhiteSpace(unitNo) ? "请先维护房产；同楼栋存在多个同名房号时请补填单元号" : "请先维护房产或核对单元号"));
-                    else if (!ownerId.HasValue) rowErrors.Add(Err(row, "业主姓名", ownerName, "找不到该业主（重名请填写业主证件号或电话）", "请先维护业主或填写证件号/电话"));
+                    else if (!ownerId.HasValue)
+                        rowErrors.Add(Err(row, "业主姓名", ownerName,
+                            ownerMatch.Reason ?? "找不到该业主",
+                            ownerMatch.Suggestion ?? "请先维护业主或填写证件号/电话"));
                     else
                     {
+                        // 回执「对象」带上业主档案号：同名业主靠这一列才能分辨到底关联了谁
+                        relKey = propLabel + " / " + OwnerKeyLabel(ownerName, ownerId, ownerIdCard, ownerPhone);
                         DateTime effectiveAt = ParseDate(startText) ?? DateTime.Today;
                         DateTime? expireAt = ParseDate(endText);
                         // v1.1.2 I-01（负责人 2026-09-19 裁定 A）：同「房产 + 业主 + 生效日期」命中既有关系 → 覆盖处理。
@@ -1427,6 +1802,7 @@ namespace PropertyManagement.Server.Services
                                 }
                                 else
                                 {
+                                    var changes = new List<string>();
                                     // 只覆盖文件里填了值的字段（关系类型/份额/终止日期/状态留空 → 保留库内原值）
                                     OwnerRelType newRelType = string.IsNullOrWhiteSpace(relTypeText) ? beforeRel.RelType : relType;
                                     decimal newShare = share > 0 ? share : beforeRel.Share;
@@ -1444,19 +1820,32 @@ namespace PropertyManagement.Server.Services
                                         Status = newRelStatus
                                     });
                                     if (beforeRel.RelType != newRelType)
+                                    {
                                         WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "关系类型",
                                             RelTypeName(beforeRel.RelType), RelTypeName(newRelType), "批量导入");
+                                        changes.Add("关系类型：" + RelTypeName(beforeRel.RelType) + " → " + RelTypeName(newRelType));
+                                    }
                                     if (beforeRel.Share != newShare)
+                                    {
                                         WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "份额",
                                             beforeRel.Share.ToString("0.##"), newShare.ToString("0.##"), "批量导入");
+                                        changes.Add("份额：" + beforeRel.Share.ToString("0.##") + " → " + newShare.ToString("0.##"));
+                                    }
                                     if (!Equals(beforeRel.ExpireAt, newExpire))
+                                    {
                                         WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "终止日期",
                                             beforeRel.ExpireAt.HasValue ? beforeRel.ExpireAt.Value.ToString("yyyy-MM-dd") : string.Empty,
                                             newExpire.HasValue ? newExpire.Value.ToString("yyyy-MM-dd") : string.Empty, "批量导入");
+                                        changes.Add("终止日期：" + (beforeRel.ExpireAt.HasValue ? beforeRel.ExpireAt.Value.ToString("yyyy-MM-dd") : "（长期）")
+                                            + " → " + (newExpire.HasValue ? newExpire.Value.ToString("yyyy-MM-dd") : "（长期）"));
+                                    }
                                     if (beforeRel.Status != newRelStatus)
+                                    {
                                         WriteChangeLog(c, tx, BaseChangeObjectType.Relation, beforeRel.Id, "状态",
                                             RelStatusText(beforeRel.Status), RelStatusText(newRelStatus), "批量导入");
-                                    count.Updated++;
+                                        changes.Add("状态：" + RelStatusText(beforeRel.Status) + " → " + RelStatusText(newRelStatus));
+                                    }
+                                    count.AddUpdated(row, relKey + "（关系 #" + beforeRel.Id + "）", changes, pairNote);
                                 }
                             }
                             else
@@ -1472,11 +1861,12 @@ namespace PropertyManagement.Server.Services
                                     // 模板「状态」列给了就按填写值落库（历史档案导入），否则按终止日期自动判定
                                     Status = hasStatusText ? relStatus : ResolveRelStatus(expireAt)
                                 });
-                                count.Inserted++;
+                                count.AddInserted(row, relKey, pairNote);
                             }
                         }
                     }
                 }
+                if (rowErrors.Count > 0) count.AddFailed(row, relKey, rowErrors);
                 errors.AddRange(rowErrors);
                 row++;
             }
@@ -1487,17 +1877,38 @@ namespace PropertyManagement.Server.Services
         /// 业主关键字段变更留痕（t_base_change_log）。
         /// CHG-v1.1.2-01：新增 channel 参数 —— 批量导入覆盖走「批量导入」，档案页维护仍为「后台维护」，
         /// 便于在业主档案的「联系方式变更历史」里区分数据来源。
+        /// v1.2.0（CHG-v1.2.0-01）：返回逐字段变化描述，供导入回执写明「覆盖了什么」。
         /// </summary>
-        private void LogOwnerChanges(IDbConnection c, IDbTransaction tx, OwnerDto before, OwnerDto after, string channel = "后台维护")
+        private List<string> LogOwnerChanges(IDbConnection c, IDbTransaction tx, OwnerDto before, OwnerDto after, string channel = "后台维护")
         {
+            var changes = new List<string>();
             if (!Equals(before.Phone, after.Phone))
+            {
                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "联系电话", before.Phone, after.Phone, channel);
+                changes.Add("联系电话：" + Show(before.Phone) + " → " + Show(after.Phone));
+            }
             if (!Equals(before.EmergencyContactName, after.EmergencyContactName))
+            {
                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人", before.EmergencyContactName, after.EmergencyContactName, channel);
+                changes.Add("紧急联系人：" + Show(before.EmergencyContactName) + " → " + Show(after.EmergencyContactName));
+            }
             if (!Equals(before.EmergencyContactPhone, after.EmergencyContactPhone))
+            {
                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "紧急联系人电话", before.EmergencyContactPhone, after.EmergencyContactPhone, channel);
+                changes.Add("紧急联系人电话：" + Show(before.EmergencyContactPhone) + " → " + Show(after.EmergencyContactPhone));
+            }
             if (!Equals(before.ResidentAddress, after.ResidentAddress))
+            {
                 WriteChangeLog(c, tx, BaseChangeObjectType.Owner, after.Id, "常住地址", before.ResidentAddress, after.ResidentAddress, channel);
+                changes.Add("常住地址：" + Show(before.ResidentAddress) + " → " + Show(after.ResidentAddress));
+            }
+            return changes;
+        }
+
+        /// <summary>回执展示用：空值统一显示「（空）」，避免「旧 → 新」看不出是哪边为空。</summary>
+        private static string Show(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "（空）" : value.Trim();
         }
 
         /// <summary>读取业主原始行（不含统计聚合），供导入覆盖前的「变更前后」比对使用。</summary>
@@ -1636,26 +2047,184 @@ namespace PropertyManagement.Server.Services
                 new { buildingNo, unitNo, roomNo }, tx);
         }
 
-        /// <summary>按 姓名+证件号/电话 精确匹配业主，消除同名歧义；无证件/电话时按姓名（唯一）或提示重名。</summary>
-        private int? ResolveOwner(IDbConnection c, IDbTransaction tx, string name, string idCard, string phone)
+        /// <summary>导入期业主匹配结果（v1.2.0 CHG-v1.2.0-02）。</summary>
+        private sealed class OwnerMatch
         {
-            string ic = string.IsNullOrWhiteSpace(idCard) ? string.Empty : idCard.Trim();
-            string ph = string.IsNullOrWhiteSpace(phone) ? string.Empty : phone.Trim();
-            if (!string.IsNullOrWhiteSpace(ic))
+            public int? OwnerId;
+            /// <summary>true＝口径上属于「另一位业主」（同名但证件号/电话不同）→ 业主模板可新增。</summary>
+            public bool IsNewOwner;
+            /// <summary>
+            /// true＝本行是按「文件内同名行的出现顺序 ↔ 同名档案（档案号升序）」配对得到的（v1.2.0 第 3 轮兜底口径），
+            /// 回执需提示用户核对，避免同名配对与实际不符却被静默接受。
+            /// </summary>
+            public bool PairedByOrder;
+            public string Reason;
+            public string Suggestion;
+            /// <summary>无法唯一判定（同名多条且补充信息无法区分）→ 必须报错，不做自造合并。</summary>
+            public bool Ambiguous { get { return !OwnerId.HasValue && !IsNewOwner; } }
+        }
+
+        private sealed class OwnerPick
+        {
+            public int Id { get; set; }
+            public string IdCard { get; set; }
+            public string Phone { get; set; }
+            /// <summary>常住地址（v1.2.0 第 2 轮）：业主-房产关系模板用它与本行「楼栋/房号」比对。</summary>
+            public string ResidentAddress { get; set; }
+        }
+
+        /// <summary>
+        /// 导入期业主匹配（v1.2.0 CHG-v1.2.0-02）——业主模板与业主-房产关系模板共用一套判定：
+        ///   1) 填了证件号 → 按「姓名 + 证件号」定位；唯一即命中；没有匹配 → 属另一位业主（业主模板可新增）；
+        ///   2) 否则填了电话 → 按「姓名 + 电话」定位；同上；
+        ///   3) 都没填 → 按姓名找：命中唯一即同一人；命中多条时依次按
+        ///      ① 本行「楼栋/房号」对应房产**已绑定的同名业主** →
+        ///      ② 同名业主「常住地址」与本行「楼栋/房号」一致（唯一） →
+        ///      ③ 只有一名同名业主既无证件号也无电话
+        ///      三者之一区分（负责人 2026-09-21 两轮口径：同名但补充信息不重复、且**不同楼栋/房号的同名业主属不同业主**）；
+        ///      仍无法唯一确定 → <see cref="OwnerMatch.Ambiguous"/>，由调用方按行报错。
+        /// </summary>
+        /// <param name="propertyId">本行「楼栋/单元/房号」定位到的房产；业主模板传 null（没有房产上下文，只走姓名口径）。</param>
+        /// <param name="buildingNo">本行楼栋号（用于比对同名业主的常住地址）。</param>
+        /// <param name="unitNo">本行单元号（可空）。</param>
+        /// <param name="roomNo">本行房号。</param>
+        /// <param name="relType">本行的关系类型：只认同类型的既有关系（业主行不会被「共有人/租户备案」的同名业主抢走）。</param>
+        /// <param name="usedOwnerIds">
+        /// 同批次内已被占用的同名候选（业主-房产关系模板传入）：文件里同一姓名出现在不同楼栋/房号时，
+        /// 它们本就是不同业主，按出现顺序逐一配对未被占用的同名档案（v1.2.0 第 3 轮兜底口径）。传 null 表示不启用。
+        /// </param>
+        private OwnerMatch MatchOwnerForImport(IDbConnection c, IDbTransaction tx, string name, string idCard, string phone,
+            int? propertyId = null, string buildingNo = null, string unitNo = null, string roomNo = null,
+            OwnerRelType? relType = null, ISet<int> usedOwnerIds = null)
+        {
+            string n = (name ?? string.Empty).Trim();
+            string ic = (idCard ?? string.Empty).Trim();
+            string ph = (phone ?? string.Empty).Trim();
+
+            if (ic.Length > 0)
             {
-                var ids = c.Query<int>("SELECT id FROM t_owner WHERE name = @name AND id_card = @idCard AND del_flag = 0", new { name, idCard = ic }, tx).ToList();
-                if (ids.Count == 1) return ids[0];
-                return null;
+                var byCard = c.Query<int>(
+                    "SELECT id FROM t_owner WHERE name = @n AND id_card = @ic AND del_flag = 0",
+                    new { n, ic }, tx).ToList();
+                if (byCard.Count == 1) return new OwnerMatch { OwnerId = byCard[0] };
+                if (byCard.Count > 1)
+                    return new OwnerMatch
+                    {
+                        Reason = "同名且同证件号的业主有 " + byCard.Count + " 名，无法确定对象",
+                        Suggestion = "请先在「业主档案」核对重复档案（同证件号不应建档多次）后再导入"
+                    };
+                return new OwnerMatch
+                {
+                    IsNewOwner = true,
+                    Reason = "该姓名下没有与此证件号匹配的业主",
+                    Suggestion = "核对证件号；若确为新业主，请在「业主档案」建档或改用「业主」模板导入"
+                };
             }
-            if (!string.IsNullOrWhiteSpace(ph))
+
+            if (ph.Length > 0)
             {
-                var ids = c.Query<int>("SELECT id FROM t_owner WHERE name = @name AND phone = @phone AND del_flag = 0", new { name, phone = ph }, tx).ToList();
-                if (ids.Count == 1) return ids[0];
-                return null;
+                var byPhone = c.Query<int>(
+                    "SELECT id FROM t_owner WHERE name = @n AND phone = @ph AND del_flag = 0",
+                    new { n, ph }, tx).ToList();
+                if (byPhone.Count == 1) return new OwnerMatch { OwnerId = byPhone[0] };
+                if (byPhone.Count > 1)
+                    return new OwnerMatch
+                    {
+                        Reason = "同名且同电话的业主有 " + byPhone.Count + " 名，无法确定对象",
+                        Suggestion = "请先在「业主档案」核对重复档案后再导入"
+                    };
+                return new OwnerMatch
+                {
+                    IsNewOwner = true,
+                    Reason = "该姓名下没有与此电话匹配的业主",
+                    Suggestion = "核对电话；若确为新业主，请在「业主档案」建档或改用「业主」模板导入"
+                };
             }
-            var byName = c.Query<int>("SELECT id FROM t_owner WHERE name = @name AND del_flag = 0", new { name }, tx).ToList();
-            if (byName.Count == 1) return byName[0];
-            return null;
+
+            var byName = c.Query<OwnerPick>(
+                "SELECT id AS Id, COALESCE(NULLIF(TRIM(id_card), ''), '') AS IdCard, " +
+                "COALESCE(NULLIF(TRIM(phone), ''), '') AS Phone, " +
+                "COALESCE(TRIM(resident_address), '') AS ResidentAddress " +
+                "FROM t_owner WHERE name = @n AND del_flag = 0", new { n }, tx).ToList();
+            if (byName.Count == 1) return new OwnerMatch { OwnerId = byName[0].Id };
+            if (byName.Count > 1)
+            {
+                // ① 本行「楼栋/房号」指向的房产已经绑定了其中一位同名业主 → 判为该业主
+                //    （负责人 2026-09-21 第 2 轮口径：不同楼栋/房号的同名业主属不同业主）
+                if (propertyId.HasValue && propertyId.Value > 0)
+                {
+                    var ids = byName.Select(x => x.Id).ToList();
+                    // 只认与本行同类型的关系：同名的「共有人/租户备案」不会被用来判定「业主」行
+                    var boundToTarget = relType.HasValue
+                        ? c.Query<int>(
+                            "SELECT DISTINCT owner_id FROM t_owner_property_rel " +
+                            "WHERE property_id = @propertyId AND del_flag = 0 AND rel_type = @relType AND owner_id IN @ids",
+                            new { propertyId = propertyId.Value, relType = (int)relType.Value, ids }, tx).ToList()
+                        : c.Query<int>(
+                            "SELECT DISTINCT owner_id FROM t_owner_property_rel " +
+                            "WHERE property_id = @propertyId AND del_flag = 0 AND owner_id IN @ids",
+                            new { propertyId = propertyId.Value, ids }, tx).ToList();
+                    if (boundToTarget.Count == 1) return new OwnerMatch { OwnerId = boundToTarget[0] };
+                }
+
+                // ② 同名业主的「常住地址」与本行 楼栋[+单元]+房号 一致且唯一 → 判为该业主
+                //    （业主档案从原始资料导入时地址往往已写明，等同「不同楼栋/房号」的档案依据）
+                if (!string.IsNullOrWhiteSpace(buildingNo) && !string.IsNullOrWhiteSpace(roomNo))
+                {
+                    var addressHit = byName
+                        .Where(x => AddressMatchesProperty(x.ResidentAddress, buildingNo, unitNo, roomNo))
+                        .ToList();
+                    if (addressHit.Count == 1) return new OwnerMatch { OwnerId = addressHit[0].Id };
+                }
+
+                // ③ 只有一名同名业主没有任何补充信息 → 判定为该名（v1.2.0 第 1 轮口径）
+                var noExtraInfo = byName.Where(x => x.IdCard.Length == 0 && x.Phone.Length == 0).ToList();
+                if (noExtraInfo.Count == 1) return new OwnerMatch { OwnerId = noExtraInfo[0].Id };
+
+                // ④ 兜底（v1.2.0 第 3 轮，负责人 2026-09-21 口径）：本模板的用途就是「把业主与房产绑定起来」，
+                //    文件里同一姓名出现在不同楼栋/房号时，它们本就是不同业主；
+                //    因此按「本批次内未被占用的同名档案」配对（优先档案里还没有房产的那位，其次按档案号升序），
+                //    并在回执里提示核对（PairedByOrder）。
+                if (usedOwnerIds != null)
+                {
+                    var free = byName.Where(x => !usedOwnerIds.Contains(x.Id)).ToList();
+                    if (free.Count > 0)
+                    {
+                        var neverBound = relType.HasValue
+                            ? free.Where(x => !HasAnyRelation(c, tx, x.Id, relType.Value)).ToList()
+                            : new List<OwnerPick>();
+                        var pick = (neverBound.Count > 0 ? neverBound : free).OrderBy(x => x.Id).First();
+                        return new OwnerMatch { OwnerId = pick.Id, PairedByOrder = true };
+                    }
+                }
+
+                bool hasPropertyContext = !string.IsNullOrWhiteSpace(buildingNo) && !string.IsNullOrWhiteSpace(roomNo);
+                return new OwnerMatch
+                {
+                    Reason = "同名业主有 " + byName.Count + " 名，无法确定对应哪一位"
+                        + (hasPropertyContext
+                            ? "（本行「" + (buildingNo ?? string.Empty).Trim() + (roomNo ?? string.Empty).Trim()
+                              + "」没有绑定其中任何一位，且没有一位的常住地址与本行楼栋/房号一致）"
+                            : (noExtraInfo.Count == 0 ? "（这些同名业主都填了证件号或电话）" : string.Empty)),
+                    Suggestion = hasPropertyContext
+                        ? "补充「证件号」或「电话」区分同名业主后再导入；或先在「业主-房产关系」为其中一位登记本房产"
+                        : "补充「证件号」或「电话」区分同名业主后再导入"
+                };
+            }
+            return new OwnerMatch
+            {
+                IsNewOwner = true,
+                Reason = "找不到该业主",
+                Suggestion = "请先在「业主档案」维护该业主，或填写证件号/电话"
+            };
+        }
+
+        /// <summary>该业主是否存在未删除的、指定类型的关系（兜底配对时优先挑「档案里还没有房产」的同名业主）。</summary>
+        private static bool HasAnyRelation(IDbConnection c, IDbTransaction tx, int ownerId, OwnerRelType relType)
+        {
+            return c.ExecuteScalar<int>(
+                "SELECT COUNT(1) FROM t_owner_property_rel WHERE owner_id = @ownerId AND del_flag = 0 AND rel_type = @relType",
+                new { ownerId, relType = (int)relType }, tx) > 0;
         }
 
         /// <summary>取指定房产的活跃业主 id（业主类型关系，优先），用于车位绑定房产后回填 owner_id。</summary>
@@ -1796,6 +2365,17 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        /// <summary>房产用途文案（v1.2.0 CHG-v1.2.0-03：模板「用途」列口径与房产列表一致）。</summary>
+        private static string UsageText(PropertyUsage usage)
+        {
+            switch (usage)
+            {
+                case PropertyUsage.Commercial: return "商铺";
+                case PropertyUsage.Vacant: return "空置";
+                default: return "住宅";
+            }
+        }
+
         private static string RelTypeName(OwnerRelType type)
         {
             switch (type)
@@ -1827,20 +2407,60 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        /// <summary>
+        /// 读取单元格文本（v1.2.0 CHG-v1.2.0-04：兼容「从原始档案复制粘贴」的各式单元格）。
+        /// 旧实现直接 GetString()：日期单元格按显示格式回显、数字单元格回显带千分位的格式串，
+        /// 现场把档案数据整段粘进模板后常出现 yyyy/MM/dd、1,234.56、全角空格等情况。
+        /// 现按单元格真实类型取值：日期 → yyyy-MM-dd、数字 → 原始数值串、文本 → 原样（去首尾空白）。
+        /// </summary>
         private static string Cell(IXLWorksheet sheet, int row, int col)
         {
             var cell = sheet.Cell(row, col);
-            return cell.IsEmpty() ? string.Empty : cell.GetString().Trim();
+            if (cell.IsEmpty()) return string.Empty;
+            string text;
+            switch (cell.DataType)
+            {
+                case XLDataType.DateTime:
+                    DateTime dt = cell.GetDateTime();
+                    text = dt.TimeOfDay == TimeSpan.Zero
+                        ? dt.ToString("yyyy-MM-dd")
+                        : dt.ToString("yyyy-MM-dd HH:mm:ss");
+                    break;
+                case XLDataType.Number:
+                    double num = cell.GetDouble();
+                    text = Math.Abs(num) < 1e15 && Math.Abs(num - Math.Truncate(num)) < 1e-9
+                        ? ((long)num).ToString(CultureInfo.InvariantCulture)
+                        : num.ToString("0.##########", CultureInfo.InvariantCulture);
+                    break;
+                case XLDataType.Boolean:
+                    text = cell.GetBoolean() ? "是" : "否";
+                    break;
+                default:
+                    text = cell.GetString();
+                    break;
+            }
+            // 复制粘贴常见：首尾带普通空格／不换行空格／全角空格
+            return (text ?? string.Empty).Trim(' ', '\t', '\r', '\n', '\u00A0', '\u3000');
         }
 
         private static ImportErrorItemDto Err(int row, string field, string content, string reason, string suggestion) =>
             new ImportErrorItemDto { RowNo = row, Field = field, Content = content, Reason = reason, Suggestion = suggestion };
 
+        /// <summary>
+        /// 宽容日期解析（v1.2.0 CHG-v1.2.0-04）：全角数字/句点、2026年1月1日、2026/1/1、2026.1.1 都能识别。
+        /// 兼容不了历史档案的常见写法会由调用方按「留空」处理，不再整行失败。
+        /// </summary>
         private static DateTime? ParseDate(string text)
         {
             if (string.IsNullOrWhiteSpace(text)) return null;
+            string t = AreaValue.Normalize(text);
+            if (t.Length == 0) return null;
             DateTime result;
-            return DateTime.TryParse(text, out result) ? result : (DateTime?)null;
+            if (DateTime.TryParse(t, CultureInfo.CurrentCulture, DateTimeStyles.None, out result)) return result;
+            if (DateTime.TryParse(t, CultureInfo.InvariantCulture, DateTimeStyles.None, out result)) return result;
+            string zh = t.Replace("年", "-").Replace("月", "-").Replace("日", string.Empty).Trim('-', '.', '/');
+            if (DateTime.TryParse(zh, CultureInfo.InvariantCulture, DateTimeStyles.None, out result)) return result;
+            return null;
         }
 
         private static TEnum ParseEnum<TEnum>(string text, TEnum fallback) where TEnum : struct

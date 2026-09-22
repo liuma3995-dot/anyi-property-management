@@ -153,6 +153,7 @@
     <Compile Include="Infrastructure\Data\DbConfig.cs" />
     <Compile Include="Infrastructure\Data\IDbConnectionFactory.cs" />
     <Compile Include="Infrastructure\Data\SqliteConnectionFactory.cs" />
+    <Compile Include="Infrastructure\SqlAddress.cs" />
     <Compile Include="Infrastructure\Repositories\SqlAuditLogRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlBaseInfoRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlDictRepository.cs" />
@@ -197,6 +198,7 @@
     <Compile Include="Services\DictService.cs" />
     <Compile Include="Services\DisputeService.cs" />
     <Compile Include="Services\DisputeCloseReportService.cs" />
+    <Compile Include="Services\OwnerProfileReportService.cs" />
     <Compile Include="Services\DisputeAttachmentService.cs" />
     <Compile Include="Services\PdfFontSupport.cs" />
     <Compile Include="Services\EmergencyService.cs" />
@@ -391,6 +393,12 @@
     </EmbeddedResource>
     <EmbeddedResource Include="Infrastructure\Data\migration_056.sql">
     	<LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_056.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_057.sql">
+    	<LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_057.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_058.sql">
+    	<LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_058.sql</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

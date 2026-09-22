@@ -17,10 +17,12 @@ namespace PropertyManagement.Server.Api
     public class ReportsController : ApiController
     {
         private readonly ReportService _reports;
+        private readonly OwnerProfileReportService _ownerProfile;
 
         public ReportsController()
         {
             _reports = new ReportService();
+            _ownerProfile = new OwnerProfileReportService();
         }
 
         [HttpGet]
@@ -60,6 +62,29 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportChargeItems(request));
         }
 
+        /// <summary>
+        /// 支出登记明细导出（CHG-v1.2.0-25，PDF）：按页面当前筛选条件（关键字 / 类别 / 状态）导出明细，
+        /// 文件写 t_report_log 留痕后经 /reports/files/{id} 下载。
+        /// </summary>
+        [HttpPost]
+        [Route("expenses/export")]
+        public ApiResponse<ReportLogDto> ExportExpenses(ExpenseExportRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportExpenses(request));
+        }
+
+        /// <summary>
+        /// 收款登记「应缴明细」导出 PDF（CHG-v1.2.0-32）：口径 = 当前所选缴费对象的全部应缴明细
+        /// （含已结清记录），供「清理（删除）已结清记录」之前先归档留存；
+        /// 文件写 t_report_log（report_type = arrear_detail）后经 /reports/files/{id} 下载。
+        /// </summary>
+        [HttpPost]
+        [Route("arrear-details/export")]
+        public ApiResponse<ReportLogDto> ExportArrearDetails(ArrearDetailExportRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportArrearDetails(request, GetUsername()));
+        }
+
         /// <summary>导出收据打印模板（CHG-v1.1.0-14：收据号下线，模板含逐项收款明细）。</summary>
         [HttpPost]
         [Route("receipt-template")]
@@ -77,6 +102,30 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<ReportLogDto> ExportRefundRecord(RefundRecordExportRequest request)
         {
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportRefundRecord(request, GetUsername(), GetIp()));
+        }
+
+        /// <summary>
+        /// 业主档案导出 PDF（CHG-v1.2.0-13）：本年度缴费概况 + 账单明细 + 收款明细。
+        /// 与「导出 Excel（业主档案表格）」并存，互不影响；文件写 t_report_log 留痕后经 /reports/files/{id} 下载。
+        /// </summary>
+        [HttpPost]
+        [Route("owners/{id:int}/profile-pdf")]
+        public ApiResponse<ReportLogDto> ExportOwnerProfile(int id, OwnerProfileExportRequest request)
+        {
+            int? year = request == null ? null : request.Year;
+            return ApiResponse<ReportLogDto>.Ok(_ownerProfile.Export(id, year, GetUsername()));
+        }
+
+        /// <summary>
+        /// 业主档案导出 PDF —— **全部业主**（CHG-v1.2.0-17）：汇总表 + 逐户概况/账单/收款明细。
+        /// 请求体可带 year（默认当前年度）。
+        /// </summary>
+        [HttpPost]
+        [Route("owners/profile-pdf-all")]
+        public ApiResponse<ReportLogDto> ExportAllOwnerProfiles(OwnerProfileExportRequest request)
+        {
+            int? year = request == null ? null : request.Year;
+            return ApiResponse<ReportLogDto>.Ok(_ownerProfile.ExportAll(year, GetUsername()));
         }
 
         [HttpGet]

@@ -41,7 +41,10 @@ namespace PropertyManagement.Client.Services
 
         Task<DashboardDto> GetDashboardAsync();
 
-        /// <summary>仪表盘统计（period = yyyy-MM；R17 仪表盘月份选择器）。</summary>
+        /// <summary>
+        /// 仪表盘统计：period = `yyyy-MM`（按月）或 `yyyy`（按年，CHG-v1.2.0-26）；空 = 当前月。
+        /// 返回体 <c>Annual</c> 告知实际生效粒度。
+        /// </summary>
         Task<DashboardDto> GetDashboardAsync(string period);
 
         // ==================== R17 顶部栏与仪表盘交互 ====================
@@ -146,6 +149,13 @@ namespace PropertyManagement.Client.Services
 
         /// <summary>CHG-v1.1.2-05：收支明细流水导出（Excel/PDF）。</summary>
         Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request);
+
+        /// <summary>
+        /// CHG-v1.2.0-25：支出登记明细导出（PDF）。
+        /// 请求体带页面当前筛选条件（关键字 / 类别 / 状态），返回导出留痕后经 DownloadReportFileAsync 下载。
+        /// </summary>
+        Task<ReportLogDto> ExportExpensesAsync(ExpenseExportRequest request);
+
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);
 
@@ -156,6 +166,31 @@ namespace PropertyManagement.Client.Services
         /// CHG-v1.1.2-41：导出「退款/减免/调整单据」PDF（按单据主键，服务端回查金额与账单口径）。
         /// </summary>
         Task<ReportLogDto> ExportRefundRecordAsync(RefundRecordExportRequest request);
+
+        /// <summary>
+        /// CHG-v1.2.0-13：业主档案导出 PDF（本年度缴费概况 + 账单明细 + 收款明细）。
+        /// 年度为空 = 当前年度；返回导出留痕记录，再由 DownloadReportFileAsync 下载。
+        /// </summary>
+        Task<ReportLogDto> ExportOwnerProfilePdfAsync(int ownerId, int? year);
+
+        /// <summary>
+        /// CHG-v1.2.0-17：业主档案导出 PDF —— **全部业主**（汇总表 + 逐户缴费概况与缴费明细）。
+        /// 年度为空 = 当前年度；返回导出留痕记录，再由 DownloadReportFileAsync 下载。
+        /// </summary>
+        Task<ReportLogDto> ExportAllOwnerProfilesPdfAsync(int? year);
+
+        /// <summary>
+        /// CHG-v1.2.0-31：收款登记「应缴明细」批量删除已结清记录（归档语义）。
+        /// 只从应缴明细移除，账单与收款/退款/财报/流水/业主档案数据不变；
+        /// 未结清记录由服务端逐条拒绝并在结果里回报原因。
+        /// </summary>
+        Task<BillArchiveResultDto> ArchiveSettledBillsAsync(SettledBillArchiveRequest request);
+
+        /// <summary>
+        /// CHG-v1.2.0-32：收款登记「应缴明细」导出 PDF（按缴费对象，含已结清记录）。
+        /// 返回导出留痕记录，再由 DownloadReportFileAsync 下载。
+        /// </summary>
+        Task<ReportLogDto> ExportArrearDetailsPdfAsync(ArrearDetailExportRequest request);
 
         // ==================== M5 基础信息与导入（PG-INF-01~05） ====================
         Task<List<CommunityDto>> GetCommunitiesAsync(string keyword = null);
@@ -191,6 +226,9 @@ namespace PropertyManagement.Client.Services
         /// <summary>导入批次记录批量删除（v1.1.0-⑤）：软删留痕。</summary>
         Task<RecordBatchDeleteResultDto> BatchDeleteImportLogsAsync(RecordBatchDeleteRequest request);
         Task<byte[]> DownloadImportErrorsAsync(int id);
+
+        /// <summary>导入回执（v1.2.0 CHG-v1.2.0-01）：逐行 新增/覆盖/失败，无论有无失败行都可下载。</summary>
+        Task<byte[]> DownloadImportReceiptAsync(int id);
         Task<ExportLogDto> ExportAsync(BaseInfoExportRequest request);
         Task DownloadExportFileAsync(int id, string savePath);
         Task<string> GetParamAsync(string key);

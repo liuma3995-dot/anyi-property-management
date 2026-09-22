@@ -555,6 +555,8 @@ namespace PropertyManagement.Server.Services
                         ? payerInput.Measures
                         : ObjectMeasuresOf(request, candidate);
                     int? explicitSpecId = payerInput == null ? null : payerInput.SpecId;
+                    // CHG-v1.2.0-12：档案对象（房产/车位/业主）也支持逐行手选规格；未选＝自动匹配（原口径）
+                    if (payerInput == null) { explicitSpecId = ObjectSpecIdOf(request, candidate); }
                     // CHG-v1.1.2-50：出账时改价 —— 只取「本行」提交的单价，未提交＝按价目表规格单价计价
                     decimal? priceOverride = payerInput != null
                         ? payerInput.UnitPriceOverride
@@ -1028,6 +1030,8 @@ namespace PropertyManagement.Server.Services
                         // CHG-v1.1.2-34：档案对象的「手填」计量参数（与生成账单同口径，保证试算=结果）
                         measures = ObjectMeasuresOf(generate, candidate);
                     }
+                    // CHG-v1.2.0-12：档案对象手选规格（试算与生成同口径，保证「所见即所出」）
+                    if (payerInput == null) { explicitSpecId = ObjectSpecIdOf(generate, candidate); }
                     // CHG-v1.1.2-50：出账时改价（试算与生成同口径，保证「所见即所出」）
                     decimal? priceOverride = payerInput != null
                         ? payerInput.UnitPriceOverride
@@ -1393,20 +1397,7 @@ namespace PropertyManagement.Server.Services
         /// </summary>
         private static IDictionary<int, decimal> ObjectMeasuresOf(BillGenerateRequest request, BillObjectCandidate candidate)
         {
-            if (request == null || request.ObjectMeasures == null || request.ObjectMeasures.Count == 0 || candidate == null)
-            {
-                return null;
-            }
-            string kind;
-            switch (candidate.Kind)
-            {
-                case BillObjectKind.Parking: kind = "parking"; break;
-                case BillObjectKind.Owner: kind = "owner"; break;
-                case BillObjectKind.Property: kind = "property"; break;
-                default: return null;
-            }
-            BillObjectMeasureRequest hit = request.ObjectMeasures.FirstOrDefault(x => x != null &&
-                x.ObjectId == candidate.Id && string.Equals((x.Kind ?? string.Empty).Trim(), kind, StringComparison.OrdinalIgnoreCase));
+            BillObjectMeasureRequest hit = FindObjectInput(request, candidate);
             if (hit == null || hit.Measures == null || hit.Measures.Count == 0) { return null; }
             return hit.Measures;
         }
@@ -1414,7 +1405,14 @@ namespace PropertyManagement.Server.Services
         /// <summary>
         /// CHG-v1.1.2-50：档案对象（房产 / 车位 / 业主）的出账改价 —— 与计量参数同键（对象类型 + 对象 ID）。
         /// </summary>
-        private static decimal? ObjectPriceOverrideOf(BillGenerateRequest request, BillObjectCandidate candidate)
+        private static int? ObjectSpecIdOf(BillGenerateRequest request, BillObjectCandidate candidate)
+        {
+            BillObjectMeasureRequest hit = FindObjectInput(request, candidate);
+            return hit == null ? (int?)null : (hit.SpecId.HasValue && hit.SpecId.Value > 0 ? hit.SpecId : null);
+        }
+
+        /// <summary>按「对象类型 + 对象 ID」取本次出账提交的行内输入（手选规格 / 手填计量 / 改价共用）。</summary>
+        private static BillObjectMeasureRequest FindObjectInput(BillGenerateRequest request, BillObjectCandidate candidate)
         {
             if (request == null || request.ObjectMeasures == null || request.ObjectMeasures.Count == 0 || candidate == null)
             {
@@ -1428,8 +1426,13 @@ namespace PropertyManagement.Server.Services
                 case BillObjectKind.Property: kind = "property"; break;
                 default: return null;
             }
-            BillObjectMeasureRequest hit = request.ObjectMeasures.FirstOrDefault(x => x != null &&
+            return request.ObjectMeasures.FirstOrDefault(x => x != null &&
                 x.ObjectId == candidate.Id && string.Equals((x.Kind ?? string.Empty).Trim(), kind, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static decimal? ObjectPriceOverrideOf(BillGenerateRequest request, BillObjectCandidate candidate)
+        {
+            BillObjectMeasureRequest hit = FindObjectInput(request, candidate);
             return hit == null ? (decimal?)null : hit.UnitPriceOverride;
         }
 
@@ -1737,6 +1740,78 @@ namespace PropertyManagement.Server.Services
             _audit.Write("ARREARS_RESTORE", "bill", string.Join(",", request.DismissIds),
                 "恢复台账 " + affected + " 条", userName: operatorName, ip: ip, result: "Success");
             return affected;
+        }
+
+        // ---------- 收款登记「应缴明细·批量删除已结清记录」（CHG-v1.2.0-31） ----------
+        /// <summary>
+        /// 收款登记「应缴明细」记录管理：把**已结清**账单从应缴明细列表移除（归档语义）。
+        /// 与「欠费台账移出台账」（CHG-v1.1.2-03）同一口径 ——
+        /// **只写归档标记**，账单行本身、收款/退款记录、财务报表、收支明细流水与业主档案缴费概况完全不变。
+        /// 逐条校验：未结清（净实缴 &lt; 应收）、已删除、不存在的记录一律拒绝并回报原因；
+        /// 已归档的重复提交幂等跳过。审计写 BILL_ARCHIVE_SETTLED。
+        /// </summary>
+        public BillArchiveResultDto ArchiveSettledBills(SettledBillArchiveRequest request,
+            string operatorName = null, string ip = null)
+        {
+            var ids = (request == null || request.BillIds == null ? new List<int>() : request.BillIds)
+                .Distinct().Where(x => x > 0).ToList();
+            if (ids.Count == 0)
+            {
+                throw ApiException.BadRequest("请先选择要清理的已结清记录");
+            }
+
+            int archived;
+            var skipped = new List<string>();
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                Dictionary<int, BillArchiveCandidate> candidates =
+                    _finance.QueryBillArchiveCandidates(connection, ids).ToDictionary(x => x.Id);
+
+                var accepted = new List<int>();
+                foreach (int id in ids)
+                {
+                    BillArchiveCandidate candidate;
+                    string no = "BILL-" + id.ToString("D4");
+                    if (!candidates.TryGetValue(id, out candidate))
+                    {
+                        skipped.Add(no + " 不存在或已被删除");
+                    }
+                    else if (candidate.Deleted)
+                    {
+                        skipped.Add(no + " 已删除");
+                    }
+                    else if (!candidate.Settled)
+                    {
+                        skipped.Add(no + " 未结清（仅已结清记录可清理）");
+                    }
+                    else if (!candidate.Archived)
+                    {
+                        accepted.Add(id);
+                    }
+                }
+
+                archived = _finance.ArchiveSettledBills(connection, transaction, accepted,
+                    "收款登记·应缴明细·已结清记录清理", operatorName);
+                transaction.Commit();
+            }
+
+            string message = "已清理 " + archived + " 条已结清记录（仅从应缴明细移除，账单与收款、财务、流水记录均保留）";
+            if (skipped.Count > 0)
+            {
+                message += "；未清理 " + skipped.Count + " 条：" + string.Join("、", skipped);
+            }
+
+            _audit.Write("BILL_ARCHIVE_SETTLED", "bill", string.Join(",", ids), message,
+                userName: operatorName, ip: ip, result: "Success");
+
+            return new BillArchiveResultDto
+            {
+                ArchivedCount = archived,
+                SkippedCount = skipped.Count,
+                SkippedItems = skipped,
+                Message = message
+            };
         }
 
         /// <summary>批次失败明细（fail_detail JSON 结构）。</summary>

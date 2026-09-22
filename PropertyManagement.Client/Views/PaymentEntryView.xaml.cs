@@ -34,5 +34,27 @@ namespace PropertyManagement.Client.Views
         {
             (DataContext as PaymentEntryViewModel)?.NotifyUserChangedSelection();
         }
+
+        // ==================== CHG-v1.2.0-36：浮层跟随窗口 ====================
+        // 同「退款/减免/调整」页：点开「缴费对象」下拉后拖动客户端窗口，ComboBox 下拉（WPF Popup，
+        // 独立顶层窗口）不会自动跟随 → 与窗口分离。处置：窗口位置变化时收起已展开的下拉。
+        private Window _hostWindow;
+
+        private void Root_Loaded(object sender, RoutedEventArgs e)
+        {
+            Window host = Window.GetWindow(this);
+            if (ReferenceEquals(host, _hostWindow)) { return; }
+            if (_hostWindow != null) { _hostWindow.LocationChanged -= HostWindow_LocationChanged; }
+            _hostWindow = host;
+            if (_hostWindow != null) { _hostWindow.LocationChanged += HostWindow_LocationChanged; }
+        }
+
+        private void HostWindow_LocationChanged(object sender, System.EventArgs e)
+        {
+            if (PaymentObjectCombo != null && PaymentObjectCombo.IsDropDownOpen)
+            {
+                PaymentObjectCombo.IsDropDownOpen = false;
+            }
+        }
     }
 }

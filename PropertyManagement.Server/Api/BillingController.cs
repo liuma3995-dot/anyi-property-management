@@ -231,6 +231,16 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<int> RestoreArrears(ArrearDismissRequest request) =>
             ApiResponse<int>.Ok(_billing.RestoreArrears(request, GetUsername(), GetIp()));
 
+        /// <summary>
+        /// 收款登记「应缴明细」批量删除已结清记录（CHG-v1.2.0-31）：
+        /// 归档语义 —— 只把已结清账单从应缴明细列表移除，账单与收款/退款/财务报表/收支明细流水/
+        /// 业主档案缴费概况完全不变；未结清记录一律拒绝并在结果里回报原因。
+        /// </summary>
+        [HttpPost]
+        [Route("bills/archive-settled")]
+        public ApiResponse<BillArchiveResultDto> ArchiveSettledBills(SettledBillArchiveRequest request) =>
+            ApiResponse<BillArchiveResultDto>.Ok(_billing.ArchiveSettledBills(request, GetUsername(), GetIp()));
+
         /// <summary>操作人（BR-COM-01 / DM-07 §三 审计八列）：从鉴权中间件写入的 OWIN 环境读取。</summary>
         private string GetUsername()
         {

@@ -62,5 +62,23 @@ namespace PropertyManagement.Client.Views
                 row.UnitPriceOverrideText = text;
             }
         }
+
+        /// <summary>
+        /// CHG-v1.2.0-18：缴费对象行「规格手选」写回。
+        ///
+        /// 根因（负责人 2026-09-21 反馈「逐行手选无法匹配其它规格」，界面实测复现）：
+        /// 本表格 `IsReadOnly="True"` —— **只读 DataGrid 的模板单元格里，控件的双向绑定不会回写源**
+        /// （改选下拉框后，行对象的 SelectedSpec 仍是「自动匹配」，金额自然不变）。
+        /// 与勾选框 / 手填计量 / 出账改价三处同口径：显示用 OneWay，选择变化由本处理器显式同步到行对象。
+        /// </summary>
+        private void RowSpecComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+        {
+            var combo = sender as ComboBox;
+            var row = combo == null ? null : combo.DataContext as BillObjectRow;
+            if (row == null) { return; }
+            var option = combo.SelectedItem as BillSpecOption;
+            if (option == null || ReferenceEquals(row.SelectedSpec, option)) { return; }
+            row.SelectedSpec = option;
+        }
     }
 }

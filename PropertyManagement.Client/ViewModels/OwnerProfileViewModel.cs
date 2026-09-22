@@ -7,10 +7,12 @@ using System.Windows;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Microsoft.Win32;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.BaseInfo;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
+using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
 {
@@ -59,6 +61,8 @@ namespace PropertyManagement.Client.ViewModels
             ConfirmBatchDeleteCommand = new AsyncRelayCommand(ConfirmBatchDeleteAsync);
             CancelBatchDeleteCommand = new RelayCommand(CloseBatchDelete);
             ExportCommand = new AsyncRelayCommand(ExportAsync);
+            ExportProfilePdfCommand = new AsyncRelayCommand(ExportProfilePdfAsync);
+            ExportAllProfilesPdfCommand = new AsyncRelayCommand(ExportAllProfilesPdfAsync);
             ViewRelationCommand = new RelayCommand<OwnerPropertyRelationRow>(row => ViewRelationRow = row);
             CloseViewCommand = new RelayCommand(() => ViewRelationRow = null);
             _ = RefreshAsync();
@@ -157,6 +161,12 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
         public IRelayCommand CancelBatchDeleteCommand { get; }
         public IAsyncRelayCommand ExportCommand { get; }
+
+        /// <summary>CHG-v1.2.0-13：导出业主本年度缴费概况与缴费明细 PDF。</summary>
+        public IAsyncRelayCommand ExportProfilePdfCommand { get; }
+
+        /// <summary>CHG-v1.2.0-17：导出**全部业主**本年度缴费概况与缴费明细 PDF（汇总 + 逐户）。</summary>
+        public IAsyncRelayCommand ExportAllProfilesPdfCommand { get; }
         public IRelayCommand<OwnerPropertyRelationRow> ViewRelationCommand { get; }
         public IRelayCommand CloseViewCommand { get; }
 
@@ -392,6 +402,73 @@ namespace PropertyManagement.Client.ViewModels
             finally
             {
                 IsBusy = false;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-13：导出该业主「本年度缴费概况 + 缴费明细记录」PDF。
+        /// 与「导出 Excel（业主档案表格）」两条通道并存，互不影响；留空年度 = 当前年度。
+        /// </summary>
+        private async Task ExportProfilePdfAsync()
+        {
+            if (_selected == null || _selected.Id <= 0)
+            {
+                ErrorText = "请先选择要导出的业主";
+                return;
+            }
+            int ownerId = _selected.Id;
+            string ownerName = _selected.Name ?? string.Empty;
+            string savedPath = null;
+            await RunAsync(async () =>
+            {
+                ReportLogDto log = await Api.ExportOwnerProfilePdfAsync(ownerId, DateTime.Today.Year);
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("导出失败：服务端未生成导出记录");
+                }
+                var dialog = new SaveFileDialog
+                {
+                    Title = "导出业主缴费概况与缴费明细（PDF）",
+                    Filter = "PDF 文件|*.pdf",
+                    FileName = "安怡物业-业主缴费概况-" + ownerName + "-" + DateTime.Today.Year + ".pdf"
+                };
+                if (dialog.ShowDialog() != true) { return; }
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                savedPath = dialog.FileName;
+            }, null);
+            if (!string.IsNullOrEmpty(savedPath))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "业主缴费概况 PDF 已导出：" + savedPath;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-17：导出**全部业主**的本年度缴费概况与缴费明细 PDF（汇总表 + 逐户明细）。
+        /// 与单业主导出、Excel 导出三条通道并存。
+        /// </summary>
+        private async Task ExportAllProfilesPdfAsync()
+        {
+            string savedPath = null;
+            await RunAsync(async () =>
+            {
+                ReportLogDto log = await Api.ExportAllOwnerProfilesPdfAsync(DateTime.Today.Year);
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("导出失败：服务端未生成导出记录");
+                }
+                var dialog = new SaveFileDialog
+                {
+                    Title = "导出全部业主缴费概况与缴费明细（PDF）",
+                    Filter = "PDF 文件|*.pdf",
+                    FileName = "安怡物业-全部业主缴费概况-" + DateTime.Today.Year + ".pdf"
+                };
+                if (dialog.ShowDialog() != true) { return; }
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                savedPath = dialog.FileName;
+            }, null);
+            if (!string.IsNullOrEmpty(savedPath))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "全部业主缴费概况 PDF 已导出：" + savedPath;
             }
         }
     }

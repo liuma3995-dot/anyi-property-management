@@ -518,7 +518,7 @@
                         <TextBlock FontSize="10" Foreground="#4A3AB0" TextWrapping="Wrap"
                                    Text="· 改价 = 新增规格 + 同名旧规格转停用（不原地改单价），历史账单金额不变" />
                         <TextBlock FontSize="10" Foreground="#4A3AB0" TextWrapping="Wrap"
-                                   Text="· 适用条件可按房产用途（住宅 / 商铺 / 空置）、房产状态（空置）或车位类型（产权 / 普通 / 临时）判定；业主 / 自定义缴费对象一律用「不限」规格出账，无档案对象由用户手选" />
+                                   Text="· 适用条件可按房产用途（住宅 / 商铺 / 空置）或车位类型（产权 / 普通 / 临时）判定；业主 / 自定义缴费对象一律用「不限」规格出账，无档案对象由用户手选" />
                         <TextBlock FontSize="10" Foreground="#4A3AB0" TextWrapping="Wrap"
                                    Text="· 批量删除：点击后才出现勾选框（未点击不显示）；被账单引用的规格只能停用不能删除" />
                     </StackPanel>
@@ -654,8 +654,8 @@
                             <ComboBoxItem Content="房产用途 = 商铺" />
                             <!-- CHG-v1.1.2-48：用途维度新增「空置」 -->
                             <ComboBoxItem Content="房产用途 = 空置" />
-                            <ComboBoxItem Content="房产状态 = 空置" />
                             <!-- CHG-v1.1.2-48：新增「车位类型」适用条件（按车位类型定价） -->
+                            <!-- CHG-v1.2.0-14：下线「房产状态 = 空置」——空置定价统一走「房产用途 = 空置」维度 -->
                             <ComboBoxItem Content="车位类型 = 产权" />
                             <ComboBoxItem Content="车位类型 = 普通" />
                             <ComboBoxItem Content="车位类型 = 临时" />

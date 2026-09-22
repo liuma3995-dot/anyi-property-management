@@ -286,6 +286,18 @@ namespace PropertyManagement.Contract.Enums
         Failed = 3        // 失败
     }
 
+    /// <summary>
+    /// 导入回执行处理结果（CHG-v1.2.0-01）。
+    /// 背景：重复数据改走「覆盖处理」后，用户拿不到「这一批到底覆盖了谁」的凭据，
+    /// 同名业主被覆盖后无法追溯 → 每次导入都落一份逐行回执（新增/覆盖/失败）。
+    /// </summary>
+    public enum ImportRowResult
+    {
+        Inserted = 0,   // 新增
+        Updated = 1,    // 覆盖（命中既有记录）
+        Failed = 2      // 失败（校验未通过，未入库）
+    }
+
     /// <summary>业主证件类型（PG-INF-02）。</summary>
     public enum OwnerIdCardType
     {

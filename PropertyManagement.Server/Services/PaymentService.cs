@@ -375,11 +375,59 @@ namespace PropertyManagement.Server.Services
         /// <summary>
         /// 批量登记退款/减免/调整（CHG-v1.1.0-13）：对所选多张账单**逐张**登记，
         /// 金额口径为「每张金额」（合计 = 每张金额 × 张数）；任一张校验失败则整批回滚。
+        /// CHG-v1.2.0-37（负责人 2026-09-22 反馈「全选后金额框只显示一张的金额、没有合计」）：
+        /// 新增**逐张金额**模式 —— 请求带 `Items`（每张账单各自金额）时按各自金额核销，
+        /// 客户端金额框展示并锁定为**合计**（每张按其登记上限：退款/调整＝实缴，减免＝未收余额）。
         /// 每张账单各自生成申请编号与账单号引用，保证退款/减免仍可按账单号跨模块追溯。
         /// </summary>
         public RefundBatchResultDto CreateRefundBatch(RefundAdjustmentRequest request,
             string operatorName = null, string ip = null)
         {
+            // ---------- 逐张金额模式（多选 / 全选：金额框＝合计） ----------
+            List<RefundBatchItemRequest> perBill = request == null || request.Items == null
+                ? new List<RefundBatchItemRequest>()
+                : request.Items.Where(x => x != null && x.BillId > 0)
+                    .GroupBy(x => x.BillId).Select(g => g.Last()).ToList();
+            if (perBill.Count > 0)
+            {
+                ValidateRefundRequest(request, requireAmount: false);
+                foreach (RefundBatchItemRequest item in perBill)
+                {
+                    if (item.Amount <= 0m)
+                    {
+                        throw ApiException.ValidationFailed(
+                            "账单 " + item.BillId + " 的登记金额必须大于 0");
+                    }
+                }
+
+                using (IDbConnection connection = _connectionFactory.OpenConnection())
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    var rows = new List<RefundAdjustmentDto>();
+                    foreach (RefundBatchItemRequest item in perBill)
+                    {
+                        rows.Add(ApplyRefund(connection, transaction, item.BillId,
+                            ForSingleBill(request, item.BillId, item.Amount), operatorName));
+                    }
+                    transaction.Commit();
+
+                    decimal sum = rows.Sum(x => x.Amount);
+                    _audit.Write("REFUND_BATCH_CREATE", "refund_batch", rows[0].RefNo,
+                        string.Format("批量{0}（逐张金额）：账单 {1} 张，合计 {2:0.00} 元，原因：{3}",
+                            request.RefundType, rows.Count, sum, request.Reason.Trim()),
+                        userName: operatorName, ip: ip, result: "成功");
+
+                    return new RefundBatchResultDto
+                    {
+                        Items = rows,
+                        Count = rows.Count,
+                        TotalAmount = sum,
+                        ArchiveReleasedCount = rows.Count(x => x.ArchiveReleased)
+                    };
+                }
+            }
+
+            // ---------- 旧口径（每张同额）：Amount = 每张金额 ----------
             List<int> billIds = request == null || request.BillIds == null
                 ? new List<int>()
                 : request.BillIds.Where(x => x > 0).Distinct().ToList();
@@ -409,14 +457,37 @@ namespace PropertyManagement.Server.Services
                 {
                     Items = items,
                     Count = items.Count,
-                    TotalAmount = total
+                    TotalAmount = total,
+                    // CHG-v1.2.0-35：批量里有多少张因重新欠费而解除了「已结清归档」
+                    ArchiveReleasedCount = items.Count(x => x.ArchiveReleased)
                 };
             }
         }
 
-        private static void ValidateRefundRequest(RefundAdjustmentRequest request)
+        /// <summary>
+        /// CHG-v1.2.0-37：把「批量请求」投影为「单张请求」（逐张金额模式用）——
+        /// 保留类型 / 原因 / 方式 / 大额确认 / 附件，换成该张账单自己的金额。
+        /// </summary>
+        private static RefundAdjustmentRequest ForSingleBill(RefundAdjustmentRequest source, int billId, decimal amount)
         {
-            if (request.Amount <= 0)
+            return new RefundAdjustmentRequest
+            {
+                BillId = billId,
+                BillIds = new List<int> { billId },
+                RefundType = source.RefundType,
+                Amount = amount,
+                Reason = source.Reason,
+                Method = source.Method,
+                ConfirmedByManager = source.ConfirmedByManager,
+                AttachmentName = source.AttachmentName,
+                AttachmentPath = source.AttachmentPath
+            };
+        }
+
+        private static void ValidateRefundRequest(RefundAdjustmentRequest request, bool requireAmount = true)
+        {
+            // CHG-v1.2.0-37：逐张金额模式下总金额由 Items 推导，故不校验 request.Amount
+            if (requireAmount && request.Amount <= 0)
             {
                 throw ApiException.ValidationFailed("退款/减免金额必须大于 0");
             }
@@ -533,6 +604,20 @@ namespace PropertyManagement.Server.Services
                 }
                 bill.Status = ResolveBillStatusByMoney(bill.Amount, bill.PaidAmount, bill.DueAt);
                 _finance.UpdateBillAmountAndPaid(connection, transaction, bill);
+
+                // CHG-v1.2.0-35（负责人 2026-09-22 反馈）：归档只对「已结清记录」成立 ——
+                // 退款/冲正让归档账单重新欠费时必须**自动解除归档**，否则收款登记会出现
+                // 「缴费对象显示欠费 N 笔、应缴明细却是空的」这种自相矛盾的状态（账单收不回来）。
+                if (bill.PaidAmount < bill.Amount)
+                {
+                    int released = _finance.ClearBillArchiveIfUnsettled(
+                        connection, transaction, new[] { bill.Id });
+                    if (released > 0)
+                    {
+                        refund.ArchiveReleased = true;
+                        detail += "；已解除「已结清归档」→ 该账单重新计入收款登记应缴明细";
+                    }
+                }
                 _finance.InsertBillStatusLog(connection, transaction, new BillStatusLogDto
                 {
                     BillId = bill.Id,

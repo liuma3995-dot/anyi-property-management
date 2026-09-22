@@ -62,9 +62,13 @@ namespace PropertyManagement.Client.ViewModels
                 if (Dto == null) { return "—"; }
                 if (Dto.OwnerId.HasValue && !Dto.PropertyId.HasValue && !Dto.ParkingId.HasValue) { return "业主直缴"; }
                 if (Dto.ParkingId.HasValue) { return "车位 " + (string.IsNullOrEmpty(Dto.SpaceNo) ? "—" : Dto.SpaceNo); }
+                // CHG-v1.2.0-33：逐行「缴费对象」与下拉同口径补出单元（楼栋 单元 房号；单元缺失自动省略）
                 string building = string.IsNullOrEmpty(Dto.BuildingNo) ? string.Empty : Dto.BuildingNo + " ";
+                string unitText = string.IsNullOrEmpty(Dto.UnitNo) ? string.Empty : Dto.UnitNo.Trim();
+                if (unitText.Length > 0 && !unitText.EndsWith("单元", StringComparison.Ordinal)) { unitText += "单元"; }
+                string unit = unitText.Length == 0 ? string.Empty : unitText + " ";
                 string room = string.IsNullOrEmpty(Dto.RoomNo) ? (Dto.PropertyNo ?? "—") : Dto.RoomNo;
-                return (building + room).Trim();
+                return (building + unit + room).Trim();
             }
         }
 
@@ -148,6 +152,12 @@ namespace PropertyManagement.Client.ViewModels
         public string RoomNo { get; set; }
 
         /// <summary>
+        /// CHG-v1.2.0-33：单元号（业主-房产关系绑定的房产带单元时自动带出）。
+        /// 与 BuildingNo / RoomNo 同源（同一套主房产），用于把下拉展示补成「楼栋/单元/房号」。
+        /// </summary>
+        public string UnitNo { get; set; }
+
+        /// <summary>
         /// CHG-v1.1.2-53：车位编号。缴费人名下**没有房产**（只有车位，或业主直缴未绑房产）时，
         /// 下拉用「车位 X」定位缴费对象，避免楼栋/房号两段都退化成「—」、同名缴费人无法分辨。
         /// </summary>
@@ -158,7 +168,29 @@ namespace PropertyManagement.Client.ViewModels
         public int DueCount { get; set; }
 
         /// <summary>
+        /// CHG-v1.2.0-33：展示地址「楼栋/单元/房号」——单元缺失时自动省略该段（无单元房产不出现多余分隔符）。
+        /// 口径与「收支明细流水」「欠费台账」的楼栋/房号/单元列一致（单元号补「单元」后缀）。
+        /// </summary>
+        public string AddressPathText
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(BuildingNo)) { parts.Add(BuildingNo.Trim()); }
+                if (!string.IsNullOrWhiteSpace(UnitNo))
+                {
+                    string unit = UnitNo.Trim();
+                    parts.Add(unit.EndsWith("单元", StringComparison.Ordinal) ? unit : unit + "单元");
+                }
+                if (!string.IsNullOrWhiteSpace(RoomNo)) { parts.Add(RoomNo.Trim()); }
+                return string.Join("/", parts);
+            }
+        }
+
+        /// <summary>
         /// CHG-v1.1.0-14：固定四段展示「业主姓名 · 楼栋 · 房号 · 欠费 N 笔」（不再列出欠费项目清单）。
+        /// CHG-v1.2.0-33：楼栋/房号两段合并为「楼栋/单元/房号」一段（单元自动补全），
+        /// 即「业主姓名 · 楼栋/单元/房号 · 欠费 N 笔」——更短、且与退款页关联对象格式统一。
         /// </summary>
         public string DisplayText
         {
@@ -170,11 +202,10 @@ namespace PropertyManagement.Client.ViewModels
                     // CHG-v1.1.0-18：自定义缴费对象无楼栋/房号，按「名称 · 自定义缴费对象 · 欠费 N 笔」展示
                     return PayerName + " · 自定义缴费对象 · 欠费 " + DueCount + " 笔";
                 }
-                if (!string.IsNullOrEmpty(BuildingNo) || !string.IsNullOrEmpty(RoomNo))
+                string address = AddressPathText;
+                if (!string.IsNullOrEmpty(address))
                 {
-                    string building = string.IsNullOrEmpty(BuildingNo) ? "—" : BuildingNo;
-                    string room = string.IsNullOrEmpty(RoomNo) ? "—" : RoomNo;
-                    return name + " · " + building + " · " + room + " · 欠费 " + DueCount + " 笔";
+                    return name + " · " + address + " · 欠费 " + DueCount + " 笔";
                 }
                 // CHG-v1.1.2-53：无房产的缴费人（车主 / 未绑房产的业主）用「车位 X / 业主直缴」兜底，
                 // 不再输出「姓名 · — · — · 欠费 N 笔」这种分辨不出缴费对象的下拉项。
@@ -221,6 +252,25 @@ namespace PropertyManagement.Client.ViewModels
         private bool _quietBillsReload;
         private readonly System.Collections.Generic.List<PropertyPaymentOption> _allProperties = new System.Collections.Generic.List<PropertyPaymentOption>();
 
+        /// <summary>CHG-v1.2.0-31：「清理已结清记录」确认弹窗与待清理账单。</summary>
+        private bool _isArchiveConfirmVisible;
+        private string _archiveConfirmText = string.Empty;
+        private System.Collections.Generic.List<int> _archiveBillIds;
+
+        /// <summary>
+        /// CHG-v1.2.0-23：收款入账后账单余额/状态变化 → 通知外层刷新顶部铃铛待办数。
+        /// </summary>
+        public event Action DataChanged;
+
+        private void RaiseDataChanged()
+        {
+            Action handler = DataChanged;
+            if (handler != null)
+            {
+                handler();
+            }
+        }
+
         public PaymentEntryViewModel(IApiClient api) : base(api)
         {
             _payDate = DateTime.Today;
@@ -230,6 +280,15 @@ namespace PropertyManagement.Client.ViewModels
             ConfirmPaymentCommand = new AsyncRelayCommand(ConfirmPaymentAsync);
             CancelConfirmCommand = new RelayCommand(() => IsConfirmVisible = false);
             ExportReceiptTemplateCommand = new AsyncRelayCommand(ExportReceiptTemplateAsync);
+            // CHG-v1.2.0-31/-32：应缴明细记录管理（清理已结清）与导出归档
+            RequestArchiveSettledCommand = new RelayCommand(RequestArchiveSettled);
+            ConfirmArchiveSettledCommand = new AsyncRelayCommand(ConfirmArchiveSettledAsync);
+            CancelArchiveSettledCommand = new RelayCommand(() =>
+            {
+                IsArchiveConfirmVisible = false;
+                _archiveBillIds = null;
+            });
+            ExportArrearDetailsCommand = new AsyncRelayCommand(ExportArrearDetailsAsync);
             _ = LoadAsync();
             _ = LoadDefaultHandlerAsync();
         }
@@ -423,6 +482,9 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(CheckedBillsText));
             OnPropertyChanged(nameof(IsBatchPayment));
             OnPropertyChanged(nameof(PayAmountHintText));
+            // CHG-v1.2.0-31：应缴明细记录管理（已结清条数 / 按钮可用态）
+            OnPropertyChanged(nameof(SettledBillCount));
+            OnPropertyChanged(nameof(CanArchiveSettled));
             if (IsBatchPayment)
             {
                 PayAmount = CheckedUnpaidAmount;   // 统一收款：按勾选账单欠费合计锁定
@@ -556,6 +618,41 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>CHG-v1.1.0-14：导出「收据打印模板」（替代原「打印收据」，收据号已下线）。</summary>
         public IAsyncRelayCommand ExportReceiptTemplateCommand { get; }
 
+        /// <summary>CHG-v1.2.0-31：应缴明细「批量删除已结清记录」——打开确认弹窗。</summary>
+        public IRelayCommand RequestArchiveSettledCommand { get; }
+
+        /// <summary>CHG-v1.2.0-31：确认清理（归档）已结清记录。</summary>
+        public IAsyncRelayCommand ConfirmArchiveSettledCommand { get; }
+
+        /// <summary>CHG-v1.2.0-31：取消清理。</summary>
+        public IRelayCommand CancelArchiveSettledCommand { get; }
+
+        /// <summary>CHG-v1.2.0-32：导出应缴明细 PDF（清理前归档留痕）。</summary>
+        public IAsyncRelayCommand ExportArrearDetailsCommand { get; }
+
+        /// <summary>CHG-v1.2.0-31：清理确认弹窗可见性。</summary>
+        public bool IsArchiveConfirmVisible
+        {
+            get { return _isArchiveConfirmVisible; }
+            private set { SetProperty(ref _isArchiveConfirmVisible, value); }
+        }
+
+        /// <summary>CHG-v1.2.0-31：清理确认弹窗文案（写明条数与「不影响账务记录」的口径）。</summary>
+        public string ArchiveConfirmText
+        {
+            get { return _archiveConfirmText; }
+            private set { SetProperty(ref _archiveConfirmText, value); }
+        }
+
+        /// <summary>CHG-v1.2.0-31：当前应缴明细里已结清的记录条数（按钮提示用）。</summary>
+        public int SettledBillCount
+        {
+            get { return Bills.Count(x => x.Dto != null && x.UnpaidAmount <= 0 && x.Dto.Status != BillStatus.Draft); }
+        }
+
+        /// <summary>CHG-v1.2.0-31：是否存在可清理的已结清记录（控制按钮可用态）。</summary>
+        public bool CanArchiveSettled { get { return SettledBillCount > 0; } }
+
         public async Task LoadAsync()
         {
             await RunAsync(async () =>
@@ -610,6 +707,8 @@ namespace PropertyManagement.Client.ViewModels
                     OwnerName = first.OwnerName ?? "",
                     BuildingNo = primaryProperty == null ? null : primaryProperty.BuildingNo,
                     RoomNo = primaryProperty == null ? null : primaryProperty.RoomNo,
+                    // CHG-v1.2.0-33：单元随主房产一并带出（业主-房产关系绑定的房产填了单元即有值）
+                    UnitNo = primaryProperty == null ? null : primaryProperty.UnitNo,
                     SpaceNo = spaceBills.Count == 0 ? null : spaceBills[0].SpaceNo,
                     SpaceCount = spaceBills.Select(x => x.SpaceNo).Distinct().Count(),
                     DueCount = g.Count()
@@ -627,6 +726,10 @@ namespace PropertyManagement.Client.ViewModels
                 source = source.Where(x =>
                     (x.OwnerName ?? string.Empty).Contains(kw) ||
                     (x.BuildingNo ?? string.Empty).Contains(kw) ||
+                    // CHG-v1.2.0-33：按单元检索（如「1单元」），并支持直接检索下拉里看到的地址段
+                    // （如「1单元」「13U-3018/1单元/1301」——与用户所见文案一致）
+                    (x.UnitNo ?? string.Empty).Contains(kw) ||
+                    (x.AddressPathText ?? string.Empty).Contains(kw) ||
                     (x.RoomNo ?? string.Empty).Contains(kw) ||
                     // CHG-v1.1.2-53：无房产业主（车主）支持按车位编号检索
                     (x.SpaceNo ?? string.Empty).Contains(kw));
@@ -747,7 +850,10 @@ namespace PropertyManagement.Client.ViewModels
                     PayerName = option.PayerName,
                     OwnerId = !option.PayerOwnerId.HasValue && string.IsNullOrEmpty(option.PayerName) && option.FallbackObjectKind == 2 ? (int?)option.FallbackObjectId : null,
                     PropertyId = !option.PayerOwnerId.HasValue && string.IsNullOrEmpty(option.PayerName) && option.FallbackObjectKind != 2 ? (int?)option.FallbackObjectId : null,
-                    PageSize = 200
+                    PageSize = 200,
+                    // CHG-v1.2.0-31：应缴明细按「记录管理」口径取数 —— 已清理（归档）的已结清记录不再出现在列表；
+                    // 归档只写标记，账单与收款/退款/财报/流水/业主档案数据不变（其它模块不受影响）
+                    ExcludeArchived = true
                 });
                 // CHG-v1.1.0-12：只列可收款账单（草稿未发布不能收款），避免「全选后整批失败」
                 foreach (var dto in page.Items.Where(x => x.Status != BillStatus.Draft).OrderBy(x => x.DueAt).ThenBy(x => x.Id))
@@ -970,6 +1076,12 @@ namespace PropertyManagement.Client.ViewModels
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "收款已入账 ¥" + amount.ToString("0.00") +
                     "（流水中：" + (payment.BatchNo ?? string.Empty) + "）";
             }
+
+            // CHG-v1.2.0-23：收款成功后即时刷新顶部铃铛待办数（欠费催缴项随余额变化）
+            if (batchResult != null || payment != null)
+            {
+                RaiseDataChanged();
+            }
         }
 
         /// <summary>
@@ -1070,6 +1182,165 @@ namespace PropertyManagement.Client.ViewModels
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "收据打印模板已导出：" + ExportedFilePath +
                     "（共 " + items.Count + " 笔，合计 ¥" + total.ToString("N2") + "）";
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-31：应缴明细「批量删除已结清记录」——**归档语义**。
+        /// 背景（负责人 2026-09-22）：已结清记录会长期累积，用户需要清理列表；
+        /// 但直接删除账单会连带影响收款记录、财务报表、收支明细流水与业主档案缴费概况，与负责人口径冲突。
+        /// 口径：只把当前缴费对象名下**已结清**的账单从「应缴明细」列表移除，
+        /// 账单本身与全部资金记录、业主档案统计**完全不变**；未结清记录一律不可删除。
+        /// </summary>
+        private void RequestArchiveSettled()
+        {
+            if (_selectedProperty == null)
+            {
+                ErrorText = "请先在左侧选择缴费对象";
+                return;
+            }
+            var settled = Bills
+                .Where(x => x.Dto != null && x.UnpaidAmount <= 0 && x.Dto.Status != BillStatus.Draft)
+                .ToList();
+            if (settled.Count == 0)
+            {
+                ErrorText = "当前应缴明细没有已结清记录，无需清理";
+                StatusText = string.Empty;
+                return;
+            }
+
+            _archiveBillIds = settled.Select(x => x.Dto.Id).ToList();
+            string preview = string.Join("、", settled.Take(8).Select(x => x.NoText));
+            if (settled.Count > 8) { preview += " 等 " + settled.Count + " 条"; }
+            ArchiveConfirmText =
+                "将清理（删除）" + settled.Count + " 条已结清记录：" + preview + "\n\n" +
+                "说明：只从「应缴明细」列表移除，账单本身、收款记录、退款记录、财务报表、收支明细流水、" +
+                "业主档案缴费概况均不受影响；未结清的记录不会被删除。\n" +
+                "建议先「导出应缴明细 PDF」归档留存，再执行清理。";
+            ErrorText = string.Empty;
+            IsArchiveConfirmVisible = true;
+        }
+
+        /// <summary>CHG-v1.2.0-31：确认清理已结清记录（服务端逐条校验，未结清记录会被拒绝并回报原因）。</summary>
+        private async Task ConfirmArchiveSettledAsync()
+        {
+            var ids = _archiveBillIds;
+            IsArchiveConfirmVisible = false;
+            _archiveBillIds = null;
+            if (ids == null || ids.Count == 0) { return; }
+
+            BillArchiveResultDto result = null;
+            await RunAsync(async () =>
+            {
+                result = await Api.ArchiveSettledBillsAsync(
+                    new SettledBillArchiveRequest { BillIds = ids });
+
+                // 列表与下拉欠费笔数同步刷新（刷新期不写状态栏，保证清理结果提示可见）
+                _quietBillsReload = true;
+                try { await ReloadPropertiesAsync(); }
+                finally { _quietBillsReload = false; }
+
+                RaiseDataChanged();   // 与收款同一口径：通知外层刷新顶部铃铛待办数
+            }, null);
+
+            // RunAsync 结束会把 StatusText 复位，故结果提示在动作之后回写（与收据模板导出口径一致）
+            string message = result == null || string.IsNullOrWhiteSpace(result.Message)
+                ? "已清理 " + ids.Count + " 条已结清记录（仅从应缴明细移除，账单与收款、财务、流水记录均保留）"
+                : result.Message;
+            StatusText = DateTime.Now.ToString("HH:mm:ss ") + message;
+            if (result != null && result.SkippedCount > 0 && result.SkippedItems != null)
+            {
+                ErrorText = string.Join("；", result.SkippedItems);
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-32：导出「应缴明细」PDF（服务端渲染 + 导出留痕，再由客户端另存到本机）。
+        /// 用途：用户清理（删除）已结清记录之前先导出归档 —— 既留住历史、又能压缩列表长度。
+        /// 口径 = 当前缴费对象的全部应缴明细（含已结清），与表格所见一致。
+        /// </summary>
+        private async Task ExportArrearDetailsAsync()
+        {
+            if (_selectedProperty == null)
+            {
+                ErrorText = "请先在左侧选择缴费对象";
+                return;
+            }
+            if (Bills.Count == 0)
+            {
+                ErrorText = "当前缴费对象没有应缴明细记录，无需导出";
+                StatusText = string.Empty;
+                return;
+            }
+
+            PropertyPaymentOption option = _selectedProperty;
+            string payer = PayeeName(option.OwnerName, option.PayerName);
+            decimal totalAmount = Bills.Sum(x => x.Dto.Amount);
+            decimal totalUnpaid = Bills.Sum(x => x.UnpaidAmount);
+            int count = Bills.Count;
+            string savedPath = null;
+            int generatedLogId = 0;
+
+            await RunAsync(async () =>
+            {
+                ReportLogDto log = await Api.ExportArrearDetailsPdfAsync(new ArrearDetailExportRequest
+                {
+                    PayerOwnerId = option.PayerOwnerId,
+                    PayerName = option.PayerName,
+                    // 与应缴明细取数同口径：无缴费人时才退化为按对象取
+                    OwnerId = !option.PayerOwnerId.HasValue && string.IsNullOrEmpty(option.PayerName) &&
+                              option.FallbackObjectKind == 2 ? (int?)option.FallbackObjectId : null,
+                    PropertyId = !option.PayerOwnerId.HasValue && string.IsNullOrEmpty(option.PayerName) &&
+                                 option.FallbackObjectKind != 2 ? (int?)option.FallbackObjectId : null,
+                    PayerDisplay = payer
+                });
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("PDF 导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存应缴明细（PDF）",
+                    Filter = "PDF 文件|*.pdf",
+                    FileName = "应缴明细_" + SafeFileNamePart(payer) + "_" +
+                               DateTime.Now.ToString("yyyyMMddHHmm") + ".pdf"
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    generatedLogId = log.Id;
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                savedPath = dialog.FileName;
+                System.Windows.MessageBox.Show(
+                    "应缴明细已导出到：\n" + dialog.FileName + "\n\n导出件可作为清理已结清记录前的归档留存。",
+                    "导出成功", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }, null);
+
+            // RunAsync 结束会把 StatusText 复位，故结果提示在动作之后回写
+            if (!string.IsNullOrEmpty(savedPath))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "应缴明细已导出：" + savedPath +
+                    "（共 " + count + " 笔，应收 ¥" + totalAmount.ToString("N2") +
+                    "，未收 ¥" + totalUnpaid.ToString("N2") + "）";
+            }
+            else if (generatedLogId > 0)
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "PDF 已在服务端生成（导出日志 " + generatedLogId +
+                    "），未另存到本机";
+            }
+        }
+
+        /// <summary>文件名安全片段（去掉 Windows 非法字符，空则回落「缴费对象」）。</summary>
+        private static string SafeFileNamePart(string text)
+        {
+            string value = (text ?? string.Empty).Trim();
+            foreach (char c in System.IO.Path.GetInvalidFileNameChars())
+            {
+                value = value.Replace(c, '_');
+            }
+            return value.Length == 0 ? "缴费对象" : value;
         }
 
         /// <summary>金额转中文大写（HP-58 收据字段，T4F-3-1）。</summary>

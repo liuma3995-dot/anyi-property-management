@@ -37,12 +37,28 @@ namespace PropertyManagement.Client.ViewModels
         public TodoItemDto Source { get; set; }
     }
 
-    /// <summary>仪表盘月份下拉候选项（R17）。</summary>
-    public class MonthOption
+    /// <summary>
+    /// 仪表盘月份下拉候选项（R17）。
+    /// CHG-v1.2.0-21：月份列表按「选中的年份」重建（原来只有近 24 个月一长条，无法直接选年份），
+    /// 因此需要 IsSelected / IsCurrent 参与高亮，改为可观察对象。
+    /// </summary>
+    public class MonthOption : ObservableObject
     {
         public string Period { get; set; }
 
         public string Text { get; set; }
+
+        private bool _isSelected;
+
+        /// <summary>是否为当前统计口径月份（下拉里高亮）。</summary>
+        public bool IsSelected
+        {
+            get { return _isSelected; }
+            set { SetProperty(ref _isSelected, value); }
+        }
+
+        /// <summary>是否为系统当前自然月（用于「本月」标记）。</summary>
+        public bool IsCurrent { get; set; }
     }
 
     /// <summary>仪表盘首页（PG-DASH，UC-COM-006，按原型 §2.3 一比一修版）。</summary>
@@ -106,9 +122,14 @@ namespace PropertyManagement.Client.ViewModels
         // R17：月份选择器 + 待办跳转
         private bool _isMonthPickerOpen;
         private string _selectedPeriod;
+        private int _pickerYear;
+        private bool _isAnnualPeriod;
+        private readonly Action<string> _navigate;
         private readonly Action<string, string, string> _openPage;
         private readonly Action _openTodoCenter;
         private readonly Func<string> _userNameProvider;
+        /// <summary>CHG-v1.2.0-28：统计口径变化回调（由 ShellViewModel 持有，用于跨页面记住所选月/年）。</summary>
+        private readonly Action<string> _periodChanged;
 
         public string WelcomeTitle
         {
@@ -126,6 +147,16 @@ namespace PropertyManagement.Client.ViewModels
         {
             get { return _monthText; }
             private set { SetProperty(ref _monthText, value); }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-26：当前统计口径是否为「按年」（true = 年度应收/已收/收缴率，false = 月度）。
+        /// 卡片文案（本月/本年、较上月/较上年）与弹层「全年」格高亮均据此切换。
+        /// </summary>
+        public bool IsAnnualPeriod
+        {
+            get { return _isAnnualPeriod; }
+            private set { SetProperty(ref _isAnnualPeriod, value); }
         }
 
         /// <summary>收缴概览角标（当前月 "08 月"；同年历史月 "8 月"；跨年份 "2026-08"）。</summary>
@@ -312,6 +343,31 @@ namespace PropertyManagement.Client.ViewModels
             set { SetProperty(ref _isMonthPickerOpen, value); }
         }
 
+        /// <summary>CHG-v1.2.0-21：月份下拉里当前展示的年份（可上下翻年）。</summary>
+        public int PickerYear
+        {
+            get { return _pickerYear; }
+            private set
+            {
+                if (SetProperty(ref _pickerYear, value))
+                {
+                    OnPropertyChanged(nameof(PickerYearText));
+                    OnPropertyChanged(nameof(CanPickNextYear));
+                }
+            }
+        }
+
+        public string PickerYearText
+        {
+            get { return _pickerYear + " 年"; }
+        }
+
+        /// <summary>不允许翻到未来年份（统计口径无意义）。</summary>
+        public bool CanPickNextYear
+        {
+            get { return _pickerYear < DateTime.Today.Year; }
+        }
+
         /// <summary>当前统计口径月份（yyyy-MM）。</summary>
         public string SelectedPeriod
         {
@@ -327,32 +383,58 @@ namespace PropertyManagement.Client.ViewModels
 
         public IAsyncRelayCommand<MonthOption> SelectMonthCommand { get; }
 
+        /// <summary>CHG-v1.2.0-21：月份下拉内 < / > 翻年。</summary>
+        public IRelayCommand<string> ShiftPickerYearCommand { get; }
+
+        /// <summary>CHG-v1.2.0-26：选「全年」→ 切换为**年度**统计口径。</summary>
+        public IAsyncRelayCommand SelectAnnualCommand { get; }
+
+        /// <summary>CHG-v1.2.0-21：「回到本月」。</summary>
+        public IAsyncRelayCommand BackToCurrentMonthCommand { get; }
+
         /// <summary>点击待办项 → 跳转对应模块页（R17）。</summary>
         public IRelayCommand<ReminderItem> OpenTodoCommand { get; }
 
         /// <summary>「查看全部」→ 打开顶部铃铛待办中心（R17）。</summary>
         public IRelayCommand ViewAllTodosCommand { get; }
 
+        /// <param name="initialPeriod">
+        /// CHG-v1.2.0-28：进入仪表盘时的初始统计口径（`yyyy-MM` 或 `yyyy`）—— 由 ShellViewModel 传入上次选择，
+        /// 为空 = 当前月。原实现每次进入都重置为当前月，「切页返回就跳回当天数据」。
+        /// </param>
+        /// <param name="periodChanged">口径变化回调（ShellViewModel 记录，供下次进入仪表盘复用）。</param>
         public DashboardViewModel(IApiClient api, Action<string> navigate,
             Action<string, string, string> openPage = null, Action openTodoCenter = null,
-            Func<string> userNameProvider = null)
+            Func<string> userNameProvider = null, string initialPeriod = null,
+            Action<string> periodChanged = null)
         {
             _api = api;
+            _navigate = navigate;
             _openPage = openPage;
             _openTodoCenter = openTodoCenter;
             _userNameProvider = userNameProvider;
+            _periodChanged = periodChanged;
             RefreshCommand = new AsyncRelayCommand(LoadAsync);
-            QuickEntryCommand = new RelayCommand<string>(navigate);
+            QuickEntryCommand = new RelayCommand<string>(QuickEntry);
             ToggleMonthPickerCommand = new RelayCommand(() => IsMonthPickerOpen = !IsMonthPickerOpen);
             SelectMonthCommand = new AsyncRelayCommand<MonthOption>(SelectMonthAsync);
+            ShiftPickerYearCommand = new RelayCommand<string>(ShiftPickerYear);
+            SelectAnnualCommand = new AsyncRelayCommand(SelectAnnualAsync);
+            BackToCurrentMonthCommand = new AsyncRelayCommand(BackToCurrentMonthAsync);
             OpenTodoCommand = new RelayCommand<ReminderItem>(OpenTodo);
             ViewAllTodosCommand = new RelayCommand(OpenTodoCenter);
 
             var now = DateTime.Now;
-            MonthText = now.ToString("yyyy 年 M 月");
-            SelectedPeriod = now.ToString("yyyy-MM");
-            ApplyPeriodLabels(now);
-            BuildMonths(now);
+            // CHG-v1.2.0-28：优先沿用上次选择的口径（跨页面持久化），否则回到当前月
+            string start = string.IsNullOrWhiteSpace(initialPeriod) ? now.ToString("yyyy-MM") : initialPeriod.Trim();
+            bool startAnnual = start.Length == 4;
+            DateTime startBasis = ParsePeriod(start, startAnnual);
+            SelectedPeriod = start;
+            IsAnnualPeriod = startAnnual;
+            MonthText = startAnnual ? startBasis.Year + " 年（全年）" : startBasis.ToString("yyyy 年 M 月");
+            ApplyPeriodLabels(startBasis, startAnnual);
+            PickerYear = startBasis.Year;
+            BuildMonths(startBasis.Year);
             ApplyGreeting();
 
             _ = LoadAsync();
@@ -399,19 +481,84 @@ namespace PropertyManagement.Client.ViewModels
             ApplyGreeting();
         }
 
-        private void BuildMonths(DateTime now)
+        /// <summary>
+        /// CHG-v1.2.0-21：按「年份」重建 12 个月份候选 —— 原实现是滚动近 24 个月的长列表，
+        /// 只能逐个月份下拉、不能直接选年份；现改为「年份可翻 + 12 个月网格」。
+        /// </summary>
+        private void BuildMonths(int year)
         {
+            var today = DateTime.Today;
             Months.Clear();
-            var cursor = new DateTime(now.Year, now.Month, 1);
-            for (int i = 0; i < 24; i++)
+            for (int month = 1; month <= 12; month++)
             {
+                string period = new DateTime(year, month, 1).ToString("yyyy-MM");
                 Months.Add(new MonthOption
                 {
-                    Period = cursor.ToString("yyyy-MM"),
-                    Text = cursor.ToString("yyyy 年 M 月")
+                    Period = period,
+                    Text = month + " 月",
+                    IsCurrent = year == today.Year && month == today.Month,
+                    IsSelected = string.Equals(period, SelectedPeriod, StringComparison.Ordinal)
                 });
-                cursor = cursor.AddMonths(-1);
             }
+        }
+
+        /// <summary>翻年（delta = -1 上一年 / +1 下一年）；不允许翻到未来年份。</summary>
+        private void ShiftPickerYear(string delta)
+        {
+            int step;
+            if (!int.TryParse(delta, out step) || step == 0)
+            {
+                step = 1;
+            }
+
+            int target = PickerYear + Math.Sign(step);
+            if (target > DateTime.Today.Year)
+            {
+                target = DateTime.Today.Year;
+            }
+            if (target < 1970)
+            {
+                target = 1970;
+            }
+            if (target == PickerYear)
+            {
+                return;
+            }
+
+            PickerYear = target;
+            BuildMonths(target);
+        }
+
+        private async Task BackToCurrentMonthAsync()
+        {
+            var today = DateTime.Today;
+            PickerYear = today.Year;
+            BuildMonths(today.Year);
+            await ApplyPeriodAsync(today.Year + "-" + today.Month.ToString("D2"), false);
+        }
+
+        /// <summary>
+        /// 切换统计口径（下拉里点月份 / 点「全年」/「回到本月」共用）。
+        /// CHG-v1.2.0-26：annual = true 时 period 为 `yyyy`（**年度**应收/已收/收缴率），false 为 `yyyy-MM`。
+        /// </summary>
+        private async Task ApplyPeriodAsync(string period, bool annual)
+        {
+            SelectedPeriod = period;
+            IsAnnualPeriod = annual;
+            DateTime basis = ParsePeriod(period, annual);
+            MonthText = annual ? basis.Year + " 年（全年）" : basis.ToString("yyyy 年 M 月");
+            ApplyPeriodLabels(basis, annual);
+            foreach (MonthOption option in Months)
+            {
+                option.IsSelected = !annual && string.Equals(option.Period, period, StringComparison.Ordinal);
+            }
+            IsMonthPickerOpen = false;
+            // CHG-v1.2.0-28：把所选口径交给 ShellViewModel 记住（切页返回后仍显示该月/年，直到点「回到本月」）
+            if (_periodChanged != null)
+            {
+                _periodChanged(period);
+            }
+            await LoadAsync();
         }
 
         private async Task SelectMonthAsync(MonthOption option)
@@ -421,17 +568,56 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
 
-            SelectedPeriod = option.Period;
-            MonthText = option.Text;
-            ApplyPeriodLabels(ParsePeriod(option.Period));
-            IsMonthPickerOpen = false;
-            await LoadAsync();
+            await ApplyPeriodAsync(option.Period, false);
         }
 
-        /// <summary>按所选月份刷新口径标签（当前月显示"本月"，历史月份显示月份前缀）。</summary>
-        private void ApplyPeriodLabels(DateTime period)
+        /// <summary>CHG-v1.2.0-26：选「全年」→ 年度口径（统计年度应收/已收/收缴率）。</summary>
+        private async Task SelectAnnualAsync()
+        {
+            await ApplyPeriodAsync(PickerYear.ToString(CultureInfo.InvariantCulture), true);
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-22：仪表盘「快捷入口」按「模块｜页面」精确跳转。
+        /// 原实现只传模块 key（如 finance），落到该模块的**首个子页**（收费项目维护）——
+        /// 于是「收款登记」「生成账单」都跳错页。传「模块｜页面」时走页级跳转，只传模块时保持原行为。
+        /// </summary>
+        private void QuickEntry(string key)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+            {
+                return;
+            }
+
+            string raw = key.Trim();
+            int bar = raw.IndexOf('|');
+            if (bar > 0 && bar < raw.Length - 1 && _openPage != null)
+            {
+                _openPage(raw.Substring(0, bar).Trim(), raw.Substring(bar + 1).Trim(), null);
+                return;
+            }
+
+            if (_navigate != null)
+            {
+                _navigate(raw);
+            }
+        }
+
+        /// <summary>
+        /// 按所选周期刷新口径标签：当前月/当前年显示「本月」「本年」，历史周期显示周期前缀。
+        /// CHG-v1.2.0-26：年度口径前缀为「本年」/「2025 年」，月度口径沿用「本月」/「8 月」/「2025-08」。
+        /// </summary>
+        private void ApplyPeriodLabels(DateTime period, bool annual)
         {
             var today = DateTime.Today;
+            if (annual)
+            {
+                bool isCurrentYear = period.Year == today.Year;
+                PeriodLabelText = isCurrentYear ? "本年" : period.Year + " 年";
+                MonthShortText = period.Year + " 年";
+                return;
+            }
+
             bool isCurrentMonth = period.Year == today.Year && period.Month == today.Month;
             PeriodLabelText = isCurrentMonth
                 ? "本月"
@@ -441,11 +627,20 @@ namespace PropertyManagement.Client.ViewModels
                 : (period.Year == today.Year ? period.Month + " 月" : period.ToString("yyyy-MM"));
         }
 
-        private static DateTime ParsePeriod(string period)
+        /// <summary>解析统计周期：年度 = `yyyy`（返回当年 1 月），月度 = `yyyy-MM`；非法回退当前月。</summary>
+        private static DateTime ParsePeriod(string period, bool annual)
         {
+            string raw = (period ?? string.Empty).Trim();
+            int year;
+            if (annual && int.TryParse(raw, NumberStyles.None, CultureInfo.InvariantCulture, out year) &&
+                year >= 1900 && year <= 2999)
+            {
+                return new DateTime(year, 1, 1);
+            }
+
             DateTime parsed;
-            return !string.IsNullOrWhiteSpace(period) &&
-                   DateTime.TryParseExact(period.Trim() + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
+            return raw.Length > 0 &&
+                   DateTime.TryParseExact(raw + "-01", "yyyy-MM-dd", CultureInfo.InvariantCulture,
                        DateTimeStyles.None, out parsed)
                 ? parsed
                 : new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
@@ -479,6 +674,27 @@ namespace PropertyManagement.Client.ViewModels
             {
                 var dto = await _api.GetDashboardAsync(SelectedPeriod);
 
+                // CHG-v1.2.0-26：以服务端返回的粒度为准（年度口径 = 本年应收/已收/收缴率），
+                // 并据此把「本月/较上月」类文案切换为「本年/较上年」。
+                bool annual = dto.Annual;
+                IsAnnualPeriod = annual;
+                if (annual)
+                {
+                    DateTime yearBasis = ParsePeriod(dto.Period, true);
+                    MonthText = yearBasis.Year + " 年（全年）";
+                    ApplyPeriodLabels(yearBasis, true);
+                    PickerYear = yearBasis.Year;
+                }
+                else
+                {
+                    DateTime monthBasis = ParsePeriod(dto.Period, false);
+                    MonthText = monthBasis.ToString("yyyy 年 M 月");
+                    ApplyPeriodLabels(monthBasis, false);
+                    PickerYear = monthBasis.Year;
+                }
+                BuildMonths(PickerYear);
+                string periodWord = annual ? "本年" : "本月";
+
                 var now = DateTime.Now;
                 WelcomeDate = now.ToString("yyyy 年 M 月 d 日  ·  ", CultureInfo.GetCultureInfo("zh-CN"))
                               + WeekdayOf(now)
@@ -487,13 +703,13 @@ namespace PropertyManagement.Client.ViewModels
                 // CHG-v1.1.2-55：金额一律保留 2 位小数（与收款登记/账单/台账/报表导出统一）；
                 // 原 N0 会把 1,143.80 与 1,143.45 各四舍五入成 1,144 与 1,143，放大成「相差 1 元」的假象。
                 MonthReceivableText = "¥ " + dto.MonthReceivable.ToString("N2");
-                ReceivableTrend = dto.ReceivableTrend ?? "较上月 +0%";
+                ReceivableTrend = dto.ReceivableTrend ?? (annual ? "较上年 +0%" : "较上月 +0%");
                 MonthReceivedText = "¥ " + dto.MonthReceived.ToString("N2");
                 ReceivedTrend = dto.ReceivedTrend ?? "收缴率 " + dto.CollectionRate.ToString("0.0") + "%";
                 ArrearAmountText = "¥ " + dto.ArrearAmount.ToString("N2");
                 ArrearTrend = "涉及 " + dto.ArrearCount + " 户";
                 OverdueCountText = dto.ArrearCount + " 户";
-                OverdueTrend = dto.OverdueTrend ?? "较上月 0 户";
+                OverdueTrend = dto.OverdueTrend ?? (annual ? "较上年 0 户" : "较上月 0 户");
 
                 PendingReminders = dto.PendingReminders;
                 HandlingEmergency = dto.HandlingEmergency;
@@ -501,24 +717,24 @@ namespace PropertyManagement.Client.ViewModels
                 MaintenanceDue = dto.MaintenanceDue;
                 DutyToday = dto.DutyToday;
 
-                // CHG-v1.1.2-56：本月无账期账单时不显示「0.0% + 还差 85 个百分点」这类无意义口径
+                // CHG-v1.1.2-56：本期无账期账单时不显示「0.0% + 还差 85 个百分点」这类无意义口径
                 bool hasCollectionScope = dto.MonthReceivable > 0m;
                 CollectionRateText = hasCollectionScope ? dto.CollectionRate.ToString("0.0") + "%" : "—";
                 CollectionRateValue = hasCollectionScope ? (double)dto.CollectionRate : 0d;
-                // CHG-v1.1.2-55：收缴率＝本月账期账单「已收/应收」（同源，≤100%）；
+                // CHG-v1.1.2-55：收缴率＝本期账期账单「已收/应收」（同源，≤100%）；
                 // 环比改用服务端给出的百分点差（原实现借用了「应收」环比，语义不对）。
                 CollectionTrend = string.IsNullOrWhiteSpace(dto.CollectionRateTrend)
-                    ? "本月账期账单清缴率"
+                    ? periodWord + "账期账单清缴率"
                     : dto.CollectionRateTrend;
-                ReceivedLegendText = "本月账期已收 ¥" + dto.MonthCycleReceived.ToString("N2");
-                ArrearLegendText = "本月账期待收 ¥" +
+                ReceivedLegendText = periodWord + "账期已收 ¥" + dto.MonthCycleReceived.ToString("N2");
+                ArrearLegendText = periodWord + "账期待收 ¥" +
                     (dto.MonthReceivable - dto.MonthCycleReceived).ToString("N2");
                 // 目标对比文案：达标显示「已达成（超额 N 个百分点）」，未达标显示「还差 N 个百分点」。
                 // 原实现固定算 85 - 收缴率，收缴率 100% 时输出「还差 -15.0%」（负数 + 用 % 表述百分点差）。
                 string target = CollectionTargetRate.ToString("0.#");
                 if (!hasCollectionScope)
                 {
-                    CollectionGapText = "本月暂无账期账单，无需考核收缴率";
+                    CollectionGapText = periodWord + "暂无账期账单，无需考核收缴率";
                 }
                 else if (dto.CollectionRate >= CollectionTargetRate)
                 {
@@ -532,7 +748,7 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 CollectionHintText = dto.ArrearCount > 0
                     ? "建议优先跟进 " + dto.ArrearCount + " 户逾期业主"
-                    : "本月无逾期业主，保持常规跟进";
+                    : periodWord + "无逾期业主，保持常规跟进";
 
                 Reminders.Clear();
                 if (dto.Todos != null)

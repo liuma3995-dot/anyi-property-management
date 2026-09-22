@@ -30,12 +30,6 @@ namespace PropertyManagement.Client.Views
             }
         }
 
-        private void ExportButton_Click(object sender, RoutedEventArgs e)
-        {
-                MessageBox.Show("导出功能随报表模块统一提供（Excel/PDF）。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
         /// <summary>行勾选写回（v1.1.0-⑤）：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，点击时显式同步。</summary>
         private void ExpenseCheckBox_Click(object sender, RoutedEventArgs e)
         {

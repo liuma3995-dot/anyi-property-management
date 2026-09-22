@@ -3,7 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
+             xmlns:conv="clr-namespace:PropertyManagement.Client.Converters"
              FontFamily="微软雅黑">
+    <UserControl.Resources>
+        <!-- v1.2.0 第 3 轮：选择提示为空时不占位 -->
+        <conv:StringToVisibilityConverter x:Key="StringToVis" />
+    </UserControl.Resources>
     <Grid Margin="16">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -58,7 +63,9 @@
                         <DataGridTemplateColumn.HeaderTemplate>
                             <DataTemplate>
                                 <CheckBox IsChecked="{Binding DataContext.IsSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
-                                          VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选" />
+                                          Style="{StaticResource GridCheckBox}"
+                                          VerticalAlignment="Center" HorizontalAlignment="Center"
+                                          ToolTip="全选当前筛选条件下的全部房产（含其它页面）" />
                             </DataTemplate>
                         </DataGridTemplateColumn.HeaderTemplate>
                         <DataGridTemplateColumn.CellTemplate>
@@ -113,6 +120,10 @@
             </Grid.ColumnDefinitions>
             <TextBlock Grid.Column="0" Text="{Binding TotalText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
             <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="12,0">
+                <!-- v1.2.0 第 3 轮：勾选作用域提示（全选 = 当前筛选条件下的全部，跨页） -->
+                <TextBlock Text="{Binding SelectionHint}" Foreground="{StaticResource PrimaryBrush}" FontSize="11"
+                           TextWrapping="Wrap"
+                           Visibility="{Binding SelectionHint, Converter={StaticResource StringToVis}}" />
                 <TextBlock Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" Margin="0,2,0,0" />
             </StackPanel>

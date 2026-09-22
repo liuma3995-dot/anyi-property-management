@@ -95,6 +95,25 @@ namespace PropertyManagement.Server.Domain.Repositories
         int DismissArrearBills(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> billIds, string reason, string operatorName);
         /// <summary>恢复台账：删除剔除记录。</summary>
         int RestoreArrearBills(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> dismissIds);
+
+        // ---------- 收款登记「应缴明细·已结清记录归档」（CHG-v1.2.0-31） ----------
+        /// <summary>批量归档前置校验：逐条返回账单的「是否已结清 / 是否已删除 / 是否已归档」。</summary>
+        List<BillArchiveCandidate> QueryBillArchiveCandidates(IDbConnection connection, IEnumerable<int> billIds);
+
+        /// <summary>
+        /// 归档「已结清」账单（只写 t_bill_archive 标记，账单与收款/退款/财报/流水/业主档案数据完全不变）。
+        /// 未结清、已删除的账单不会被写入；返回实际归档条数。
+        /// </summary>
+        int ArchiveSettledBills(IDbConnection connection, IDbTransaction transaction,
+            IEnumerable<int> billIds, string reason, string operatorName);
+
+        /// <summary>
+        /// 解除「已结清归档」（CHG-v1.2.0-35）：**仅当账单已不再结清**（净实缴 &lt; 应收）时删除归档标记，
+        /// 使账单重新回到收款登记「应缴明细」。归档语义只对「已结清记录」成立 ——
+        /// 退款/调减冲正让归档账单重新欠费时，必须解锁，否则下拉显示欠费笔数而应缴明细为空。
+        /// 返回实际解锁条数。
+        /// </summary>
+        int ClearBillArchiveIfUnsettled(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> billIds);
         /// <summary>已移出台账的记录列表。</summary>
         List<ArrearDismissDto> QueryDismissedArrears(IDbConnection connection);
         void SoftDeleteBill(IDbConnection connection, IDbTransaction transaction, int id);
@@ -146,6 +165,10 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         ExpenseDto GetExpense(IDbConnection connection, int id);
         List<ExpenseDto> ListExpenses(IDbConnection connection, PageRequest query, out int total);
+
+        /// <summary>支出登记导出查询（CHG-v1.2.0-25：按页面筛选条件取明细，上限 5000 行）。</summary>
+        List<ExpenseDto> ListExpensesForExport(IDbConnection connection, ExpenseExportRequest request);
+
         void InsertExpenseObjectRels(IDbConnection connection, IDbTransaction transaction, int expenseId, IEnumerable<ExpenseObjectRelDto> rels);
 
         // ---------- 报表/流水（UC-FIN-009/010/012） ----------
@@ -188,6 +211,24 @@ namespace PropertyManagement.Server.Domain.Repositories
         /// 用于出账预演/失败明细里区分同名业主（业主档案可能与多套房产关联，取最近一条有效关系）。
         /// </summary>
         public string Address { get; set; }
+    }
+
+    /// <summary>
+    /// 收款登记「应缴明细·已结清记录归档」前置校验结果（CHG-v1.2.0-31）：
+    /// 逐条告诉服务层该账单能否归档（未结清 / 已删除 / 已归档一律拒绝或跳过）。
+    /// </summary>
+    public class BillArchiveCandidate
+    {
+        public int Id { get; set; }
+
+        /// <summary>是否已结清（净实缴 ≥ 应收，与 <c>PaymentService.ResolveBillStatusByMoney</c> 同口径）。</summary>
+        public bool Settled { get; set; }
+
+        /// <summary>是否已删除（软删）。</summary>
+        public bool Deleted { get; set; }
+
+        /// <summary>是否已在归档表中（重复归档幂等跳过）。</summary>
+        public bool Archived { get; set; }
     }
 
     public enum BillObjectKind

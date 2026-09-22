@@ -421,6 +421,70 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return new PageResult<OwnerDto> { PageIndex = pageIndex, PageSize = pageSize, Total = total, Items = items };
         }
 
+        /// <summary>单个业主 + 指定年度统计（业主档案 PDF 用；与列表同源同口径）。</summary>
+        public OwnerDto GetOwnerWithYearStats(IDbConnection connection, int id, int year)
+        {
+            OwnerDto owner = GetOwner(connection, id);
+            if (owner == null) { return null; }
+            var map = QueryOwnerStats(connection, new List<int> { id }, year);
+            OwnerStat stat;
+            if (map.TryGetValue(id, out stat))
+            {
+                owner.YearReceivable = stat.YearReceivable;
+                owner.YearPaid = stat.YearPaid;
+                owner.CurrentArrear = stat.CurrentArrear;
+            }
+            return owner;
+        }
+
+        /// <summary>
+        /// 业主列表 + 指定年度统计（CHG-v1.2.0-19）：与 <see cref="QueryOwners"/> 同一套筛选与排序，
+        /// 但一次批量统计年度金额 → 「全部业主汇总缴费明细」PDF 不再逐户查询。
+        /// </summary>
+        public List<OwnerDto> QueryOwnersWithYearStats(IDbConnection connection, BaseInfoQueryRequest query, int year, out int total)
+        {
+            query = query ?? new BaseInfoQueryRequest();
+            List<OwnerDto> items = QueryOwners(connection, query, out total).Items ?? new List<OwnerDto>();
+            FillOwnerStats(connection, items, year);
+            return items;
+        }
+
+        /// <summary>
+        /// 业主名下房产路径（CHG-v1.2.0-20，一次批量查询）：
+        /// 格式与「收支明细流水」的「楼栋/房号」列同口径（`1号楼/1单元/101`，无单元则 `1号楼/101`），
+        /// 一位业主多处房产按关系建档顺序全部返回。
+        /// </summary>
+        public Dictionary<int, List<string>> QueryOwnerPropertyPaths(IDbConnection connection, IEnumerable<int> ownerIds)
+        {
+            var map = new Dictionary<int, List<string>>();
+            List<int> ids = (ownerIds ?? Enumerable.Empty<int>()).Distinct().Where(x => x > 0).ToList();
+            if (ids.Count == 0) { return map; }
+            var rows = connection.Query<OwnerPropertyPathRow>(
+                "SELECT r.owner_id AS OwnerId, " +
+                SqlAddress.BuildingUnitRoom("bld.building_no", "u.unit_no", "p.room_no") + " AS Path " +
+                "FROM t_owner_property_rel r " +
+                "JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                "LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                "LEFT JOIN t_building bld ON bld.id = COALESCE(u.building_id, p.building_id) " +
+                "WHERE r.del_flag = 0 AND r.owner_id IN @ids " +
+                "ORDER BY r.owner_id, r.id", new { ids }).ToList();
+            foreach (OwnerPropertyPathRow row in rows)
+            {
+                string path = (row.Path ?? string.Empty).Trim();
+                if (path.Length == 0) { continue; }
+                List<string> list;
+                if (!map.TryGetValue(row.OwnerId, out list)) { list = new List<string>(); map[row.OwnerId] = list; }
+                if (!list.Contains(path)) { list.Add(path); }
+            }
+            return map;
+        }
+
+        private sealed class OwnerPropertyPathRow
+        {
+            public int OwnerId { get; set; }
+            public string Path { get; set; }
+        }
+
         private const string OwnerSelectSql =
             "SELECT o.id, o.name, o.id_card_type AS IdCardType, o.id_card AS IdCard, o.phone, " +
             "o.resident_address AS ResidentAddress, o.emergency_contact_name AS EmergencyContactName, " +
@@ -475,11 +539,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             };
         }
 
-        private static void FillOwnerStats(IDbConnection connection, List<OwnerDto> items)
+        private static void FillOwnerStats(IDbConnection connection, List<OwnerDto> items, int? year = null)
         {
             if (items == null || items.Count == 0) return;
             var ids = items.Select(x => x.Id).Distinct().ToList();
-            var map = QueryOwnerStats(connection, ids);
+            var map = QueryOwnerStats(connection, ids, year);
             foreach (var it in items)
             {
                 if (map.TryGetValue(it.Id, out var s))
@@ -519,26 +583,73 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return map;
         }
 
-        /// <summary>业主年度应缴/已缴/欠费统计（原生读取，规避 Dapper DOUBLE 聚合读取异常）。</summary>
-        private static Dictionary<int, OwnerStat> QueryOwnerStats(IDbConnection connection, List<int> ids)
+        /// <summary>
+        /// 业主年度应缴/已缴/欠费统计（原生读取，规避 Dapper DOUBLE 聚合读取异常）。
+        ///
+        /// CHG-v1.2.0-11（负责人 2026-09-21 反馈「收款成功后业主档案本年度缴费概况全是 0」）：
+        /// 原实现只统计**房产账单**（`t_bill.property_id = 业主-房产关系.property_id`），
+        /// 而 `t_bill.property_id` 在「车位账单」「业主直缴账单」下为 NULL ——
+        /// 这两类账单的收款自然进不了业主概况（跨模块引用断链）。现按缴费对象三类归属统一汇总：
+        ///   ① 房产账单 → 该房产的业主关系（原口径）；
+        ///   ② 车位账单 → 车位绑定的业主（车位未绑业主时，回落到车位绑定房产的业主）；
+        ///   ③ 业主直缴账单（owner_id 即业主本人）→ 直接归属该业主。
+        /// </summary>
+        /// <param name="year">统计年度；null = 当前年度。</param>
+        /// <remarks>
+        /// CHG-v1.2.0-16（负责人 2026-09-21 反馈「收款后概况仍为 0」的第二个根因）：
+        /// 年度口径与**仪表盘**统一为「账期起始日所在年度」（`COALESCE(cycle.start_date, due_at)`）——
+        /// 原口径按「到期日年度」，而跨年账期（如 2026-06-30 ~ 2027-06-30）的到期日落在次年，
+        /// 于是本年度刚收的款在业主概况里显示 0；仪表盘早已按账期起始日统计，两处口径因此还对不上。
+        /// </remarks>
+        private static Dictionary<int, OwnerStat> QueryOwnerStats(IDbConnection connection, List<int> ids, int? year = null)
         {
             var map = new Dictionary<int, OwnerStat>();
+            if (ids == null || ids.Count == 0) { return map; }
+            string statYear = (year ?? DateTime.Today.Year).ToString();
             using (IDbCommand cmd = connection.CreateCommand())
             {
-                string placeholders = string.Join(",", ids.Select((x, i) => "@id" + i));
+                string byProperty = string.Join(",", ids.Select((x, i) => "@p" + i));
+                string byParking = string.Join(",", ids.Select((x, i) => "@k" + i));
+                string byOwner = string.Join(",", ids.Select((x, i) => "@o" + i));
                 cmd.CommandText =
-                    "SELECT r.owner_id, " +
-                    "SUM(CASE WHEN strftime('%Y', b.due_at) = strftime('%Y','now','localtime') THEN b.amount ELSE 0 END), " +
-                    "SUM(CASE WHEN strftime('%Y', b.due_at) = strftime('%Y','now','localtime') THEN b.paid_amount ELSE 0 END), " +
-                    "SUM(CASE WHEN b.amount > b.paid_amount AND b.status IN (0,1,2) THEN b.amount - b.paid_amount ELSE 0 END) " +
+                    "SELECT x.owner_id, " +
+                    "SUM(CASE WHEN COALESCE(strftime('%Y', x.cycle_start), strftime('%Y', x.due_at)) = @statYear THEN x.amount ELSE 0 END), " +
+                    "SUM(CASE WHEN COALESCE(strftime('%Y', x.cycle_start), strftime('%Y', x.due_at)) = @statYear THEN x.paid_amount ELSE 0 END), " +
+                    "SUM(CASE WHEN x.amount > x.paid_amount AND x.status IN (0,1,2) THEN x.amount - x.paid_amount ELSE 0 END) " +
+                    "FROM (" +
+                    // ① 房产账单：按房产的业主关系归属
+                    "SELECT r.owner_id AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, cy.start_date AS cycle_start, " +
+                    "       b.created_at AS created_at " +
                     "FROM t_owner_property_rel r JOIN t_bill b ON b.property_id = r.property_id " +
-                    "WHERE r.owner_id IN (" + placeholders + ") AND r.del_flag = 0 AND b.del_flag = 0 GROUP BY r.owner_id";
+                    "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "WHERE r.del_flag = 0 AND b.del_flag = 0 AND r.owner_id IN (" + byProperty + ") " +
+                    "UNION ALL " +
+                    // ② 车位账单：按车位绑定业主归属；车位没绑业主时回落到车位绑定房产的业主
+                    "SELECT COALESCE(pk.owner_id, r2.owner_id) AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, " +
+                    "       cy.start_date AS cycle_start, b.created_at AS created_at " +
+                    "FROM t_bill b " +
+                    "LEFT JOIN t_parking_space pk ON pk.id = b.parking_id AND pk.del_flag = 0 " +
+                    "LEFT JOIN t_owner_property_rel r2 ON r2.property_id = pk.property_id AND r2.del_flag = 0 " +
+                    "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "WHERE b.del_flag = 0 AND b.parking_id IS NOT NULL AND COALESCE(pk.owner_id, r2.owner_id) IN (" + byParking + ") " +
+                    "UNION ALL " +
+                    // ③ 业主直缴账单：账单 owner_id 即业主本人
+                    "SELECT b.owner_id AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, " +
+                    "       cy.start_date AS cycle_start, b.created_at AS created_at " +
+                    "FROM t_bill b " +
+                    "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "WHERE b.del_flag = 0 AND b.owner_id IS NOT NULL AND b.property_id IS NULL AND b.parking_id IS NULL " +
+                    "AND b.owner_id IN (" + byOwner + ")" +
+                    ") x GROUP BY x.owner_id";
+                IDbDataParameter yearPar = cmd.CreateParameter();
+                yearPar.ParameterName = "statYear";
+                yearPar.Value = statYear;
+                cmd.Parameters.Add(yearPar);
                 for (int i = 0; i < ids.Count; i++)
                 {
-                    IDbDataParameter par = cmd.CreateParameter();
-                    par.ParameterName = "id" + i;
-                    par.Value = ids[i];
-                    cmd.Parameters.Add(par);
+                    AddParameter(cmd, "p" + i, ids[i]);
+                    AddParameter(cmd, "k" + i, ids[i]);
+                    AddParameter(cmd, "o" + i, ids[i]);
                 }
                 using (IDataReader reader = cmd.ExecuteReader())
                 {
@@ -560,6 +671,15 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             public decimal YearReceivable { get; set; }
             public decimal YearPaid { get; set; }
             public decimal CurrentArrear { get; set; }
+        }
+
+        /// <summary>给原生 IDbCommand 追加一个参数（业主统计的三段 UNION 复用同一批 ID）。</summary>
+        private static void AddParameter(IDbCommand cmd, string name, object value)
+        {
+            IDbDataParameter par = cmd.CreateParameter();
+            par.ParameterName = name;
+            par.Value = value;
+            cmd.Parameters.Add(par);
         }
 
         public int InsertOwner(IDbConnection connection, IDbTransaction transaction, OwnerDto dto)
@@ -841,12 +961,13 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 new { dto.Module, dto.FileName, dto.Total, dto.Success, dto.Fail, dto.ErrorFile, dto.Status, dto.CreatedBy }, transaction);
         }
 
-        public void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, ImportStatus status, int success, int fail, string errorFile)
+        public void UpdateImportLog(IDbConnection connection, IDbTransaction transaction, int id, int total, ImportStatus status, int success, int fail, string errorFile)
         {
+            // v1.2.0：补写 total（INSERT 时行数还没解析出来，只能先写 0）
             connection.Execute(
-                "UPDATE t_import_log SET status = @status, success = @success, fail = @fail, " +
+                "UPDATE t_import_log SET total = @total, status = @status, success = @success, fail = @fail, " +
                 "error_file = @errorFile WHERE id = @id",
-                new { id, status = (int)status, success, fail, errorFile }, transaction);
+                new { id, total, status = (int)status, success, fail, errorFile }, transaction);
         }
 
         /// <summary>导入批次「覆盖」计数（CHG-v1.1.2-01：重复数据做覆盖处理）。</summary>
@@ -903,6 +1024,29 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.Query<ImportErrorItemDto>(
                 "SELECT row_no AS RowNo, field AS Field, content AS Content, reason AS Reason, suggestion AS Suggestion " +
                 "FROM t_import_error WHERE import_id = @importId ORDER BY row_no", new { importId }).ToList();
+        }
+
+        /// <summary>导入回执逐行结果落库（CHG-v1.2.0-01）。</summary>
+        public void InsertImportRows(IDbConnection connection, IDbTransaction transaction, IEnumerable<ImportRowResultDto> rows, int importId)
+        {
+            foreach (ImportRowResultDto r in rows ?? Enumerable.Empty<ImportRowResultDto>())
+            {
+                connection.Execute(
+                    "INSERT INTO t_import_row (import_id, row_no, result, object_key, change_summary, reason, suggestion) " +
+                    "VALUES (@importId, @RowNo, @Result, @ObjectKey, @ChangeSummary, @Reason, @Suggestion)",
+                    new
+                    {
+                        importId, r.RowNo, Result = (int)r.Result, r.ObjectKey, r.ChangeSummary, r.Reason, r.Suggestion
+                    }, transaction);
+            }
+        }
+
+        public List<ImportRowResultDto> ListImportRows(IDbConnection connection, int importId)
+        {
+            return connection.Query<ImportRowResultDto>(
+                "SELECT row_no AS RowNo, result AS Result, object_key AS ObjectKey, change_summary AS ChangeSummary, " +
+                "reason AS Reason, suggestion AS Suggestion FROM t_import_row WHERE import_id = @importId ORDER BY row_no",
+                new { importId }).ToList();
         }
 
         // ===================== 导出 =====================

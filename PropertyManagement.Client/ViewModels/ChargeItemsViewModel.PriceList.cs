@@ -80,7 +80,8 @@ namespace PropertyManagement.Client.ViewModels
                 if (Dto.MatchStatus.HasValue)
                 {
                     string text = Dto.MatchStatus.Value == 0 ? "空置" : (Dto.MatchStatus.Value == 1 ? "入住" : "装修中");
-                    parts.Add("房产状态 = " + text);
+                    // CHG-v1.2.0-14：适用条件已下线「房产状态」维度 —— 存量规格如实展示并标注，便于改配置
+                    parts.Add("房产状态 = " + text + "（已下线，请改选）");
                 }
                 if (Dto.MatchSpaceType.HasValue)
                 {
@@ -705,11 +706,12 @@ namespace PropertyManagement.Client.ViewModels
             }
             else if (row.Dto.MatchStatus.HasValue && row.Dto.MatchStatus.Value == 0)
             {
-                FormSpecConditionIndex = 4;
+                // CHG-v1.2.0-14：适用条件已下线「房产状态」——历史规格若仍带该条件，按「不限」打开并提示重选
+                FormSpecConditionIndex = 0;
             }
             else if (row.Dto.MatchSpaceType.HasValue)
             {
-                FormSpecConditionIndex = row.Dto.MatchSpaceType.Value == 0 ? 5 : (row.Dto.MatchSpaceType.Value == 1 ? 6 : 7);
+                FormSpecConditionIndex = row.Dto.MatchSpaceType.Value == 0 ? 4 : (row.Dto.MatchSpaceType.Value == 1 ? 5 : 6);
             }
             else
             {
@@ -841,11 +843,11 @@ namespace PropertyManagement.Client.ViewModels
                     case 1: request.MatchUsage = 0; break;
                     case 2: request.MatchUsage = 1; break;
                     case 3: request.MatchUsage = 2; break;   // CHG-v1.1.2-48：房产用途 = 空置
-                    case 4: request.MatchStatus = 0; break;
+                    // CHG-v1.2.0-14：下线「房产状态 = 空置」后索引前移 —— 空置定价统一用「房产用途 = 空置」
                     // CHG-v1.1.2-48：车位类型适用条件（产权 / 普通 / 临时）
-                    case 5: request.MatchSpaceType = 0; break;
-                    case 6: request.MatchSpaceType = 1; break;
-                    case 7: request.MatchSpaceType = 2; break;
+                    case 4: request.MatchSpaceType = 0; break;
+                    case 5: request.MatchSpaceType = 1; break;
+                    case 6: request.MatchSpaceType = 2; break;
                 }
 
                 if (_editingSpecId > 0)

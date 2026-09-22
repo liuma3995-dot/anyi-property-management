@@ -137,19 +137,27 @@ namespace PropertyManagement.Contract.Common
         public string ReceivedTrend { get; set; }
         public string OverdueTrend { get; set; }
         /// <summary>
-        /// CHG-v1.1.2-55：所选月份「账期归属本月」账单的**已收合计**（收缴率的分子，与 <see cref="MonthReceivable"/> 同源）。
-        /// 说明：<see cref="MonthReceived"/> 是本月**实收现金净额**（与财务报表「收入合计」同一口径，含清欠、扣退款/冲减），
-        /// 两者口径不同 —— 收缴率用「本月账期账单的清缴比例」（≤100%），卡片「本月已收」用现金净额。
+        /// CHG-v1.1.2-55：所选周期「账期归属本期」账单的**已收合计**（收缴率的分子，与 <see cref="MonthReceivable"/> 同源）。
+        /// 说明：<see cref="MonthReceived"/> 是本期**实收现金净额**（与财务报表「收入合计」同一口径，含清欠、扣退款/冲减），
+        /// 两者口径不同 —— 收缴率用「本期账期账单的清缴比例」（≤100%），卡片「本期已收」用现金净额。
         /// </summary>
         public decimal MonthCycleReceived { get; set; }
-        /// <summary>CHG-v1.1.2-55：收缴率环比（百分点差，如「较上月 +1.2 个百分点」）。</summary>
+        /// <summary>CHG-v1.1.2-55：收缴率环比（百分点差，如「较上月 +1.2 个百分点 / 较上年 +1.2 个百分点」）。</summary>
         public string CollectionRateTrend { get; set; }
         public int MaintenanceDue { get; set; }
         public int DutyToday { get; set; }
 
-        // ---- CHG-M7-02（R17）新增：统计口径月份 + 待办提醒（与顶部铃铛同源）----
-        /// <summary>统计口径月份（yyyy-MM；默认当前月，由仪表盘月份选择器传入）。</summary>
+        // ---- CHG-M7-02（R17）新增：统计口径周期 + 待办提醒（与顶部铃铛同源）----
+        /// <summary>
+        /// 统计口径周期：按月 = `yyyy-MM`；按年 = `yyyy`（CHG-v1.2.0-26，默认当前月，由仪表盘日历选择器传入）。
+        /// </summary>
         public string Period { get; set; }
+
+        /// <summary>
+        /// CHG-v1.2.0-26：统计口径粒度 —— false = 按月（月度应收/已收/收缴率），true = 按年（**年度**应收/已收/收缴率）。
+        /// 卡片文案（本月/本年、较上月/较上年）由客户端据此切换。
+        /// </summary>
+        public bool Annual { get; set; }
 
         /// <summary>待办提醒（前 N 条，与顶部铃铛通知中心共用数据源）。</summary>
         public System.Collections.Generic.List<TodoItemDto> Todos { get; set; }

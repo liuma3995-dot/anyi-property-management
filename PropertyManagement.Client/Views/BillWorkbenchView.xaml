@@ -499,7 +499,7 @@
                     <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6"
                             Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}">
                         <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BillObjects}" IsReadOnly="True"
-                                  RowHeight="32" MaxHeight="140" HeadersVisibility="Column">
+                                  RowHeight="32" MaxHeight="150" HeadersVisibility="Column" ColumnHeaderHeight="48">
                             <DataGrid.Columns>
                                 <!-- CHG-v1.1.2-35 / -36：勾选列用「GridCheckCell + GridCheckBox」专用样式（去单元格 12px 内边距），
                                      否则默认单元格内边距会把 24px 宽的勾选框裁掉一半（全仓其它模块同口径） -->
@@ -513,7 +513,39 @@
                                 </DataGridTemplateColumn>
                                 <!-- CHG-v1.1.2-35：列宽按「对话框 1000 − 内边距」重排，表头文字与状态标识不再被裁切 -->
                                 <DataGridTextColumn Header="缴费对象" Width="170" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
-                                <DataGridTextColumn Header="规格（自动匹配）" Width="130" Binding="{Binding SpecText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- CHG-v1.2.0-12 / -15：规格列＝表头批选（默认） + 行内手选（覆盖）——
+                                     表头选定后本批全部对象按该规格与其计算规则出账，无需逐条单选；
+                                     不选＝自动匹配（按适用条件）。 -->
+                                <DataGridTemplateColumn Width="212" MinWidth="212">
+                                    <DataGridTemplateColumn.Header>
+                                        <StackPanel>
+                                            <TextBlock Text="规格（默认/可手选）" FontSize="11" />
+                                            <ComboBox Height="24" FontSize="10" Margin="0,3,0,0" MaxWidth="196"
+                                                      VerticalAlignment="Center"
+                                                      ItemsSource="{Binding DataContext.BatchSpecOptions, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                      DisplayMemberPath="ShortDisplayText"
+                                                      SelectedItem="{Binding DataContext.SelectedBatchSpec, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                                      ToolTip="批选规格：所选规格与其计算规则自动套用到本批全部缴费对象；仍需单独调整时，可在该行的下拉框里改（行内手选优先）" />
+                                        </StackPanel>
+                                    </DataGridTemplateColumn.Header>
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Grid VerticalAlignment="Center">
+                                                <TextBlock Text="{Binding SpecText}" FontSize="11" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextSecondaryBrush}"
+                                                           Visibility="{Binding CanPickSpec, Converter={StaticResource InverseBoolToVis}}" />
+                                                <ComboBox Height="26" FontSize="11" MinWidth="150" MaxWidth="188"
+                                                          VerticalAlignment="Center"
+                                                          ItemsSource="{Binding SpecOptions}"
+                                                          DisplayMemberPath="DisplayText"
+                                                          SelectedItem="{Binding SelectedSpec, Mode=OneWay}"
+                                                          SelectionChanged="RowSpecComboBox_SelectionChanged"
+                                                          Visibility="{Binding CanPickSpec, Converter={StaticResource BoolToVis}}"
+                                                          ToolTip="默认「自动匹配」（按适用条件命中，未命中走兜底）；可逐行手选具体规格，试算与生成同口径" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
                                 <!-- CHG-v1.1.2-50：单价列 —— 收费项目开启「出账时可改价」时按行改价（留空＝价目表单价）；
                                      未开启时保持只读展示，与价目表口径一致。 -->
                                 <DataGridTemplateColumn Header="单价" Width="130">

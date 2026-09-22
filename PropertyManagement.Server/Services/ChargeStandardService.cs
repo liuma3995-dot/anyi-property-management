@@ -642,6 +642,14 @@ namespace PropertyManagement.Server.Services
         {
             string formula = (request.Formula ?? string.Empty).Trim();
 
+            // CHG-v1.2.0-14（负责人 2026-09-21）：适用条件下线「房产状态」维度 ——
+            // 空置定价统一走「房产用途 = 空置」（房产列表已展示用途，口径唯一、不再两处都能配）。
+            if (request.MatchStatus.HasValue)
+            {
+                throw ApiException.ValidationFailed(
+                    "适用条件不再支持「房产状态」（该维度已下线）：如需按空置定价，请选择「房产用途 = 空置」");
+            }
+
             // 公式引用的变量必须已绑定到该收费标准（否则出账时取不到值，属于配置错误，保存阶段即拦下）
             if (formula.Length > 0)
             {

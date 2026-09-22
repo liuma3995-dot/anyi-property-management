@@ -234,6 +234,8 @@ namespace PropertyManagement.Client.ViewModels
             try
             {
                 ChargeStandardDto standard = await Api.GetChargeStandardAsync(standardId.Value);
+                // CHG-v1.2.0-12：同时取「启用中的规格」作为出账行的手选候选（未手选＝自动匹配）
+                BuildSpecOptions(standard);
                 var referenced = new HashSet<int>();
                 foreach (ChargeStandardSpecDto spec in (standard == null ? new List<ChargeStandardSpecDto>() : standard.Specs ?? new List<ChargeStandardSpecDto>())
                     .Where(x => x.Status == 0))
@@ -250,8 +252,65 @@ namespace PropertyManagement.Client.ViewModels
             catch (Exception)
             {
                 _standardMeasureVars = new List<ChargeVariableDto>();
+                _standardSpecOptions = new List<BillSpecOption>();
             }
             OnPropertyChanged(nameof(HasStandardMeasures));
+            OnPropertyChanged(nameof(CanPickSpec));
+            OnPropertyChanged(nameof(SpecPickHintText));
+        }
+
+        /// <summary>价目表启用规格 → 下拉候选（首项为「自动匹配」哨兵）。</summary>
+        private void BuildSpecOptions(ChargeStandardDto standard)
+        {
+            var options = new List<BillSpecOption>
+            {
+                new BillSpecOption { SpecId = 0, IsAuto = true, SpecName = "自动匹配" }
+            };
+            foreach (ChargeStandardSpecDto spec in (standard == null ? new List<ChargeStandardSpecDto>() : standard.Specs ?? new List<ChargeStandardSpecDto>())
+                .Where(x => x.Status == 0)
+                .OrderByDescending(x => x.IsFallback)
+                .ThenBy(x => x.Id))
+            {
+                options.Add(new BillSpecOption
+                {
+                    SpecId = spec.Id,
+                    SpecName = spec.SpecName,
+                    UnitPrice = spec.UnitPrice,
+                    PriceUnit = spec.PriceUnit,
+                    MatchText = DescribeSpecMatch(spec)
+                });
+            }
+            _standardSpecOptions = options;
+            // CHG-v1.2.0-15：表头批选候选同步（默认选中「自动匹配」，或保留已批选的规格）
+            BatchSpecOptions.Clear();
+            foreach (BillSpecOption option in options) { BatchSpecOptions.Add(option); }
+            _applyingSpecTemplate = true;
+            try
+            {
+                _selectedBatchSpec = _defaultSpecId.HasValue
+                    ? (BatchSpecOptions.FirstOrDefault(x => !x.IsAuto && x.SpecId == _defaultSpecId.Value) ?? BatchSpecOptions.FirstOrDefault())
+                    : BatchSpecOptions.FirstOrDefault();
+            }
+            finally
+            {
+                _applyingSpecTemplate = false;
+            }
+            OnPropertyChanged(nameof(SelectedBatchSpec));
+        }
+
+        /// <summary>规格适用条件摘要（与价目表口径一致：住宅/商铺…、楼栋、车位类型，兜底显示「不限」）。</summary>
+        private static string DescribeSpecMatch(ChargeStandardSpecDto spec)
+        {
+            if (spec.IsFallback) { return "不限（兜底）"; }
+            var parts = new List<string>();
+            if (spec.MatchUsage.HasValue)
+                parts.Add(spec.MatchUsage.Value == 0 ? "住宅" : (spec.MatchUsage.Value == 1 ? "商铺" : "空置"));
+            if (spec.MatchStatus.HasValue)
+                parts.Add("状态" + spec.MatchStatus.Value);
+            if (spec.MatchSpaceType.HasValue)
+                parts.Add(spec.MatchSpaceType.Value == 0 ? "产权车位" : (spec.MatchSpaceType.Value == 1 ? "普通车位" : "临时车位"));
+            if (!string.IsNullOrWhiteSpace(spec.MatchBuilding)) { parts.Add(spec.MatchBuilding.Trim()); }
+            return parts.Count == 0 ? "不限" : string.Join(" / ", parts);
         }
 
         /// <summary>把「手填」计量参数模板铺到当前可见的缴费对象行（已填值按 类型:ID 回填）。</summary>
@@ -306,6 +365,8 @@ namespace PropertyManagement.Client.ViewModels
             }
             // CHG-v1.1.2-50：出账改价输入行与「手填」计量同批铺入（同一个行集合生命周期）
             ApplyPriceOverrideTemplateToRows();
+            // CHG-v1.2.0-12：规格候选与手选同批铺入（未手选＝自动匹配）
+            ApplySpecTemplateToRows();
         }
 
         /// <summary>收费项目（= 收费标准）切换后重新解析手填变量并铺到行上。</summary>
@@ -337,13 +398,23 @@ namespace PropertyManagement.Client.ViewModels
                 bool hasMeasures = _objectMeasures.TryGetValue(key, out map) && map.Count > 0;
                 decimal price;
                 bool hasPrice = _objectPrices.TryGetValue(key, out price) && price > 0m;
-                if (!hasMeasures && !hasPrice) { continue; }
+                // CHG-v1.2.0-12：手选规格（未手选 = 不提交，服务端按自动匹配计价）
+                int specId;
+                bool hasSpec = _objectSpecs.TryGetValue(key, out specId) && specId > 0;
+                // CHG-v1.2.0-15：单行未手选时用表头批选的默认规格
+                if (!hasSpec && _defaultSpecId.HasValue)
+                {
+                    specId = _defaultSpecId.Value;
+                    hasSpec = specId > 0;
+                }
+                if (!hasMeasures && !hasPrice && !hasSpec) { continue; }
                 list.Add(new BillObjectMeasureRequest
                 {
                     Kind = ObjectKind,
                     ObjectId = id,
                     Measures = hasMeasures ? new Dictionary<int, decimal>(map) : null,
-                    UnitPriceOverride = hasPrice ? (decimal?)price : null
+                    UnitPriceOverride = hasPrice ? (decimal?)price : null,
+                    SpecId = hasSpec ? (int?)specId : null
                 });
             }
             return list;

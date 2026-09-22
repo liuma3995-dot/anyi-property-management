@@ -133,6 +133,11 @@ namespace PropertyManagement.Client.ViewModels
         private string _deleteConfirmSuccess = string.Empty;
         private Func<Task> _deleteConfirmAction;
         private bool _isSelectAll;
+        /// <summary>
+        /// 全选作用域标记（v1.2.0 第 3 轮）：勾选表头全选框 = 选中**当前筛选条件下的全部房产**（含其它页面）。
+        /// 现场口径：勾了全选却只删掉当前页 → 必须删除当前筛选结果的全部数据。
+        /// </summary>
+        private bool _isSelectAllFiltered;
         private readonly DispatcherTimer _searchDebounce;
 
         public PropertyListViewModel(IApiClient api) : base(api)
@@ -279,7 +284,10 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsDeleteConfirmVisible { get { return _isDeleteConfirmVisible; } private set { SetProperty(ref _isDeleteConfirmVisible, value); } }
         public string DeleteConfirmTitle { get { return _deleteConfirmTitle; } private set { SetProperty(ref _deleteConfirmTitle, value); } }
         public string DeleteConfirmMessage { get { return _deleteConfirmMessage; } private set { SetProperty(ref _deleteConfirmMessage, value); } }
-        /// <summary>全选：勾选/取消勾选当前页全部行。</summary>
+        /// <summary>
+        /// 全选（v1.2.0 第 3 轮修正作用域）：勾选 = 选中**当前筛选条件下的全部房产**（含其它页面），
+        /// 删除时按整个筛选结果执行，而不是只删当前页；取消勾选 = 清空全部勾选。
+        /// </summary>
         public bool IsSelectAll
         {
             get { return _isSelectAll; }
@@ -287,8 +295,35 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _isSelectAll, value))
                 {
+                    _isSelectAllFiltered = value;
                     foreach (var r in Items) { r.IsChecked = value; }
+                    OnPropertyChanged(nameof(SelectionHint));
                 }
+            }
+        }
+
+        /// <summary>选择提示（v1.2.0 第 3 轮）：让用户看清「全选」到底是几户、是否跨页。</summary>
+        public string SelectionHint
+        {
+            get
+            {
+                if (_isSelectAllFiltered)
+                    return "已全选当前筛选条件下的全部 " + Total + " 户房产（删除时含其它页面）";
+                int checkedCount = Items.Count(x => x.IsChecked);
+                return checkedCount > 0 ? "已勾选 " + checkedCount + " 户房产（仅当前页）" : string.Empty;
+            }
+        }
+
+        /// <summary>行勾选变化：任一行被取消勾选即退出「全选全部」作用域（避免误删整库）。</summary>
+        private void OnRowPropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(PropertyRow.IsChecked)) return;
+            var row = sender as PropertyRow;
+            if (row == null || row.IsChecked) return;
+            if (_isSelectAllFiltered)
+            {
+                _isSelectAllFiltered = false;
+                OnPropertyChanged(nameof(SelectionHint));
             }
         }
 
@@ -334,21 +369,20 @@ namespace PropertyManagement.Client.ViewModels
 
         private async Task LoadCoreAsync()
         {
-            var query = new BaseInfoQueryRequest
-            {
-                PageIndex = _pageIndex,
-                PageSize = _pageSize,
-                Keyword = SearchText,
-                BuildingId = _buildingFilter.HasValue && _buildingFilter.Value > 0 ? _buildingFilter : null,
-                OnlyArrear = _arrearFilter == 1
-            };
-            if (_statusFilter != 0) query.Status = _statusFilter == 1 ? PropertyStatus.Occupied : (_statusFilter == 2 ? PropertyStatus.Renovating : PropertyStatus.Vacant);
+            var query = BuildQuery(_pageIndex, _pageSize);
             var page = await Api.QueryPropertiesAsync(query);
             Items.Clear();
-            foreach (var dto in page.Items) Items.Add(new PropertyRow { Dto = dto });
+            foreach (var dto in page.Items)
+            {
+                var row = new PropertyRow { Dto = dto };
+                row.PropertyChanged += OnRowPropertyChanged;
+                Items.Add(row);
+            }
             Total = page.Total;
             _isSelectAll = false;
+            _isSelectAllFiltered = false;
             OnPropertyChanged(nameof(IsSelectAll));
+            OnPropertyChanged(nameof(SelectionHint));
             OnPropertyChanged(nameof(CanPrev));
             OnPropertyChanged(nameof(CanNext));
         }
@@ -545,6 +579,8 @@ namespace PropertyManagement.Client.ViewModels
 
         private void RequestBatchDelete()
         {
+            // v1.2.0 第 3 轮：勾了表头「全选」→ 删除当前筛选条件下的全部房产（含其它页面）
+            if (_isSelectAllFiltered) { _ = RequestBatchDeleteAllAsync(); return; }
             var rows = Items.Where(x => x.IsChecked).ToList();
             if (rows.Count == 0) { ErrorText = "请先勾选要删除的房产"; return; }
             string houseDesc = string.Join("、", rows.Take(3).Select(r => r.Path));
@@ -554,6 +590,49 @@ namespace PropertyManagement.Client.ViewModels
                 "将删除 " + rows.Count + " 户房产（软删除，存在业主绑定关系的房产将跳过）：\n" + houseDesc,
                 "已批量删除 " + rows.Count + " 户房产（软删除）",
                 () => DeletePropertiesCoreAsync(rows));
+        }
+
+        /// <summary>
+        /// 「全选」删除（v1.2.0 第 3 轮）：先取回当前筛选条件下的**全部**房产（跨页），再逐户软删。
+        /// 取回数量与列表「共 N 条记录」一致；存在业主绑定关系的户跳过并在提示里汇总。
+        /// </summary>
+        private async Task RequestBatchDeleteAllAsync()
+        {
+            var rows = new List<PropertyRow>();
+            await RunAsync(async () =>
+            {
+                var query = BuildQuery(1, 100000);
+                var page = await Api.QueryPropertiesAsync(query);
+                rows.AddRange(page.Items.Select(dto => new PropertyRow { Dto = dto }));
+            }, string.Empty);
+            if (rows.Count == 0)
+            {
+                ErrorText = "当前筛选条件下没有可删除的房产";
+                return;
+            }
+            var targets = rows;
+            ConfigureDeleteConfirm(
+                "确认批量删除房产？",
+                "已全选当前筛选条件下的全部 " + targets.Count + " 户房产（含其它页面）：\n将全部软删除，存在业主绑定关系的房产将跳过。",
+                "已批量删除 " + targets.Count + " 户房产（软删除）",
+                () => DeletePropertiesCoreAsync(targets));
+        }
+
+        /// <summary>按当前筛选条件构造查询（列表分页与「全选删除」共用同一口径）。</summary>
+        private BaseInfoQueryRequest BuildQuery(int pageIndex, int pageSize)
+        {
+            var query = new BaseInfoQueryRequest
+            {
+                PageIndex = pageIndex,
+                PageSize = pageSize,
+                Keyword = SearchText,
+                BuildingId = _buildingFilter.HasValue && _buildingFilter.Value > 0 ? _buildingFilter : null,
+                OnlyArrear = _arrearFilter == 1
+            };
+            if (_statusFilter != 0)
+                query.Status = _statusFilter == 1 ? PropertyStatus.Occupied
+                    : (_statusFilter == 2 ? PropertyStatus.Renovating : PropertyStatus.Vacant);
+            return query;
         }
 
         private async Task DeleteBuildingCoreAsync(int buildingId)

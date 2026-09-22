@@ -21,6 +21,13 @@ namespace PropertyManagement.Server.Services
     /// </summary>
     public class TodoService
     {
+        /// <summary>
+        /// 逾期宽限口径（CHG-v1.2.0-24，与 <c>SqlFinanceRepository.MarkOverdue</c> /
+        /// <c>PaymentService.ResolveBillStatusByMoney</c> 完全一致）：
+        /// 到期当天**不**逾期，到期后第 1 天也**不**逾期，**超过 1 天**才算逾期。
+        /// </summary>
+        private const int OverdueGraceDays = 1;
+
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly EquipmentService _equipment;
 
@@ -116,10 +123,15 @@ namespace PropertyManagement.Server.Services
             return items;
         }
 
-        /// <summary>欠费催缴：部分缴/逾期且仍有余额的账单。</summary>
+        /// <summary>
+        /// 欠费催缴：部分缴 / 已逾期且仍有余额的账单。
+        /// CHG-v1.2.0-24：逾期口径改为**按到期日推算**（到期日之后超过 1 天），与欠费台账「状态」列同源 ——
+        /// 原实现只认账单已落库的状态（status IN (1,2)），刚生成/尚未被账单页刷新的逾期账单不进待办，
+        /// 且把「到期后 1 天内」也算成逾期。
+        /// </summary>
         private static List<TodoItemDto> ArrearTodos(IDbConnection connection)
         {
-            var rows = connection.Query<ArrearTodoRow>(
+            var rows = connection.Query<ArrearTodoRow>((
                 "SELECT b.id AS BillId, CAST(b.amount - b.paid_amount AS REAL) AS Amount, b.due_at AS DueAt, b.status AS Status, " +
                 "COALESCE(p.room_no,'') AS RoomNo, COALESCE(bl.building_no,'') AS BuildingNo, " +
                 "COALESCE(ps.space_no,'') AS SpaceNo, " +
@@ -129,18 +141,42 @@ namespace PropertyManagement.Server.Services
                 "LEFT JOIN t_property p ON p.id = b.property_id " +
                 "LEFT JOIN t_building bl ON bl.id = p.building_id " +
                 "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
-                "WHERE b.del_flag = 0 AND b.status IN (1, 2) AND b.amount > b.paid_amount " +
-                "ORDER BY b.due_at LIMIT 50").ToList();
+                "WHERE b.del_flag = 0 AND b.status IN (0, 1, 2) AND b.amount > b.paid_amount " +
+                // 只收「部分缴」或「已逾期」的账单：未到期且未缴的账单还不是催缴待办
+                "AND (b.status IN (1, 2) OR julianday(date('now','localtime')) - julianday(date(b.due_at)) > @grace) " +
+                "ORDER BY b.due_at LIMIT 50"),
+                new { grace = OverdueGraceDays }).ToList();
 
             var items = new List<TodoItemDto>();
             foreach (ArrearTodoRow row in rows)
             {
                 int overdueDays = (int)Math.Floor((DateTime.Today - row.DueAt.Date).TotalDays);
+                bool overdue = overdueDays > OverdueGraceDays;
                 string subject = !string.IsNullOrWhiteSpace(row.RoomNo)
                     ? (string.IsNullOrWhiteSpace(row.BuildingNo) ? string.Empty : row.BuildingNo + " 栋 ") + row.RoomNo + " 室"
                     : (string.IsNullOrWhiteSpace(row.SpaceNo) ? "账单 #" + row.BillId : "车位 " + row.SpaceNo);
+
+                // 到期文案：逾期（>1 天）/ 已到期 1 天（宽限期内）/ 今日到期 / 还有 N 天到期
+                string dueText;
+                if (overdue)
+                {
+                    dueText = "逾期 " + overdueDays + " 天";
+                }
+                else if (overdueDays > 0)
+                {
+                    dueText = "到期 " + overdueDays + " 天（宽限期内）";
+                }
+                else if (overdueDays == 0)
+                {
+                    dueText = "今日到期";
+                }
+                else
+                {
+                    dueText = (-overdueDays) + " 天后到期";
+                }
+
                 string meta = "财务收费  ·  应收 ¥" + row.Amount.ToString("N2") +
-                              (overdueDays > 0 ? "  ·  逾期 " + overdueDays + " 天" : "  ·  今日到期") +
+                              "  ·  " + dueText +
                               (string.IsNullOrWhiteSpace(row.OwnerName) ? string.Empty : "  ·  业主 " + row.OwnerName);
 
                 items.Add(new TodoItemDto
@@ -150,8 +186,8 @@ namespace PropertyManagement.Server.Services
                     KindText = "欠费催缴",
                     Title = subject + " 欠费 ¥" + row.Amount.ToString("N2"),
                     Meta = meta,
-                    Tag = overdueDays > 0 ? "逾期" : "待催缴",
-                    Level = overdueDays > 0 || row.Status == (int)BillStatus.Overdue ? "danger" : "warning",
+                    Tag = overdue ? "逾期" : (row.Status == (int)BillStatus.Partial ? "部分缴" : "待催缴"),
+                    Level = overdue || row.Status == (int)BillStatus.Overdue ? "danger" : "warning",
                     DueAt = row.DueAt,
                     TargetModule = "finance",
                     TargetPage = "欠费台账",

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
+using System.Linq;
 using ClosedXML.Excel;
 using PdfSharp.Drawing;
 using PdfSharp.Fonts;
@@ -176,6 +177,242 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        private const int ArrearDetailExportMaxRows = 5000;
+
+        /// <summary>
+        /// 收款登记「应缴明细」导出 PDF（CHG-v1.2.0-32，负责人 2026-09-22）：
+        /// 口径 = **当前所选缴费对象的全部应缴明细**（含已结清未清理的记录，与页面表格一致），
+        /// 供用户在「清理（删除）已结清记录」之前先导出归档 ——
+        /// 既满足归档留痕，又满足列表记录管理。
+        /// 列与页面一致：账单号 / 缴费对象 / 收费项目 / 账单期间 / 应收 / 已收 / 未收 / 状态；
+        /// 文末汇总（合计应收 / 已收 / 未收、已结清与未结清笔数）。
+        /// 文件写 t_report_log（report_type = arrear_detail）并记审计，下载走 /reports/files/{id}。
+        /// 本导出**只读**：不改动任何账单或资金数据。
+        /// </summary>
+        public ReportLogDto ExportArrearDetails(ArrearDetailExportRequest request, string operatorName = null)
+        {
+            request = request ?? new ArrearDetailExportRequest();
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                var query = new BillQueryRequest
+                {
+                    PayerOwnerId = request.PayerOwnerId,
+                    PayerName = string.IsNullOrWhiteSpace(request.PayerName) ? null : request.PayerName.Trim(),
+                    OwnerId = request.OwnerId,
+                    PropertyId = request.PropertyId,
+                    PageIndex = 1,
+                    PageSize = ArrearDetailExportMaxRows
+                };
+                // 草稿不可收款、也不在应缴明细表格里 → 导出与页面同口径
+                List<BillListItemDto> items = (_finance.QueryBills(connection, query).Items ?? new List<BillListItemDto>())
+                    .Where(x => x.Status != BillStatus.Draft)
+                    .OrderBy(x => x.DueAt).ThenBy(x => x.Id)
+                    .ToList();
+
+                string payer = string.IsNullOrWhiteSpace(request.PayerDisplay)
+                    ? "—"
+                    : request.PayerDisplay.Trim();
+                string period = DateTime.Now.ToString("yyyyMMddHHmmss");
+                string fileName = "arrear_detail_" + period + ".pdf";
+                string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+                ExportArrearDetailsPdf(filePath, items, payer);
+
+                var log = new ReportLogDto
+                {
+                    ReportType = "arrear_detail",
+                    Period = period,
+                    Format = ExportFormat.Pdf,
+                    FilePath = filePath
+                };
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    log.Id = _finance.InsertReportLog(connection, transaction, log);
+                    transaction.Commit();
+                }
+
+                _audit.Write("ARREAR_DETAIL_EXPORT", "report_log", log.Id.ToString(),
+                    "收款登记应缴明细导出 PDF：缴费对象 " + payer + "，共 " + items.Count + " 笔，文件 " + fileName,
+                    userName: operatorName, module: "财务收费", result: "成功");
+
+                ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
+                return saved ?? log;
+            }
+        }
+
+        /// <summary>
+        /// 应缴明细 PDF 绘制（A4 纵向，长名单自动翻页并重画表头）。
+        /// 列宽按 A4 可打印宽度（595.28 - 左右各 40pt = 515pt）排布，单元格按实际量宽裁剪，
+        /// 避免「单元被遮挡 / 文字被裁掉」（本仓多轮反馈的高频问题）。
+        /// </summary>
+        private static void ExportArrearDetailsPdf(string filePath, List<BillListItemDto> items, string payer)
+        {
+            PdfFontSupport.Ensure();
+
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
+            var smallFont = new XFont("SimHei", 7.5, XFontStyleEx.Regular);
+
+            // 列宽合计 492pt（xa[0]=40 → 最右边界 532pt，仍在右边距 555pt 之内）
+            string[] headers = { "账单号", "缴费对象", "收费项目", "账单期间", "应收", "已收", "未收", "状态" };
+            double[] xs = { 40, 86, 178, 264, 356, 406, 456, 506 };
+            double[] widths = { 46, 92, 86, 92, 50, 50, 50, 34 };
+            const double TableRight = 540;
+
+            decimal totalAmount = items.Sum(x => x.Amount);
+            decimal totalPaid = items.Sum(x => x.PaidAmount);
+            decimal totalUnpaid = items.Sum(x => x.Amount - x.PaidAmount);
+            int settledCount = items.Count(x => x.PaidAmount >= x.Amount);
+            int unsettledCount = items.Count - settledCount;
+
+            using (var document = new PdfDocument())
+            {
+                PdfPage page = null;
+                XGraphics gfx = null;
+                double y = 0;
+
+                try
+                {
+                    foreach (BillListItemDto item in items)
+                    {
+                        if (gfx == null || y > page.Height.Point - 60)
+                        {
+                            if (gfx != null) { gfx.Dispose(); gfx = null; }
+                            page = document.AddPage();
+                            page.Size = PdfSharp.PageSize.A4;
+                            gfx = XGraphics.FromPdfPage(page);
+                            y = 40;
+
+                            if (document.PageCount == 1)
+                            {
+                                gfx.DrawString("安怡物业 · 收款登记应缴明细", titleFont, XBrushes.Black, 40, y);
+                                y += 18;
+                                gfx.DrawString("缴费对象：" + payer +
+                                               "　导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                               "　共 " + items.Count + " 笔（已结清 " + settledCount + " / 未结清 " + unsettledCount + "）",
+                                    smallFont, XBrushes.Black, 40, y);
+                                y += 12;
+                                gfx.DrawString("合计：应收 ￥" + totalAmount.ToString("N2") + "　已收 ￥" + totalPaid.ToString("N2") +
+                                               "　未收 ￥" + totalUnpaid.ToString("N2"),
+                                    smallFont, XBrushes.Black, 40, y);
+                                y += 12;
+                                gfx.DrawString("说明：本表为归档留存件；清理（删除）已结清记录只从「应缴明细」列表移除，" +
+                                               "账单与收款、退款、财务报表、收支明细流水、业主档案缴费概况均保留。",
+                                    smallFont, XBrushes.Black, 40, y);
+                                y += 16;
+                            }
+                            else
+                            {
+                                gfx.DrawString("安怡物业 · 收款登记应缴明细（续）　缴费对象：" + payer,
+                                    headerFont, XBrushes.Black, 40, y);
+                                y += 16;
+                            }
+
+                            for (int i = 0; i < headers.Length; i++)
+                            {
+                                gfx.DrawString(headers[i], headerFont, XBrushes.Black, xs[i], y);
+                            }
+                            y += 4;
+                            gfx.DrawLine(XPens.Gray, xs[0], y, TableRight, y);
+                            y += 11;
+                        }
+
+                        string[] cells =
+                        {
+                            "BILL-" + item.Id.ToString("D4"),
+                            ArrearObjectText(item),
+                            item.ChargeItemName ?? string.Empty,
+                            string.IsNullOrWhiteSpace(item.CyclePeriod) ? "—" : item.CyclePeriod.Trim().Replace(" ", string.Empty),
+                            // 全角「￥」：SimHei 含该字形；半角 ¥(U+00A5) 在 PDF 里会缺字（渲染成方框）
+                            "￥" + item.Amount.ToString("N2"),
+                            "￥" + item.PaidAmount.ToString("N2"),
+                            "￥" + (item.Amount - item.PaidAmount).ToString("N2"),
+                            ArrearBillStatusText(item)
+                        };
+                        for (int i = 0; i < cells.Length; i++)
+                        {
+                            gfx.DrawString(FitToWidth(gfx, cells[i], bodyFont, widths[i]),
+                                bodyFont, XBrushes.Black, xs[i], y);
+                        }
+                        y += 14;
+                    }
+
+                    if (items.Count == 0)
+                    {
+                        page = document.AddPage();
+                        page.Size = PdfSharp.PageSize.A4;
+                        gfx = XGraphics.FromPdfPage(page);
+                        y = 40;
+                        gfx.DrawString("安怡物业 · 收款登记应缴明细", titleFont, XBrushes.Black, 40, y);
+                        y += 18;
+                        gfx.DrawString("缴费对象：" + payer, smallFont, XBrushes.Black, 40, y);
+                        y += 20;
+                        gfx.DrawString("该缴费对象当前没有应缴明细记录。", bodyFont, XBrushes.Black, 40, y);
+                    }
+                    else
+                    {
+                        if (y > page.Height.Point - 50)
+                        {
+                            gfx.Dispose();
+                            gfx = null;
+                            page = document.AddPage();
+                            page.Size = PdfSharp.PageSize.A4;
+                            gfx = XGraphics.FromPdfPage(page);
+                            y = 40;
+                        }
+                        y += 4;
+                        gfx.DrawLine(XPens.Gray, xs[0], y, TableRight, y);
+                        y += 11;
+                        // 合计行整行起排（不分列对齐）：金额串长于单列宽度，分列绘制会互相压字
+                        gfx.DrawString("合计：应收 ￥" + totalAmount.ToString("N2") +
+                                       "　已收 ￥" + totalPaid.ToString("N2") +
+                                       "　未收 ￥" + totalUnpaid.ToString("N2"),
+                            headerFont, XBrushes.Black, xs[0], y);
+                    }
+
+                    document.Save(filePath);
+                }
+                finally
+                {
+                    if (gfx != null) { gfx.Dispose(); }
+                }
+            }
+        }
+
+        /// <summary>
+        /// 应缴明细「缴费对象」展示（与收款登记表格同口径）：
+        /// 车位 → 「车位 X」；业主直缴（无房产/车位）→ 「业主直缴」；自定义缴费对象 → 手工填写的名称；
+        /// 房产 → 「楼栋 房号」（无房号时回落房产编号）。
+        /// </summary>
+        private static string ArrearObjectText(BillListItemDto item)
+        {
+            if (item == null) { return "—"; }
+            if (!string.IsNullOrWhiteSpace(item.PayerName)) { return item.PayerName.Trim(); }
+            if (item.ParkingId.HasValue)
+            {
+                return string.IsNullOrEmpty(item.SpaceNo) ? "车位" : "车位 " + item.SpaceNo;
+            }
+            if (item.OwnerId.HasValue && !item.PropertyId.HasValue) { return "业主直缴"; }
+            string building = string.IsNullOrEmpty(item.BuildingNo) ? string.Empty : item.BuildingNo + " ";
+            string room = string.IsNullOrEmpty(item.RoomNo) ? (item.PropertyNo ?? "—") : item.RoomNo;
+            string text = (building + room).Trim();
+            return string.IsNullOrEmpty(text) ? "—" : text;
+        }
+
+        /// <summary>应缴明细「状态」（与收款登记表格同口径，已结清以金额为准）。</summary>
+        private static string ArrearBillStatusText(BillListItemDto item)
+        {
+            if (item == null) { return "—"; }
+            if (item.PaidAmount >= item.Amount) { return "已结清"; }
+            switch (item.Status)
+            {
+                case BillStatus.Partial: return "部分缴";
+                case BillStatus.Overdue: return "逾期";
+                case BillStatus.Draft: return "草稿";
+                default: return "未缴";
+            }
+        }
+
         /// <summary>
         /// CHG-v1.1.2-33：收费项目清单导出（PDF / Excel）。
         /// 复用财务报表同一条导出通道（ClosedXML / PDFsharp + PdfFontSupport），并写 t_report_log 留痕。
@@ -217,6 +454,55 @@ namespace PropertyManagement.Server.Services
 
                 _audit.Write("CHARGE_ITEM_EXPORT", "report_log", log.Id.ToString(),
                     "收费项目清单导出：" + items.Count + " 条，" + request.Format + "，文件 " + fileName,
+                    result: "Success");
+
+                ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
+                return saved ?? log;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-25：支出登记明细导出（PDF）。
+        /// 口径与页面一致 —— 导出**当前筛选条件**下的支出明细（关键字 / 类别 / 状态），
+        /// 文件写 t_report_log（report_type = expense）并经 /reports/files/{id} 下载。
+        /// 列：支出编号 / 日期 / 类别 / 摘要 / 金额 / 收款方 / 状态；文末追加合计行（不含已删除）。
+        /// </summary>
+        public ReportLogDto ExportExpenses(ExpenseExportRequest request)
+        {
+            request = request ?? new ExpenseExportRequest();
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                List<ExpenseDto> items = _finance.ListExpensesForExport(connection, request)
+                    ?? new List<ExpenseDto>();
+
+                string period = DateTime.Now.ToString("yyyyMMddHHmmss");
+                string fileName = "expenses_" + period + (request.Format == ExportFormat.Excel ? ".xlsx" : ".pdf");
+                string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+
+                if (request.Format == ExportFormat.Excel)
+                {
+                    ExportExpensesExcel(filePath, items);
+                }
+                else
+                {
+                    ExportExpensesPdf(filePath, items, request);
+                }
+
+                var log = new ReportLogDto
+                {
+                    ReportType = "expense",
+                    Period = period,
+                    Format = request.Format,
+                    FilePath = filePath
+                };
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    log.Id = _finance.InsertReportLog(connection, transaction, log);
+                    transaction.Commit();
+                }
+
+                _audit.Write("EXPENSE_EXPORT", "report_log", log.Id.ToString(),
+                    "支出登记明细导出：" + items.Count + " 条，" + request.Format + "，文件 " + fileName,
                     result: "Success");
 
                 ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
@@ -1126,6 +1412,224 @@ namespace PropertyManagement.Server.Services
                         y += 13;
                     }
                 }
+                document.Save(filePath);
+            }
+        }
+
+        // ---------- 支出登记明细导出（CHG-v1.2.0-25） ----------
+
+        /// <summary>导出状态文案（与页面「状态」列一致）。</summary>
+        private static string ExpenseStatusText(ExpenseDto item)
+        {
+            return item.Status == 0 ? "已支付" : "已删除";
+        }
+
+        /// <summary>筛选条件摘要（写入 PDF 抬头，便于事后对账「这份文件是哪个口径导出的」）。</summary>
+        private static string ExpenseFilterText(ExpenseExportRequest request)
+        {
+            var parts = new List<string>();
+            parts.Add(string.IsNullOrWhiteSpace(request.Keyword) ? "关键字：不限" : "关键字：" + request.Keyword.Trim());
+            parts.Add(request.CategoryId.HasValue && request.CategoryId.Value > 0
+                ? "类别：指定分类"
+                : "类别：全部");
+            parts.Add(request.StatusFilter == 1 ? "状态：仅未删除"
+                : (request.StatusFilter == 2 ? "状态：仅已删除" : "状态：全部"));
+            return string.Join(" ｜ ", parts);
+        }
+
+        private static void ExportExpensesExcel(string filePath, List<ExpenseDto> items)
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.Worksheets.Add("支出登记明细");
+                sheet.Cell(1, 1).Value = "安怡物业 · 支出登记明细";
+                sheet.Cell(2, 1).Value = "导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 笔";
+
+                string[] headers = { "支出编号", "日期", "类别", "摘要", "金额", "收款方", "状态" };
+                int start = 4;
+                for (int c = 1; c <= headers.Length; c++)
+                {
+                    sheet.Cell(start, c).Value = headers[c - 1];
+                    sheet.Cell(start, c).Style.Font.Bold = true;
+                }
+
+                int row = start + 1;
+                foreach (ExpenseDto item in items)
+                {
+                    sheet.Cell(row, 1).Value = "ZC-" + item.Id.ToString("D4");
+                    sheet.Cell(row, 2).Value = item.ExpenseDate.ToString("yyyy-MM-dd");
+                    sheet.Cell(row, 3).Value = item.CategoryName ?? string.Empty;
+                    sheet.Cell(row, 4).Value = item.Note ?? string.Empty;
+                    sheet.Cell(row, 5).Value = -item.Amount;
+                    sheet.Cell(row, 6).Value = item.Payee ?? string.Empty;
+                    sheet.Cell(row, 7).Value = ExpenseStatusText(item);
+                    row++;
+                }
+
+                if (items.Count > 0)
+                {
+                    decimal active = items.Where(x => x.Status == 0).Sum(x => x.Amount);
+                    sheet.Cell(row, 1).Value = "合计";
+                    sheet.Cell(row, 2).Value = "共 " + items.Count + " 笔";
+                    sheet.Cell(row, 4).Value = "未删除合计 " + active.ToString("0.00") + " 元（不含已删除）";
+                    for (int c = 1; c <= headers.Length; c++)
+                    {
+                        sheet.Cell(row, c).Style.Font.Bold = true;
+                        sheet.Cell(row, c).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+                    }
+                }
+                for (int c = 1; c <= headers.Length; c++) { sheet.Column(c).Width = 16; }
+                workbook.SaveAs(filePath);
+            }
+        }
+
+        /// <summary>
+        /// 支出登记明细 PDF（A4 纵向，长名单自动翻页并重画表头）。
+        /// 列宽按 A4 可打印宽度（左右各 40pt 边距）排布，单元格先按实际量宽裁剪 ——
+        /// 避免出现负责人多次反馈的「单元被遮挡 / 文字被裁掉」。
+        /// </summary>
+        private static void ExportExpensesPdf(string filePath, List<ExpenseDto> items, ExpenseExportRequest request)
+        {
+            PdfFontSupport.Ensure();
+
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
+            var smallFont = new XFont("SimHei", 7.5, XFontStyleEx.Regular);
+
+            // 列宽按 A4 可打印宽度（595.28 - 左右各 40pt = 515pt）分配：
+            // 摘要 146pt ≈ 18 个中文字、收款方 100pt ≈ 12 个中文字（覆盖现场常见内容不裁切）；
+            // 最右边界 550pt 仍在右边距（555pt）之内 —— 单元之间不重叠、不越界。
+            string[] headers = { "支出编号", "日期", "类别", "摘要", "金额", "收款方", "状态" };
+            double[] xs = { 40, 92, 146, 206, 352, 414, 514 };
+            double[] widths = { 52, 54, 60, 146, 62, 100, 36 };
+            const double TableRight = 550;
+
+            decimal activeTotal = items.Where(x => x.Status == 0).Sum(x => x.Amount);
+
+            using (var document = new PdfDocument())
+            {
+                PdfPage page = null;
+                XGraphics gfx = null;
+                double y = 0;
+
+                try
+                {
+                    foreach (ExpenseDto item in items)
+                    {
+                        if (gfx == null || y > page.Height.Point - 56)
+                        {
+                            if (gfx != null)
+                            {
+                                gfx.Dispose();
+                                gfx = null;
+                            }
+                            page = document.AddPage();
+                            page.Size = PdfSharp.PageSize.A4;
+                            gfx = XGraphics.FromPdfPage(page);
+                            y = 40;
+
+                            if (document.PageCount == 1)
+                            {
+                                gfx.DrawString("安怡物业 · 支出登记明细", titleFont, XBrushes.Black, 40, y);
+                                y += 18;
+                                gfx.DrawString("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                               "，共 " + items.Count + " 笔，未删除合计 " + activeTotal.ToString("0.00") + " 元",
+                                    smallFont, XBrushes.Black, 40, y);
+                                y += 13;
+                                gfx.DrawString("筛选：" + ExpenseFilterText(request), smallFont, XBrushes.Black, 40, y);
+                                y += 18;
+                            }
+                            else
+                            {
+                                gfx.DrawString("安怡物业 · 支出登记明细（续）", headerFont, XBrushes.Black, 40, y);
+                                y += 16;
+                            }
+
+                            // 表头 + 表头分隔线（每页重画）
+                            for (int i = 0; i < headers.Length; i++)
+                            {
+                                gfx.DrawString(headers[i], headerFont, XBrushes.Black, xs[i], y);
+                            }
+                            y += 4;
+                            gfx.DrawLine(XPens.Gray, xs[0], y, TableRight, y);
+                            y += 11;
+                        }
+
+                        string[] cells =
+                        {
+                            "ZC-" + item.Id.ToString("D4"),
+                            item.ExpenseDate.ToString("yyyy-MM-dd"),
+                            item.CategoryName ?? string.Empty,
+                            item.Note ?? string.Empty,
+                            // 全角「￥」：SimHei 含该字形；半角 ¥(U+00A5) 在 PDF 里会缺字（渲染成方框）
+                            "-￥" + item.Amount.ToString("N2"),
+                            item.Payee ?? string.Empty,
+                            ExpenseStatusText(item)
+                        };
+                        for (int i = 0; i < cells.Length; i++)
+                        {
+                            gfx.DrawString(FitToWidth(gfx, cells[i], bodyFont, widths[i]),
+                                bodyFont, XBrushes.Black, xs[i], y);
+                        }
+                        y += 14;
+                    }
+
+                    if (items.Count == 0)
+                    {
+                        page = document.AddPage();
+                        page.Size = PdfSharp.PageSize.A4;
+                        gfx = XGraphics.FromPdfPage(page);
+                        y = 40;
+                        gfx.DrawString("安怡物业 · 支出登记明细", titleFont, XBrushes.Black, 40, y);
+                        y += 18;
+                        gfx.DrawString("筛选：" + ExpenseFilterText(request), smallFont, XBrushes.Black, 40, y);
+                        y += 20;
+                        gfx.DrawString("当前筛选条件下没有支出记录。", bodyFont, XBrushes.Black, 40, y);
+                    }
+                    else
+                    {
+                        // 合计行（末尾）
+                        if (y > page.Height.Point - 50)
+                        {
+                            gfx.Dispose();
+                            gfx = null;
+                            page = document.AddPage();
+                            page.Size = PdfSharp.PageSize.A4;
+                            gfx = XGraphics.FromPdfPage(page);
+                            y = 40;
+                        }
+                        y += 4;
+                        gfx.DrawLine(XPens.Gray, xs[0], y, TableRight, y);
+                        y += 14;
+                        gfx.DrawString("合计：" + items.Count + " 笔 ｜ 未删除 " +
+                                       items.Count(x => x.Status == 0) + " 笔，合计 " + activeTotal.ToString("0.00") +
+                                       " 元（不含已删除）", bodyFont, XBrushes.Black, xs[0], y);
+                    }
+
+                    if (gfx != null)
+                    {
+                        gfx.Dispose();
+                        gfx = null;
+                    }
+
+                    // 页脚页码（全部页统一）
+                    int totalPages = document.PageCount;
+                    for (int index = 0; index < totalPages; index++)
+                    {
+                        PdfPage p = document.Pages[index];
+                        using (XGraphics foot = XGraphics.FromPdfPage(p, XGraphicsPdfPageOptions.Append))
+                        {
+                            foot.DrawString("第 " + (index + 1) + " / " + totalPages + " 页",
+                                smallFont, XBrushes.Gray, 40, p.Height.Point - 26);
+                        }
+                    }
+                }
+                finally
+                {
+                    if (gfx != null) { gfx.Dispose(); }
+                }
+
                 document.Save(filePath);
             }
         }

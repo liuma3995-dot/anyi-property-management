@@ -320,6 +320,7 @@
     <Compile Include="ViewModels\ChargeItemsViewModel.PriceList.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.BillPreview.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.PriceOverride.cs" />
+    <Compile Include="ViewModels\BillWorkbenchViewModel.SpecPick.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.cs" />
     <Compile Include="ViewModels\PaymentEntryViewModel.cs" />
     <Compile Include="ViewModels\RefundAdjustmentViewModel.cs" />

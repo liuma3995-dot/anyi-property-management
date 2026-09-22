@@ -45,7 +45,18 @@ namespace PropertyManagement.Client.ViewModels
 
         public string PropertyNo { get { return Dto.PropertyNo ?? "—"; } }
 
-        public string OwnerName { get { return string.IsNullOrEmpty(Dto.OwnerName) ? "—（空置）" : Dto.OwnerName; } }
+        /// <summary>
+        /// 业主名。为空时按缴费对象类型区分文案（CHG-v1.2.0-27）：
+        /// 房产账单 → 「—（空置）」；车位/业主直缴/自定义缴费对象 → 「—」（不再把广告商等外部对象误标成空置房产）。
+        /// </summary>
+        public string OwnerName
+        {
+            get
+            {
+                if (!string.IsNullOrEmpty(Dto.OwnerName)) { return Dto.OwnerName; }
+                return string.Equals(Dto.ObjectKind, "property", StringComparison.Ordinal) ? "—（空置）" : "—";
+            }
+        }
 
         public string ChargeItemName { get { return Dto.ChargeItemName ?? "—"; } }
 
@@ -96,7 +107,60 @@ namespace PropertyManagement.Client.ViewModels
 
         public Brush AgingBg { get { return IsOverdue ? DangerBg : TextBg; } }
 
+        /// <summary>
+        /// CHG-v1.2.0-24：账单「状态」列 —— 逾期 / 部分缴 / 待缴。
+        /// 逾期口径由服务端在查询前统一落库（MarkOverdue：到期日之后**超过 1 天**才算逾期），
+        /// 台账页原来没有状态列，负责人反馈「逾期 5 天仍看不到逾期」，现按账单状态如实展示。
+        /// </summary>
+        public string StatusText
+        {
+            get
+            {
+                switch (Dto.Status)
+                {
+                    case 2: return "逾期";
+                    case 1: return "部分缴";
+                    default: return "待缴";
+                }
+            }
+        }
+
+        public Brush StatusBrush
+        {
+            get
+            {
+                switch (Dto.Status)
+                {
+                    case 2: return DangerBrush;
+                    case 1: return WarnBrush;
+                    default: return TextBrush;
+                }
+            }
+        }
+
+        public Brush StatusBg
+        {
+            get
+            {
+                switch (Dto.Status)
+                {
+                    case 2: return DangerBg;
+                    case 1: return WarnBg;
+                    default: return TextBg;
+                }
+            }
+        }
+
         public string BuildingText { get { return string.IsNullOrEmpty(Dto.BuildingNo) ? "—" : Dto.BuildingNo; } }
+
+        /// <summary>
+        /// CHG-v1.2.0-27：「楼栋/房号」列 —— 房产账单取本房产；车位 / 业主直缴账单按业主-房产关系回查主房产
+        /// （口径同「收支明细流水」的「楼栋/房号/单元」列：`1号楼/1单元/101`）。
+        /// </summary>
+        public string BuildingPathText
+        {
+            get { return string.IsNullOrEmpty(Dto.BuildingPath) ? "—" : Dto.BuildingPath; }
+        }
 
         /// <summary>催缴状态（T4F-6-1：待催缴/已短信催缴/已电话催缴/已函件催缴/已上门催缴/已微信催缴/免催缴）。</summary>
         public string RemindText
@@ -341,9 +405,12 @@ namespace PropertyManagement.Client.ViewModels
                 if (!string.IsNullOrWhiteSpace(Keyword))
                 {
                     string kw = Keyword.Trim();
+                    // CHG-v1.2.0-27：搜索范围纳入「楼栋/房号」（可直接搜 1号楼101 找到车位/业主直缴的欠费行）
                     query = query.Where(x =>
                         (x.PropertyNo ?? string.Empty).Contains(kw) ||
-                        (x.OwnerName ?? string.Empty).Contains(kw));
+                        (x.OwnerName ?? string.Empty).Contains(kw) ||
+                        (x.BuildingPath ?? string.Empty).Contains(kw) ||
+                        (x.BuildingNo ?? string.Empty).Contains(kw));
                 }
                 if (BuildingFilter > 0 && BuildingFilter < Buildings.Count)
                 {

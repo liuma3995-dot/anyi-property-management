@@ -76,10 +76,13 @@
                         </Grid.RowDefinitions>
 
                         <!-- CHG-v1.1.0-13：关联对象覆盖房产/车位/业主直缴（原「关联房产」） -->
+                        <!-- CHG-v1.2.0-34：改为按缴费人（业主）聚合 —— 「业主姓名 · 楼栋/单元/房号 · 账单 N 笔」，
+                             文案较原「姓名 · 房号」更长 → 补悬停提示，窄面板下也能看清完整关联对象 -->
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="关联对象" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
                         <ComboBox x:Name="RefundObjectCombo" Grid.Row="0" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
-                                  ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}" DisplayMemberPath="DisplayText" />
+                                  ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}" DisplayMemberPath="DisplayText"
+                                  ToolTip="{Binding SelectedProperty.DisplayText}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="关联账单" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
@@ -92,51 +95,24 @@
                                       Click="BillPickerToggle_Click">
                             <TextBlock Text="{Binding BillPickerText}" TextTrimming="CharacterEllipsis" />
                         </ToggleButton>
-                        <!-- CHG-v1.1.0-14：修复多选浮层布局 —— 固定宽度（原绑定 ActualWidth 取到 0 导致浮层被压成窄条、文本被裁切），
-                             勾选统计移入浮层底部，避免挤压表单行 -->
-                        <Popup Grid.Row="2" Grid.Column="1" IsOpen="{Binding IsBillPickerOpen, Mode=TwoWay}"
-                               PlacementTarget="{Binding ElementName=RefundBillSelector}" Placement="Bottom"
-                               StaysOpen="True" AllowsTransparency="True" PopupAnimation="Fade">
-                            <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                                    BorderThickness="1" CornerRadius="6"
-                                    Width="{Binding ActualWidth, ElementName=RefundObjectCombo, Mode=OneWay}" MinWidth="320" MaxHeight="300">
-                                <StackPanel>
-                                    <Border Background="#F7F4EE" Padding="10,6">
-                                        <CheckBox Content="全选" FontSize="12" IsChecked="{Binding IsSelectAllBills, Mode=TwoWay}" />
-                                    </Border>
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="210">
-                                        <ItemsControl ItemsSource="{Binding FilteredBills}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <CheckBox Margin="10,6" FontSize="11" HorizontalContentAlignment="Left"
-                                                              IsChecked="{Binding IsChecked, Mode=TwoWay}">
-                                                        <TextBlock TextTrimming="CharacterEllipsis" MaxWidth="380">
-                                                            <Run Text="{Binding NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ObjectText, Mode=OneWay}" />
-                                                            <Run Text=" · " /><Run Text="{Binding Dto.ChargeItemName, Mode=OneWay}" />
-                                                            <!-- CHG-v1.1.2-40：金额提示随页签口径（退款/调整＝实缴；减免＝未收余额） -->
-                                                            <Run Text=" · " /><Run Text="{Binding PickerMoneyText, Mode=OneWay}" />
-                                                        </TextBlock>
-                                                    </CheckBox>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                    <Border Background="#FAF8F4" Padding="10,6">
-                                        <TextBlock Text="{Binding CheckedBillsText}" FontSize="10" Foreground="{StaticResource TextMutedBrush}" />
-                                    </Border>
-                                </StackPanel>
-                            </Border>
-                        </Popup>
+                        <!-- CHG-v1.2.0-37：多选浮层由 Popup（独立顶层窗口，会「全局置顶/遮挡窗口外界面」且与窗口分离）
+                             改为**窗口内浮层**（BillPickerFlyout，见 PageGrid 末尾）—— 位置由代码后置按选择器实时计算，
+                             不再有自己的 HWND：既不会浮到别的窗口之上，也不会在拖动窗口时分离。 -->
+                        <!-- CHG-v1.2.0-36：勾选汇总增加账单号 → 文案更长，改为省略号 + 悬停查看完整内容 -->
                         <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding CheckedBillsText}" FontSize="10"
-                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,4" />
+                                   Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,4"
+                                   TextTrimming="CharacterEllipsis" ToolTip="{Binding CheckedBillsText}" />
 
                         <TextBlock Grid.Row="4" Grid.Column="0" Text="{Binding AmountLabelFull}" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
                         <Border Grid.Row="4" Grid.Column="1" Height="36" Background="#F7F4EE"
                                 BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
                             <!-- CHG-v1.1.2-08：改用 DecimalTextBox（原 StringFormat 绑定会边输边格式化，12.12 变 12.12.00） -->
+                            <!-- CHG-v1.2.0-37：多选（≥2 张）时金额＝勾选账单合计并锁定（与收款登记「统一收款」同口径）；
+                                 单张仍可改额（支持部分退/减） -->
                             <controls:DecimalTextBox Style="{StaticResource SearchTextBox}" FontSize="15" FontWeight="SemiBold"
                                      Foreground="{StaticResource DangerBrush}"
+                                     IsEnabled="{Binding IsAmountEditable}"
                                      Value="{Binding Amount, UpdateSourceTrigger=PropertyChanged}" />
                         </Border>
 
@@ -317,5 +293,91 @@
             <TextBlock Text="{Binding StatusText}" FontSize="11" Foreground="{StaticResource SuccessBrush}" TextWrapping="Wrap" />
             <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
         </StackPanel>
+
+        <!-- ============ 关联账单多选浮层（CHG-v1.2.0-37：窗口内浮层，非 Popup） ============ -->
+        <!-- 位置/宽度/最大高度由代码后置按「关联账单」选择器实时计算（UpdateBillFlyoutPlacement），
+             因此它始终在软件窗口内部：不会全局置顶遮挡其它界面，也不会随窗口拖动而分离；
+             勾选行不会让浮层消失（关闭仅由「再次点选择器」或「点浮层外」触发）。 -->
+        <Border x:Name="BillPickerFlyout" Panel.ZIndex="90"
+                Visibility="{Binding IsBillPickerOpen, Converter={StaticResource BoolToVis}}"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                BorderThickness="1" CornerRadius="6" MinWidth="320">
+            <StackPanel>
+                <!-- CHG-v1.2.0-36：全选右侧新增「删除旧账单」入口；「不指定关联对象」时全选禁用 -->
+                <Border Background="#F7F4EE" Padding="10,6">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <CheckBox Grid.Column="0" Content="全选" FontSize="12" VerticalAlignment="Center"
+                                  IsChecked="{Binding IsSelectAllBills, Mode=TwoWay}"
+                                  IsEnabled="{Binding CanSelectAllBills}"
+                                  ToolTip="{Binding SelectAllHintText}" />
+                        <TextBlock Grid.Column="1" Text="{Binding SelectAllHintText}" FontSize="10"
+                                   Margin="10,0,8,0" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   Foreground="{StaticResource TextMutedBrush}" />
+                        <Button Grid.Column="2" Content="删除旧账单" FontSize="11" Height="24" Padding="8,0"
+                                VerticalAlignment="Center"
+                                Command="{Binding RequestDeleteBillsCommand}"
+                                ToolTip="删除勾选的已结清旧账单（未缴费账单不可删除）；只从本列表移除，账务记录保留">
+                            <Button.Style>
+                                <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                    </Grid>
+                </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="210">
+                    <ItemsControl ItemsSource="{Binding FilteredBills}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <CheckBox Margin="10,6" FontSize="11" HorizontalContentAlignment="Left"
+                                          IsChecked="{Binding IsChecked, Mode=TwoWay}">
+                                    <TextBlock TextTrimming="CharacterEllipsis" MaxWidth="380">
+                                        <Run Text="{Binding NoText, Mode=OneWay}" /><Run Text=" · " /><Run Text="{Binding ObjectText, Mode=OneWay}" />
+                                        <Run Text=" · " /><Run Text="{Binding Dto.ChargeItemName, Mode=OneWay}" />
+                                        <!-- CHG-v1.1.2-40：金额提示随页签口径（退款/调整＝实缴；减免＝未收余额） -->
+                                        <Run Text=" · " /><Run Text="{Binding PickerMoneyText, Mode=OneWay}" />
+                                    </TextBlock>
+                                </CheckBox>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Border Background="#FAF8F4" Padding="10,6">
+                    <TextBlock Text="{Binding CheckedBillsText}" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+        </Border>
+
+        <!-- ============ 确认弹层（CHG-v1.2.0-36：多选提交范围确认 / 删除旧账单确认） ============ -->
+        <Grid Grid.RowSpan="5" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Width="520" Style="{StaticResource CardBorder}" Padding="24,20"
+                    VerticalAlignment="Center" HorizontalAlignment="Center">
+                <StackPanel>
+                    <TextBlock Text="{Binding ConfirmTitle}" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" HorizontalAlignment="Center" />
+                    <TextBlock Text="{Binding ConfirmMessage}" FontSize="12"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,16,0,0"
+                               HorizontalAlignment="Left" TextWrapping="Wrap" LineHeight="19" />
+                    <Grid Margin="0,22,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="14" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}"
+                                Content="{Binding ConfirmOkText}" Command="{Binding ConfirmActionCommand}" />
+                        <Button Grid.Column="2" Content="取消" Command="{Binding CancelActionCommand}" FontSize="13" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

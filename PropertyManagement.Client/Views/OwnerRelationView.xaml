@@ -165,19 +165,19 @@
             <Border Width="640" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="批量解除关系" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="10" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox Grid.Column="0" Height="32" FontSize="12"
-                                 Text="{Binding BatchPropertySearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 hc:InfoElement.Placeholder="输入房号 / 房产编号筛选" />
-                        <TextBox Grid.Column="2" Height="32" FontSize="12"
-                                 Text="{Binding BatchOwnerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                                 hc:InfoElement.Placeholder="输入姓名 / 电话筛选" />
-                    </Grid>
+                    <!-- v1.2.0 第 3 轮：原「房号 / 业主」两个搜索框合并为一个，带放大镜标识与检索引导提示 -->
+                    <Border Height="32" Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}" Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0" />
+                            <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}" FontSize="12" Margin="8,0,12,0"
+                                     Text="{Binding BatchSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                     hc:InfoElement.Placeholder="搜索房号 / 业主姓名 / 电话" />
+                        </Grid>
+                    </Border>
                     <Border Height="220" Style="{StaticResource CardBorder}" Padding="0" Margin="0,14,0,0">
                         <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BatchRelations}" IsReadOnly="True" AutoGenerateColumns="False">
                             <DataGrid.Columns>
@@ -185,8 +185,9 @@
                                     <DataGridTemplateColumn.HeaderTemplate>
                                         <DataTemplate>
                                             <CheckBox IsChecked="{Binding DataContext.IsBatchSelectAll, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                                      Style="{StaticResource GridCheckBox}"
                                                       VerticalAlignment="Center" HorizontalAlignment="Center"
-                                                      ToolTip="全选" />
+                                                      ToolTip="全选当前列表" />
                                         </DataTemplate>
                                     </DataGridTemplateColumn.HeaderTemplate>
                                     <DataGridTemplateColumn.CellTemplate>

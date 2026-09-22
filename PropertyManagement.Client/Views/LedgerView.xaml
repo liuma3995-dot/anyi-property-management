@@ -108,7 +108,15 @@
                         <DataGridTextColumn Header="支付方式" Width="100" Binding="{Binding PayMethodText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="关联单据" Width="130" Binding="{Binding BizNo}" ElementStyle="{StaticResource GridCellText}" />
                         <!-- CHG-v1.1.0-18：表头口径改为「付款人」（含业主与自定义缴费对象手工填写的名称） -->
-                        <DataGridTextColumn Header="付款人" Width="100" Binding="{Binding OwnerNameText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.2.0-30：付款人解析补齐「缴费对象 = 业主」档后，该列由「—」变为真实姓名，
+                             原 100px 放不下「姓名 + 长名」→ 加宽至 132 并补悬停查看完整值（不再出现截断观感） -->
+                        <DataGridTextColumn Header="付款人" Width="132" Binding="{Binding OwnerNameText}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                    <Setter Property="ToolTip" Value="{Binding OwnerNameText}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="经手人" Width="100" Binding="{Binding OperatorName}" ElementStyle="{StaticResource GridCellText}" />
                     </DataGrid.Columns>
                 </DataGrid>

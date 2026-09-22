@@ -129,7 +129,71 @@ namespace PropertyManagement.Client.ViewModels
         /// </summary>
         public string PayerName { get; set; }
 
-        public string DisplayText { get; set; }
+        /// <summary>
+        /// CHG-v1.2.0-34：缴费人（业主）主键 —— **本轮的关键口径**：关联对象改为按「缴费人」聚合，
+        /// 一位业主只出现一条（其名下房产 / 车位 / 业主直缴的全部账单都归到这一条），
+        /// 不再因缴费对象不同而重复出现同一业主（负责人反馈的「关联对象有噪音」）。
+        /// </summary>
+        public int? PayerOwnerId { get; set; }
+
+        /// <summary>缴费人姓名（业主姓名；自定义缴费对象为空）。</summary>
+        public string OwnerName { get; set; }
+
+        /// <summary>主房产楼栋 / 单元 / 房号（与收款登记下拉同源：同一套主房产，单元缺失自动省略）。</summary>
+        public string BuildingNo { get; set; }
+        public string UnitNo { get; set; }
+        public string RoomNo { get; set; }
+
+        /// <summary>车库位编号（缴费人名下没有房产或未绑房产时兜底定位）。</summary>
+        public string SpaceNo { get; set; }
+        public int SpaceCount { get; set; }
+
+        /// <summary>该缴费人名下关联账单笔数（下拉文案「账单 N 笔」）。</summary>
+        public int BillCount { get; set; }
+
+        /// <summary>地址段「楼栋/单元/房号」（单元号补「单元」后缀；缺项自动省略）。</summary>
+        public string AddressPathText
+        {
+            get
+            {
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(BuildingNo)) { parts.Add(BuildingNo.Trim()); }
+                if (!string.IsNullOrWhiteSpace(UnitNo))
+                {
+                    string unit = UnitNo.Trim();
+                    parts.Add(unit.EndsWith("单元", StringComparison.Ordinal) ? unit : unit + "单元");
+                }
+                if (!string.IsNullOrWhiteSpace(RoomNo)) { parts.Add(RoomNo.Trim()); }
+                return string.Join("/", parts);
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-34：下拉展示 —— 与收款登记缴费对象同口径
+        /// 「业主姓名 · 楼栋/单元/房号 · 账单 N 笔」；无房产的缴费人用「车位 X / 业主直缴」兜底；
+        /// 自定义缴费对象用「名称 · 自定义缴费对象 · 账单 N 笔」；首项为「不指定（全部账单可选）」。
+        /// </summary>
+        public string DisplayText
+        {
+            get
+            {
+                if (ObjectKind < 0) { return "不指定（全部账单可选）"; }
+                if (!string.IsNullOrWhiteSpace(PayerName))
+                {
+                    return PayerName.Trim() + " · 自定义缴费对象 · 账单 " + BillCount + " 笔";
+                }
+                string name = string.IsNullOrWhiteSpace(OwnerName) ? "（未绑定业主）" : OwnerName.Trim();
+                string address = AddressPathText;
+                if (!string.IsNullOrEmpty(address))
+                {
+                    return name + " · " + address + " · 账单 " + BillCount + " 笔";
+                }
+                string label = string.IsNullOrEmpty(SpaceNo)
+                    ? "业主直缴"
+                    : "车位 " + SpaceNo + (SpaceCount > 1 ? " 等 " + SpaceCount + " 个" : string.Empty);
+                return name + " · " + label + " · 账单 " + BillCount + " 笔";
+            }
+        }
     }
 
     /// <summary>
@@ -174,10 +238,23 @@ namespace PropertyManagement.Client.ViewModels
         private string _formTitle = "退款申请";
         private string _amountLabel = "退款金额";
 
+        /// <summary>CHG-v1.2.0-36：页内确认弹窗（提交范围确认 / 删除旧账单确认共用一个弹层）。</summary>
+        private bool _isConfirmVisible;
+        private string _confirmTitle = string.Empty;
+        private string _confirmMessage = string.Empty;
+        private string _confirmOkText = "确认";
+        /// <summary>待确认动作：0 无 / 1 提交登记 / 2 删除旧账单。</summary>
+        private int _pendingAction;
+        private System.Collections.Generic.List<int> _pendingBillIds;
+
         public RefundAdjustmentViewModel(IApiClient api) : base(api)
         {
             SubmitCommand = new AsyncRelayCommand(SubmitAsync);
             PickAttachmentCommand = new RelayCommand(PickAttachment);
+            // CHG-v1.2.0-36：关联账单「删除旧账单」入口 + 共用的确认弹层命令
+            RequestDeleteBillsCommand = new RelayCommand(RequestDeleteBills);
+            ConfirmActionCommand = new AsyncRelayCommand(ConfirmActionAsync);
+            CancelActionCommand = new RelayCommand(CancelAction);
             UpdateMethodOptions();
             _ = LoadAsync();
         }
@@ -248,18 +325,47 @@ namespace PropertyManagement.Client.ViewModels
 
         public int CheckedBillCount { get { return CheckedBills.Count; } }
 
-        /// <summary>全选：作用域＝当前候选列表（退款/调整＝有实缴；减免＝有未收余额）。</summary>
+        /// <summary>
+        /// CHG-v1.2.0-36：**全选是否可用** —— 只有选定具体「关联对象」时才允许全选。
+        /// 背景（负责人 2026-09-22 反馈）：默认关联对象是「不指定（全部账单可选）」，
+        /// 此时全选的作用域是**全库候选账单**（跨业主），误点一次就会把无关业主的账单一起登记退款，
+        /// 那些账单重新欠费后各自出现在收款登记应缴明细里 —— 正是「多出了几条账单记录」。
+        /// </summary>
+        public bool CanSelectAllBills
+        {
+            get { return _selectedProperty != null && _selectedProperty.ObjectKind >= 0; }
+        }
+
+        /// <summary>全选可用性提示（放在「全选」右侧，说明当前全选的作用域）。</summary>
+        public string SelectAllHintText
+        {
+            get
+            {
+                if (!CanSelectAllBills)
+                {
+                    return "请先选择「关联对象」后再全选（「不指定」时请逐条勾选）";
+                }
+                return "全选范围：本关联对象下 " + FilteredBills.Count + " 张候选账单";
+            }
+        }
+
+        /// <summary>全选：作用域＝当前候选列表（退款/调整＝有实缴；减免＝有未收余额）；「不指定」时禁用。</summary>
         public bool IsSelectAllBills
         {
             get { return FilteredBills.Count > 0 && FilteredBills.All(x => x.IsChecked); }
             set
             {
+                // CHG-v1.2.0-36：不指定关联对象时禁止全选（避免跨业主误登记）
+                if (value && !CanSelectAllBills) { return; }
                 foreach (RefundBillRow row in FilteredBills) { row.IsChecked = value; }
                 NotifyBillPickerChanged();
             }
         }
 
-        /// <summary>勾选汇总提示（每张金额口径，合计 = 每张金额 × 张数）。</summary>
+        /// <summary>
+        /// 勾选汇总提示（每张金额口径，合计 = 每张金额 × 张数）。
+        /// CHG-v1.2.0-36：同时列出**账单号**（前 3 张）—— 让用户在提交前看清「这次到底处理了哪几张」。
+        /// </summary>
         public string CheckedBillsText
         {
             get
@@ -269,14 +375,23 @@ namespace PropertyManagement.Client.ViewModels
                 {
                     return RefundType == 2 ? "未勾选账单：本次登记为无账单的冲正/补收" : "未勾选账单";
                 }
+                string nos = string.Join("、", CheckedBills.Take(3).Select(x => x.NoText));
+                if (count > 3) { nos += " 等 " + count + " 张"; }
                 return count == 1
-                    ? "已选 1 张"
-                    : ("已选 " + count + " 张 · 每张 ¥" + Amount.ToString("N2") + " · 合计 ¥" + (Amount * count).ToString("N2"));
+                    ? ("已选 1 张 · " + nos)
+                    // CHG-v1.2.0-37：多选＝按各自登记上限核销，此处展示**合计**
+                    : ("已选 " + count + " 张 · 合计 ¥" + Amount.ToString("N2") + "（按各自登记上限核销）· " + nos);
             }
         }
 
         /// <summary>是否处于批量登记模式（勾选 ≥2 张）。</summary>
         public bool IsBatchRefund { get { return CheckedBillCount >= 2; } }
+
+        /// <summary>
+        /// CHG-v1.2.0-37：金额是否可编辑 —— 多选（≥2 张）时金额自动置为**勾选账单合计**并锁定
+        /// （与收款登记「统一收款」同口径：按合计核销、不支持改额）；单张时仍可改额（支持部分退/减）。
+        /// </summary>
+        public bool IsAmountEditable { get { return !IsBatchRefund; } }
 
         private void OnBillRowChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
         {
@@ -288,15 +403,21 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(BillPickerText));
             OnPropertyChanged(nameof(CheckedBillCount));
             OnPropertyChanged(nameof(IsSelectAllBills));
+            // CHG-v1.2.0-36：全选可用性 / 作用域提示随「关联对象」与候选列表变化
+            OnPropertyChanged(nameof(CanSelectAllBills));
+            OnPropertyChanged(nameof(SelectAllHintText));
             OnPropertyChanged(nameof(CheckedBillsText));
             OnPropertyChanged(nameof(IsBatchRefund));
             OnPropertyChanged(nameof(AmountLabelFull));
+            // CHG-v1.2.0-37：多选时金额锁定为「合计」
+            OnPropertyChanged(nameof(IsAmountEditable));
             SyncAmountWithCheckedBills();
         }
 
         /// <summary>
         /// CHG-v1.1.2-24：金额与「关联账单」联动 —— 未勾选 → 0；勾选 1 张 → 自动补全该账单的
-        /// 登记上限；勾选 ≥2 张 → 保持用户填写的「每张金额」（批量口径，不覆盖用户输入）。
+        /// 登记上限；**勾选 ≥2 张 → 自动汇总为「勾选账单合计」**（CHG-v1.2.0-37：负责人反馈
+        /// 「勾选全选之后，金额框只显示一条账单的金额、没有统计全选后的总金额」）。
         /// CHG-v1.1.2-40：上限随页签口径 —— 退款/调整＝实缴金额，减免＝未收余额（应收 − 实缴）。
         /// </summary>
         private void SyncAmountWithCheckedBills()
@@ -305,14 +426,24 @@ namespace PropertyManagement.Client.ViewModels
             if (count == 0) { Amount = 0m; return; }
             if (count == 1)
             {
-                Amount = _refundType == 1 ? CheckedBills[0].UnreceivedAmount : CheckedBills[0].Dto.PaidAmount;
+                Amount = BillCap(CheckedBills[0]);
+                return;
             }
+            // 多选 / 全选：合计（每张按其登记上限累加）
+            Amount = CheckedBills.Sum(x => BillCap(x));
         }
 
-        /// <summary>金额标签（批量时标注为「每张金额」）。</summary>
+        /// <summary>单张账单在当前页签口径下的登记上限（退款/调整＝实缴；减免＝未收余额）。</summary>
+        private decimal BillCap(RefundBillRow row)
+        {
+            if (row == null || row.Dto == null) { return 0m; }
+            return _refundType == 1 ? row.UnreceivedAmount : row.Dto.PaidAmount;
+        }
+
+        /// <summary>金额标签（批量时标注为「合计」——CHG-v1.2.0-37）。</summary>
         public string AmountLabelFull
         {
-            get { return IsBatchRefund ? (AmountLabel + "（每张）") : AmountLabel; }
+            get { return IsBatchRefund ? (AmountLabel + "（合计）") : AmountLabel; }
         }
 
         public int RefundType
@@ -419,6 +550,39 @@ namespace PropertyManagement.Client.ViewModels
 
         public IRelayCommand PickAttachmentCommand { get; }
 
+        /// <summary>CHG-v1.2.0-36：删除所选旧账单（仅已结清；未缴费账单不可删除）。</summary>
+        public IRelayCommand RequestDeleteBillsCommand { get; }
+
+        /// <summary>CHG-v1.2.0-36：确认弹层「确认」——按待确认动作分发（提交登记 / 删除旧账单）。</summary>
+        public IAsyncRelayCommand ConfirmActionCommand { get; }
+
+        /// <summary>CHG-v1.2.0-36：确认弹层「取消」。</summary>
+        public IRelayCommand CancelActionCommand { get; }
+
+        public bool IsConfirmVisible
+        {
+            get { return _isConfirmVisible; }
+            private set { SetProperty(ref _isConfirmVisible, value); }
+        }
+
+        public string ConfirmTitle
+        {
+            get { return _confirmTitle; }
+            private set { SetProperty(ref _confirmTitle, value); }
+        }
+
+        public string ConfirmMessage
+        {
+            get { return _confirmMessage; }
+            private set { SetProperty(ref _confirmMessage, value); }
+        }
+
+        public string ConfirmOkText
+        {
+            get { return _confirmOkText; }
+            private set { SetProperty(ref _confirmOkText, value); }
+        }
+
         public async Task LoadAsync()
         {
             await RunAsync(async () =>
@@ -432,43 +596,58 @@ namespace PropertyManagement.Client.ViewModels
                 ObjectKind = -1,
                 ObjectId = 0,
                 // CHG-v1.1.2-40：候选含「已缴账单」（退款/调整）与「有未收余额的账单」（减免）
-                DisplayText = "不指定（全部账单可选）"
+                // CHG-v1.2.0-34：文案由 ObjectKind=-1 派生为「不指定（全部账单可选）」
             });
-            var page = await Api.QueryBillsAsync(new BillQueryRequest { PageSize = 200 });
+            // CHG-v1.2.0-36：候选排除「已删除（归档）的旧账单」—— 用户在关联账单里删除的旧账单不再出现，
+            // 关联对象的「账单 N 笔」也随之同步（笔数由本候选集合派生）。
+            var page = await Api.QueryBillsAsync(new BillQueryRequest { PageSize = 200, ExcludeArchived = true });
                 // CHG-v1.1.2-40：候选口径拆分 —— 减免的登记对象是「还没收到的钱」，未缴账单同样要能选到；
                 // 草稿（未发布）一律不参与登记。这里取并集，具体由 FilterBills 按当前页签收敛。
                 var paid = page.Items.Where(x => x.Status != BillStatus.Draft &&
                         (x.PaidAmount > 0 || x.Amount > x.PaidAmount)).ToList();
-                // CHG-v1.1.0-13：关联对象覆盖 房产 / 车位 / 业主直缴，保证各类已缴账单都能登记退款/减免/调整
-                // CHG-v1.1.0-18：新增「自定义缴费对象」——按手工填写的缴费人名称聚合
-                //（此前会命中 PropertyId.Value 抛「可为空的对象必须具有一个值」导致整页加载失败）
-                var objectGroups = paid.GroupBy(x => x.OwnerId.HasValue && !x.PropertyId.HasValue && !x.ParkingId.HasValue
-                        ? "owner:" + x.OwnerId.Value
-                        : (x.ParkingId.HasValue ? "parking:" + x.ParkingId.Value
-                            : (!string.IsNullOrWhiteSpace(x.PayerName) ? "name:" + x.PayerName.Trim()
-                                : "property:" + x.PropertyId.Value)))
+                // CHG-v1.2.0-34：关联对象改为**按缴费人（业主）聚合** —— 口径与收款登记缴费对象一致：
+                // 原先按「缴费对象」分组，同一业主名下的房产账单 / 车位账单 / 业主直缴账单会各自成为一条，
+                // 下拉里出现「同一位业主多条」的噪音（负责人反馈）；现改为按缴费人聚合，一位业主只一条，
+                // 选中即关联其名下**全部**关联账单。找不到缴费人的账单（无主对象）仍按对象兜底分组，不漏账；
+                // 自定义缴费对象（无档案）按手工填写的名称聚合。
+                var payerGroups = paid.GroupBy(x => x.PayerOwnerId.HasValue
+                        ? "payer:" + x.PayerOwnerId.Value
+                        : (!string.IsNullOrWhiteSpace(x.PayerName) ? "name:" + x.PayerName.Trim()
+                            : (x.OwnerId.HasValue ? "owner:" + x.OwnerId.Value
+                                : (x.ParkingId.HasValue ? "parking:" + x.ParkingId.Value
+                                    : "property:" + x.PropertyId.Value))))
                     .OrderBy(g => g.First().OwnerName).ThenBy(g => g.Key);
-                foreach (var g in objectGroups)
+                foreach (var g in payerGroups)
                 {
                     var first = g.First();
                     string payerName = string.IsNullOrWhiteSpace(first.PayerName) ? null : first.PayerName.Trim();
-                    var kind = payerName != null
-                        ? 3
-                        : (first.OwnerId.HasValue && !first.PropertyId.HasValue && !first.ParkingId.HasValue
-                            ? 2
+                    // 主房产：优先取该缴费人自己的房产账单（按楼栋 → 房号），
+                    // 否则回落到服务端已按「缴费人名下主房产」回填过楼栋/房号的账单行（车位 / 业主直缴）
+                    var primaryProperty = g.Where(x => x.PropertyId.HasValue)
+                            .OrderBy(x => x.BuildingNo).ThenBy(x => x.RoomNo).FirstOrDefault()
+                        ?? g.Where(x => !string.IsNullOrEmpty(x.BuildingNo) || !string.IsNullOrEmpty(x.RoomNo))
+                            .OrderBy(x => x.BuildingNo).ThenBy(x => x.RoomNo).FirstOrDefault();
+                    var spaceBills = g.Where(x => !string.IsNullOrEmpty(x.SpaceNo)).ToList();
+                    int kind = first.PayerOwnerId.HasValue
+                        ? 2
+                        : (payerName != null
+                            ? 3
                             : (first.ParkingId.HasValue ? 1 : 0));
-                    string scope = kind == 2 ? "业主直缴"
-                        : kind == 3 ? "自定义缴费对象"
-                        : kind == 1 ? ("车位 " + (string.IsNullOrEmpty(first.SpaceNo) ? "—" : first.SpaceNo))
-                            : ((string.IsNullOrEmpty(first.BuildingNo) ? "" : first.BuildingNo + " ") +
-                               (string.IsNullOrEmpty(first.RoomNo) ? (first.PropertyNo ?? "—") : first.RoomNo)).Trim();
                     Properties.Add(new RefundPropertyOption
                     {
                         ObjectKind = kind,
                         ObjectId = kind == 3 ? 0 : (first.OwnerId ?? first.ParkingId ?? first.PropertyId ?? 0),
                         PayerName = payerName,
-                        // CHG-v1.1.0-17：关联对象下拉条目改用「·」分隔（原「→」观感生硬，与收款登记口径统一）
-                        DisplayText = (kind == 3 ? payerName : (first.OwnerName ?? "（未绑定业主）")) + " · " + scope
+                        // CHG-v1.2.0-34：按缴费人聚合（选定后关联其名下全部账单）
+                        PayerOwnerId = first.PayerOwnerId,
+                        OwnerName = first.OwnerName ?? "",
+                        BuildingNo = primaryProperty == null ? null : primaryProperty.BuildingNo,
+                        // CHG-v1.2.0-33：单元随主房产带出（业主-房产关系绑定房产填了单元即有值）
+                        UnitNo = primaryProperty == null ? null : primaryProperty.UnitNo,
+                        RoomNo = primaryProperty == null ? null : primaryProperty.RoomNo,
+                        SpaceNo = spaceBills.Count == 0 ? null : spaceBills[0].SpaceNo,
+                        SpaceCount = spaceBills.Select(x => x.SpaceNo).Distinct().Count(),
+                        BillCount = g.Count()
                     });
                 }
                 foreach (var dto in paid.OrderBy(x => x.DueAt).ThenBy(x => x.Id))
@@ -540,11 +719,19 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        /// <summary>账单是否属于所选关联对象（房产/车位/业主直缴/自定义缴费对象）。</summary>
+        /// <summary>
+        /// 账单是否属于所选关联对象。
+        /// CHG-v1.2.0-34：**优先按缴费人（业主）判定** —— 选中一位业主即关联其名下全部账单
+        /// （房产 / 车位 / 业主直缴一并命中）；找不到缴费人的账单与自定义缴费对象仍按原对象口径匹配。
+        /// </summary>
         private static bool IsSameObject(BillListItemDto bill, RefundPropertyOption option)
         {
             if (bill == null || option == null) { return false; }
             if (option.ObjectKind < 0) { return true; }   // 不指定对象：全部候选
+            if (option.PayerOwnerId.HasValue)
+            {
+                return bill.PayerOwnerId == option.PayerOwnerId;
+            }
             switch (option.ObjectKind)
             {
                 case 3: return string.Equals((bill.PayerName ?? string.Empty).Trim(), option.PayerName ?? string.Empty,
@@ -661,6 +848,38 @@ namespace PropertyManagement.Client.ViewModels
             }
 
             bool batchMode = checkedBills.Count >= 2;
+            // CHG-v1.2.0-35：提交结果提示改为在 RunAsync 之后回写 —— RunAsync 收尾会把 StatusText 复位，
+            // 原先在动作内赋值等于「提交成功后状态栏没有回执」（看不到申请编号，也看不到归档解锁说明）。
+            // CHG-v1.2.0-36：**多选 / 全选提交前先给范围确认** —— 把「本次处理了哪几张账单」摆到用户眼前，
+            // 避免误把无关账单一起登记（负责人反馈「收款登记应缴明细多出几条」的根因即误选范围过大）。
+            if (batchMode && _pendingAction != 1)
+            {
+                _pendingAction = 1;
+                ConfirmTitle = "确认" + RefundTypeLabel((RefundType)RefundType);
+                ConfirmOkText = "确认提交";
+                ConfirmMessage =
+                    "本次将对 " + checkedBills.Count + " 张账单登记，合计 ¥" +
+                    checkedBills.Sum(x => BillCap(x)).ToString("N2") + "（每张按其登记上限核销）：\n" +
+                    string.Join("、", checkedBills.Take(6)
+                        .Select(x => x.NoText + " ¥" + BillCap(x).ToString("N2"))) +
+                    (checkedBills.Count > 6 ? " 等 " + checkedBills.Count + " 张" : string.Empty) +
+                    "\n\n确认后：这些账单会按本次金额冲减；未勾选的账单不受影响。" +
+                    (RefundType == 0 ? "退款后若该账单仍有未收金额，会回到收款登记应缴明细。" : string.Empty);
+                IsConfirmVisible = true;
+                return;
+            }
+            _pendingAction = 0;
+            await ExecuteSubmitAsync(checkedBills);
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-36：真正提交（抽出来供「多选范围确认」二次进入）。
+        /// 口径：只提交用户勾选的账单（服务端按 BillIds / BillId 逐张处理，不涉及未勾选账单）。
+        /// </summary>
+        private async Task ExecuteSubmitAsync(System.Collections.Generic.List<RefundBillRow> checkedBills)
+        {
+            bool batchMode = checkedBills.Count >= 2;
+            string submitMessage = string.Empty;
             await RunAsync(async () =>
             {
                 var request = new RefundAdjustmentRequest
@@ -679,21 +898,119 @@ namespace PropertyManagement.Client.ViewModels
                 };
                 if (batchMode)
                 {
-                    // CHG-v1.1.0-13：批量 —— 每张账单各登记一条（金额＝每张金额），各保留账单号与申请编号
+                    // CHG-v1.2.0-37：批量按**逐张金额**下发 —— 每张按其登记上限核销（退款/调整＝实缴；
+                    // 减免＝未收余额），金额框展示的即这些金额的**合计**；各保留账单号与申请编号。
+                    request.Items = checkedBills
+                        .Select(x => new RefundBatchItemRequest { BillId = x.Dto.Id, Amount = BillCap(x) })
+                        .ToList();
+                    request.Amount = request.Items.Sum(x => x.Amount);
                     RefundBatchResultDto batch = await Api.CreateRefundBatchAsync(request);
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已批量提交：" + batch.Count + " 张账单，每张 ¥" +
-                        Amount.ToString("N2") + "，合计 ¥" + batch.TotalAmount.ToString("N2") +
-                        "（各账单号保持引用；记录表 → 导出PDF 可留档追溯）";
+                    submitMessage = DateTime.Now.ToString("HH:mm:ss ") + "已批量提交：" + batch.Count + " 张账单，合计 ¥" +
+                        batch.TotalAmount.ToString("N2") +
+                        "（逐张按各自登记上限核销；各账单号保持引用；记录表 → 导出PDF 可留档追溯）" +
+                        // CHG-v1.2.0-35：让用户知道归档记录已解锁、账单重新可收
+                        (batch.ArchiveReleasedCount > 0
+                            ? "；其中 " + batch.ArchiveReleasedCount + " 张原「已结清归档」账单已解除归档 → 重新计入收款登记应缴明细"
+                            : string.Empty);
                 }
                 else
                 {
                     RefundAdjustmentDto dto = await Api.CreateRefundAsync(request);
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已提交：" + dto.RefNo +
+                    submitMessage = DateTime.Now.ToString("HH:mm:ss ") + "已提交：" + dto.RefNo +
                         (checkedBills.Count == 0 ? "（无关联账单的冲正/补收，已单独留痕）" : "（已落账留痕）") +
-                        "；记录表 → 导出PDF 可留档追溯";
+                        "；记录表 → 导出PDF 可留档追溯" +
+                        // CHG-v1.2.0-35：归档账单被退款后重新欠费 → 已自动解锁归档，回到应缴明细
+                        (dto.ArchiveReleased
+                            ? "；该账单原「已结清归档」已解除 → 重新计入收款登记应缴明细"
+                            : string.Empty);
                 }
                 await LoadAsync();
             }, null);
+
+            if (!string.IsNullOrEmpty(submitMessage)) { StatusText = submitMessage; }
+        }
+
+        /// <summary>
+        /// CHG-v1.2.0-36：删除「关联账单」里勾选的**旧账单**（已结清记录）——归档语义：
+        /// 只从本列表移除，账单与收款、退款、财务报表、收支明细流水、业主档案缴费概况**数据不变**；
+        /// **未缴费（未结清）账单不可删除**；删除后重新加载 → 「关联对象」的账单笔数同步更新。
+        /// </summary>
+        private void RequestDeleteBills()
+        {
+            var checkedRows = CheckedBills;
+            if (checkedRows.Count == 0)
+            {
+                ErrorText = "请先勾选要删除的旧账单（只删除已结清账单；未缴费账单不可删除）";
+                return;
+            }
+            var deletable = checkedRows.Where(x => x.Dto != null && x.Dto.PaidAmount >= x.Dto.Amount).ToList();
+            var blocked = checkedRows.Where(x => x.Dto != null && x.Dto.PaidAmount < x.Dto.Amount).ToList();
+            if (deletable.Count == 0)
+            {
+                ErrorText = "所选 " + checkedRows.Count + " 张账单均未结清（仍有未收金额，未缴费账单不能删除）；" +
+                            "请改为勾选已结清的旧账单";
+                return;
+            }
+
+            _pendingAction = 2;
+            _pendingBillIds = deletable.Select(x => x.Dto.Id).ToList();
+            ConfirmTitle = "删除旧账单";
+            ConfirmOkText = "确认删除";
+            ConfirmMessage =
+                "将从「关联账单」列表移除 " + deletable.Count + " 条已结清旧账单：" +
+                string.Join("、", deletable.Take(6).Select(x => x.NoText)) +
+                (deletable.Count > 6 ? " 等 " + deletable.Count + " 张" : string.Empty) +
+                "\n\n说明：只从本列表移除，账单与收款、退款、财务报表、收支明细流水、业主档案缴费概况均保留；" +
+                "「关联对象」的账单笔数会同步更新。" +
+                (blocked.Count > 0 ? "\n未结清的 " + blocked.Count + " 张账单不会被删除。" : string.Empty);
+            ErrorText = string.Empty;
+            IsConfirmVisible = true;
+        }
+
+        /// <summary>CHG-v1.2.0-36：确认弹层「确认」——按待确认动作分发。</summary>
+        private async Task ConfirmActionAsync()
+        {
+            int action = _pendingAction;
+            var ids = _pendingBillIds;
+            IsConfirmVisible = false;
+            _pendingAction = 0;
+            _pendingBillIds = null;
+
+            if (action == 1)
+            {
+                await ExecuteSubmitAsync(CheckedBills);
+                return;
+            }
+            if (action != 2 || ids == null || ids.Count == 0) { return; }
+
+            string deleteMessage = string.Empty;
+            await RunAsync(async () =>
+            {
+                BillArchiveResultDto result = await Api.ArchiveSettledBillsAsync(
+                    new SettledBillArchiveRequest { BillIds = ids });
+                // 重新加载候选与「关联对象」笔数（删除后笔数同步更新）
+                await LoadAsync();
+                deleteMessage = result == null || string.IsNullOrWhiteSpace(result.Message)
+                    ? ("已删除 " + ids.Count + " 条旧账单（仅从本列表移除，账务记录保留）")
+                    : result.Message;
+                if (result != null && result.SkippedCount > 0 && result.SkippedItems != null)
+                {
+                    deleteMessage += "；未删除：" + string.Join("；", result.SkippedItems);
+                }
+            }, null);
+
+            if (!string.IsNullOrEmpty(deleteMessage))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + deleteMessage;
+            }
+        }
+
+        /// <summary>CHG-v1.2.0-36：确认弹层「取消」。</summary>
+        private void CancelAction()
+        {
+            IsConfirmVisible = false;
+            _pendingAction = 0;
+            _pendingBillIds = null;
         }
 
         /// <summary>
