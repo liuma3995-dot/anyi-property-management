@@ -1208,6 +1208,35 @@ namespace PropertyManagement.Client.Services
             });
         }
 
+        /// <summary>CHG-v1.3.1-05：演示环境下的留痕清单（Mock 不与文件系统交互）。</summary>
+        public Task<List<ExportTraceDto>> ListExportTracesAsync()
+        {
+            return Task.FromResult(new List<ExportTraceDto>
+            {
+                new ExportTraceDto
+                {
+                    Source = "report", Id = 1, Kind = "financial", Period = "2026-08", Format = "Excel",
+                    FileName = "demo-financial.xlsx", FilePath = "C:\\ProgramData\\PropertyManagement\\exports\\demo-financial.xlsx",
+                    FileSize = 20480, CreatedAt = DateTime.Now, HasFile = true, IsOrphan = false,
+                    SourceText = "报表留痕", FileSizeText = "20.0 KB"
+                }
+            });
+        }
+
+        /// <summary>CHG-v1.3.1-05：演示环境下的留痕清理（Mock 只回报结果）。</summary>
+        public Task<ExportTraceDeleteResultDto> DeleteExportTracesAsync(ExportTraceDeleteRequest request)
+        {
+            int count = request == null || request.Items == null ? 0 : request.Items.Count;
+            return Task.FromResult(new ExportTraceDeleteResultDto
+            {
+                DeletedRows = count,
+                DeletedFiles = count,
+                FreedBytes = 20480L * count,
+                SkippedItems = new List<string>(),
+                Message = "已清理留痕 " + count + " 条（演示数据）"
+            });
+        }
+
         // ==================== 内部工具 ====================
 
         private static Task<PageResult<T>> Page<T>(IEnumerable<T> list)

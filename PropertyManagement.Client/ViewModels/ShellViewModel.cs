@@ -40,6 +40,8 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isTodoCenterOpen;
         /// <summary>CHG-v1.2.0-28：仪表盘统计口径（月 `yyyy-MM` / 年 `yyyy`）—— 切页返回后沿用，直到点「回到本月」。</summary>
         private string _dashboardPeriod;
+        /// <summary>CHG-v1.3.1-06：财务报表统计口径记忆（本次登录期间跨页面记住，登出清空）。</summary>
+        private FinancialReportPeriodState _financialReportPeriod;
         private int _todoTotal;
         private string _todoSummary = "待办 0 项";
         private string _todoDetail = "欠费 0  ·  纠纷 0  ·  到期 0";
@@ -535,7 +537,10 @@ namespace PropertyManagement.Client.ViewModels
                     case "退款/减免/调整": return new RefundAdjustmentViewModel(_api);
                     case "支出登记": return new ExpenseViewModel(_api);
                     case "欠费台账": return new ArrearViewModel(_api);
-                    case "财务报表": return new FinancialReportViewModel(_api);
+                    // CHG-v1.3.1-06：注入上次的统计口径（本次登录期间跨页面记住），并把变更回传记录
+                    case "财务报表":
+                        return new FinancialReportViewModel(_api, _financialReportPeriod,
+                            state => _financialReportPeriod = state);
                     case "收支明细流水": return new LedgerViewModel(_api);
                 }
             }
@@ -989,6 +994,8 @@ namespace PropertyManagement.Client.ViewModels
             _todoTimer.Stop();
             // CHG-v1.2.0-28：登出清掉统计口径记忆（下次登录回到当前月）
             _dashboardPeriod = null;
+            // CHG-v1.3.1-06：财务报表统计口径记忆同样随登出清空
+            _financialReportPeriod = null;
             LogoutRequested?.Invoke();
         }
     }

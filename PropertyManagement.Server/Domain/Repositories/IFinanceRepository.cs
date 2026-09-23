@@ -176,6 +176,11 @@ namespace PropertyManagement.Server.Domain.Repositories
         FinancialReportDto BuildFinancialReport(IDbConnection connection, FinancialReportWindow window);
         int InsertReportLog(IDbConnection connection, IDbTransaction transaction, ReportLogDto log);
         ReportLogDto GetReportLog(IDbConnection connection, int id);
+        // CHG-v1.3.1-05：「报表与导出留痕」清单（财务报表模块缓存清理）
+        List<ReportLogDto> ListReportLogs(IDbConnection connection);
+        List<ExportLogDto> ListExportLogs(IDbConnection connection);
+        int SoftDeleteReportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids);
+        int SoftDeleteExportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids);
     }
 
     /// <summary>账单生成候选对象（房产/车位）。</summary>

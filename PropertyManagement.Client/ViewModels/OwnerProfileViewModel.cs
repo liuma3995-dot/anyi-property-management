@@ -22,6 +22,13 @@ namespace PropertyManagement.Client.ViewModels
         private string _searchText = string.Empty;
         private OwnerDto _selected;
         private int? _selectedOwnerId;
+        /// <summary>下拉当前选中行（CHG-v1.3.1-01：下拉改为服务端检索 + 下拉内翻页）。</summary>
+        private OwnerRow _selectedOwnerItem;
+        /// <summary>下拉候选分页（负责人 2026-09-23 口径：与列表页一致，每页 20 条）。</summary>
+        private const int PickerPageSize = 20;
+        private int _ownerPage = 1;
+        private int _ownerTotal;
+        private int _ownerSearchSeq;
         private bool _isFormVisible;
         private int _editingId;
         private string _formName = string.Empty;
@@ -49,6 +56,9 @@ namespace PropertyManagement.Client.ViewModels
                 await SearchOwnersAsync();
             };
             SearchCommand = new AsyncRelayCommand(LoadAsync);
+            // CHG-v1.3.1-01：下拉浮层内翻页（作用域 = 当前检索关键字）
+            OwnerPrevPageCommand = new AsyncRelayCommand(() => SearchOwnersCoreAsync(CurrentOwnerKeyword(), _ownerPage - 1), () => CanOwnerPrev);
+            OwnerNextPageCommand = new AsyncRelayCommand(() => SearchOwnersCoreAsync(CurrentOwnerKeyword(), _ownerPage + 1), () => CanOwnerNext);
             SelectCommand = new AsyncRelayCommand<OwnerRow>(SelectOwner);
             EditCommand = new RelayCommand(StartEdit);
             NewCommand = new RelayCommand(StartNew);
@@ -123,6 +133,24 @@ namespace PropertyManagement.Client.ViewModels
             get { return _selectedOwnerId; }
             set { if (SetProperty(ref _selectedOwnerId, value)) { _ = SelectOwnerById(value); } }
         }
+        /// <summary>
+        /// 下拉选中行（CHG-v1.3.1-01）：null（集合重建导致的复位）一律忽略，
+        /// 真正的"未选"由 SelectedOwnerId 表达，避免下拉刷新把当前业主清空。
+        /// </summary>
+        public OwnerRow SelectedOwnerItem
+        {
+            get { return _selectedOwnerItem; }
+            set
+            {
+                if (value == null) { return; }
+                if (SetProperty(ref _selectedOwnerItem, value)) { _ = SelectOwner(value); }
+            }
+        }
+        /// <summary>下拉页脚（共 N 条 · 第 X/Y 页）。</summary>
+        public string OwnerPageText { get { return "共 " + _ownerTotal + " 条 · 第 " + _ownerPage + "/" + LastOwnerPage + " 页"; } }
+        public int LastOwnerPage { get { return _ownerTotal <= 0 ? 1 : ((_ownerTotal + PickerPageSize - 1) / PickerPageSize); } }
+        public bool CanOwnerPrev { get { return _ownerPage > 1; } }
+        public bool CanOwnerNext { get { return _ownerPage * PickerPageSize < _ownerTotal; } }
         public string OwnerStatusText { get { return _selected == null ? string.Empty : (_selected.Status == OwnerStatus.Living ? "在住" : "搬离"); } }
         public string OwnerPhone { get { return _selected == null ? string.Empty : _selected.Phone; } }
         public string OwnerIdCardTypeText { get { return IdCardTypeName(_selected?.IdCardType); } }
@@ -149,6 +177,8 @@ namespace PropertyManagement.Client.ViewModels
         public OwnerStatus FormStatus { get { return _formStatus; } set { SetProperty(ref _formStatus, value); } }
 
         public IAsyncRelayCommand SearchCommand { get; }
+        public IAsyncRelayCommand OwnerPrevPageCommand { get; }
+        public IAsyncRelayCommand OwnerNextPageCommand { get; }
         public IRelayCommand<OwnerRow> SelectCommand { get; }
         public IRelayCommand EditCommand { get; }
         public IRelayCommand NewCommand { get; }
@@ -179,11 +209,66 @@ namespace PropertyManagement.Client.ViewModels
 
         private async Task SearchOwnersCoreAsync(string keyword)
         {
-            var page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100, Keyword = keyword });
+            await SearchOwnersCoreAsync(keyword, 1);
+        }
+
+        /// <summary>
+        /// 业主候选：按关键字走**服务端检索**，只渲染当页（CHG-v1.3.1-01）。
+        /// v1.3.0 及以前固定取前 100 条 —— 业主多于 100 位时下拉框"只显示一部分"（负责人现场反馈）。
+        /// </summary>
+        private async Task SearchOwnersCoreAsync(string keyword, int pageIndex)
+        {
+            int target = pageIndex < 1 ? 1 : pageIndex;
+            int seq = ++_ownerSearchSeq;
+
+            var page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+            {
+                PageIndex = target,
+                PageSize = PickerPageSize,
+                Keyword = keyword
+            });
+            if (seq != _ownerSearchSeq) { return; }
+
+            int last = OwnerLastPageOf(page.Total);
+            if (target > last)
+            {
+                target = last;
+                page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+                {
+                    PageIndex = target,
+                    PageSize = PickerPageSize,
+                    Keyword = keyword
+                });
+                if (seq != _ownerSearchSeq) { return; }
+            }
+
+            _ownerTotal = page.Total;
+            _ownerPage = target;
             Owners.Clear();
             foreach (var dto in page.Items) Owners.Add(new OwnerRow { Dto = dto });
             FilteredOwners.Clear();
             foreach (var dto in page.Items) FilteredOwners.Add(new OwnerRow { Dto = dto });
+            RaiseOwnerPageState();
+        }
+
+        private string CurrentOwnerKeyword()
+        {
+            return string.IsNullOrWhiteSpace(_searchText) ? string.Empty : _searchText.Trim();
+        }
+
+        private static int OwnerLastPageOf(int total)
+        {
+            return total <= 0 ? 1 : ((total + PickerPageSize - 1) / PickerPageSize);
+        }
+
+        private void RaiseOwnerPageState()
+        {
+            OnPropertyChanged(nameof(OwnerPageText));
+            OnPropertyChanged(nameof(LastOwnerPage));
+            OnPropertyChanged(nameof(CanOwnerPrev));
+            OnPropertyChanged(nameof(CanOwnerNext));
+            OwnerPrevPageCommand.NotifyCanExecuteChanged();
+            OwnerNextPageCommand.NotifyCanExecuteChanged();
         }
 
         public async Task SelectOwnerById(int? id)
@@ -222,6 +307,12 @@ namespace PropertyManagement.Client.ViewModels
         public async Task SelectOwner(OwnerRow row)
         {
             if (row == null) return;
+            // CHG-v1.3.1-01：下拉选中行与业主档案保持同源（回填下拉高亮，不触发二次加载）
+            if (!ReferenceEquals(_selectedOwnerItem, row))
+            {
+                _selectedOwnerItem = row;
+                OnPropertyChanged(nameof(SelectedOwnerItem));
+            }
             if (_selectedOwnerId != row.Id) { _selectedOwnerId = row.Id; OnPropertyChanged(nameof(SelectedOwnerId)); }
             var owner = await Api.GetOwnerAsync(row.Id);
             Selected = owner;

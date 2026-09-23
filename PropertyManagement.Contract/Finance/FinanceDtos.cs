@@ -538,6 +538,69 @@ namespace PropertyManagement.Contract.Finance
         public DateTime CreatedAt { get; set; }
     }
 
+    /// <summary>
+    /// 报表/导出留痕清单行（CHG-v1.3.1-05）：财务报表模块「报表与导出留痕」用。
+    /// 来源三档：报表留痕（t_report_log）/ 导出留痕（t_export_log）/ 未被任何留痕引用的孤立生成文件。
+    /// 删除 = 留痕软删 + 物理删除服务端生成文件（缓存清理，不涉及任何账目）。
+    /// </summary>
+    public class ExportTraceDto
+    {
+        /// <summary>来源：report / export / orphan。</summary>
+        public string Source { get; set; }
+        /// <summary>留痕行 ID（孤立文件为 0）。</summary>
+        public int Id { get; set; }
+        /// <summary>业务口径：报表类型（financial/ledger/receipt/...）或导出模块（基础信息_owner 等）。</summary>
+        public string Kind { get; set; }
+        /// <summary>期间或说明（可为空）。</summary>
+        public string Period { get; set; }
+        /// <summary>格式（Excel / PDF；孤立文件按扩展名推断）。</summary>
+        public string Format { get; set; }
+        /// <summary>文件名（不含目录）。</summary>
+        public string FileName { get; set; }
+        /// <summary>生成文件全路径（服务端本地）。</summary>
+        public string FilePath { get; set; }
+        /// <summary>文件大小（字节；文件不存在时为 0）。</summary>
+        public long FileSize { get; set; }
+        /// <summary>生成时间。</summary>
+        public DateTime CreatedAt { get; set; }
+        /// <summary>服务端生成文件是否仍在。</summary>
+        public bool HasFile { get; set; }
+        /// <summary>是否为「未被任何留痕引用」的孤立文件。</summary>
+        public bool IsOrphan { get; set; }
+        /// <summary>来源中文名（报表留痕 / 导出留痕 / 孤立文件）。</summary>
+        public string SourceText { get; set; }
+        /// <summary>文件大小展示（KB/MB）。</summary>
+        public string FileSizeText { get; set; }
+    }
+
+    /// <summary>留痕清理请求项（CHG-v1.3.1-05）。</summary>
+    public class ExportTraceKey
+    {
+        public string Source { get; set; }
+        public int Id { get; set; }
+        public string FileName { get; set; }
+    }
+
+    /// <summary>留痕清理请求（CHG-v1.3.1-05：支持全选 / 多选）。</summary>
+    public class ExportTraceDeleteRequest
+    {
+        public List<ExportTraceKey> Items { get; set; }
+    }
+
+    /// <summary>留痕清理结果（CHG-v1.3.1-05）。</summary>
+    public class ExportTraceDeleteResultDto
+    {
+        /// <summary>软删的留痕行数。</summary>
+        public int DeletedRows { get; set; }
+        /// <summary>物理删除的服务端生成文件数。</summary>
+        public int DeletedFiles { get; set; }
+        /// <summary>释放的磁盘字节数。</summary>
+        public long FreedBytes { get; set; }
+        /// <summary>逐条失败原因（中文）。</summary>
+        public List<string> SkippedItems { get; set; }
+        public string Message { get; set; }
+    }
+
     /// <summary>已缴/未缴统计（UC-FIN-008）。</summary>
     public class PaymentStatisticsDto
     {

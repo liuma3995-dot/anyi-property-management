@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
                     xmlns:hc="https://handyorg.github.io/handycontrol">
 
     <!-- M8-D8-0 品牌化修版（对齐前端原型 v1.0 / quanju.pen variables，2026-09-14）：主色/强调色/底色三方对齐品牌色（深青绿 #1F4B43 + 暖金 #C8A96A + 米白 #FAF8F4），语义状态色保持不变 -->
@@ -442,6 +443,82 @@
                             <Setter TargetName="PART_Placeholder" Property="Visibility" Value="Visible" />
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 可检索 + 可翻页的单选下拉（CHG-v1.3.1-01：业主-房产关系「手动绑定」、业主档案「业主」下拉框） -->
+    <Style x:Key="PagedPickerStyle" TargetType="{x:Type controls:PagedPicker}">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontFamily" Value="{StaticResource AppFont}" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type controls:PagedPicker}">
+                    <Grid>
+                        <Border x:Name="Frame" Background="{StaticResource SurfaceAltBrush}"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="PART_SearchBox" Grid.Column="0" Style="{StaticResource SearchTextBox}"
+                                         Height="30" FontSize="{TemplateBinding FontSize}" Margin="8,0,0,0"
+                                         VerticalContentAlignment="Center"
+                                         Text="{Binding SearchText, RelativeSource={RelativeSource TemplatedParent}, UpdateSourceTrigger=PropertyChanged}"
+                                         hc:InfoElement.Placeholder="{Binding Placeholder, RelativeSource={RelativeSource TemplatedParent}}" />
+                                <ToggleButton x:Name="PART_Toggle" Grid.Column="1" Width="28" Background="Transparent"
+                                              BorderThickness="0" Focusable="False" Cursor="Hand">
+                                    <!-- 下拉箭头内联（同一字典内的 StaticResource 不能引用后合并的 Icons.xaml） -->
+                                    <Path Data="m6 9 6 6 6-6" Width="14" Height="14"
+                                          Stroke="{StaticResource TextSecondaryBrush}" Style="{StaticResource IconStroke}"
+                                          HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                </ToggleButton>
+                            </Grid>
+                        </Border>
+                        <Popup x:Name="PART_Popup" PlacementTarget="{Binding ElementName=Frame}" Placement="Bottom"
+                               StaysOpen="False" AllowsTransparency="True"
+                               IsOpen="{Binding IsDropDownOpen, RelativeSource={RelativeSource TemplatedParent}, Mode=TwoWay}">
+                            <Border Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                                    BorderThickness="1" CornerRadius="6" Margin="0,4,0,0"
+                                    Width="{Binding ActualWidth, ElementName=Frame}">
+                                <Border.Effect>
+                                    <DropShadowEffect Color="#33000000" BlurRadius="12" ShadowDepth="2" Opacity="0.35" />
+                                </Border.Effect>
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <ScrollViewer Grid.Row="0" MaxHeight="210" VerticalScrollBarVisibility="Auto">
+                                        <ListBox x:Name="PART_List" BorderThickness="0" Background="Transparent"
+                                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                                                 ItemsSource="{Binding ItemsSource, RelativeSource={RelativeSource TemplatedParent}}"
+                                                 DisplayMemberPath="{Binding DisplayMemberPath, RelativeSource={RelativeSource TemplatedParent}}" />
+                                    </ScrollViewer>
+                                    <!-- 翻页行（下拉浮层内部，v1.3.1 负责人口径）：作用域 = 当前关键字 -->
+                                    <Border Grid.Row="1" Background="{StaticResource SurfaceAltBrush}"
+                                            BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="0,1,0,0"
+                                            Padding="10,5" CornerRadius="0,0,6,6">
+                                        <Grid>
+                                            <TextBlock Text="{Binding PageText, RelativeSource={RelativeSource TemplatedParent}}"
+                                                       FontSize="11" Foreground="{StaticResource TextMutedBrush}"
+                                                       VerticalAlignment="Center" />
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                                <Button Content="上一页" Style="{StaticResource LinkButton}"
+                                                        Command="{Binding PrevCommand, RelativeSource={RelativeSource TemplatedParent}}" />
+                                                <Button Content="下一页" Style="{StaticResource LinkButton}" Margin="6,0,0,0"
+                                                        Command="{Binding NextCommand, RelativeSource={RelativeSource TemplatedParent}}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </Popup>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>

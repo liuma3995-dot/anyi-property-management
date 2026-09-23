@@ -496,21 +496,37 @@ namespace PropertyManagement.Server.Services
         }
 
         /// <summary>
-        /// 纯子记录清理清单（v1.1.0-⑤）：这些子表没有 del_flag 列，行本身没有独立业务含义，
-        /// 只随父行存在；父行留痕被物理清理后必须一并清理，否则成为孤儿残余数据。
-        /// 注意：业务历史表（如 t_bill / t_payment / t_maintenance_record 等）不在此列——
-        /// 它们的行是独立的业务历史，即使父行被清理也一律保留（不在用数据不清理的口径之内）。
+        /// 子记录清理清单（v1.1.0-⑤ 建立，CHG-v1.3.1-04 扩充）：这些行只随父行存在，
+        /// 父行被物理清理后必须一并清理，否则成为孤儿残余数据。
+        /// 其中「账单被物理回收后，其收款 / 退款 / 收据行一并清理」是负责人 2026-09-23 的裁定口径
+        /// （既有"业务历史一律保留"的口径在该场景下会让账单已消失的收款行永远留在库里，
+        /// 既不释放存储，又会在"删账单 → 一键清理"之后把账目搅乱）。
+        /// 顺序：先子后父（收据 → 收款 → 退款），避免同一轮清理里留下新的悬空行。
         /// </summary>
-        private static readonly Dictionary<string, string> OrphanChildCleanups = new Dictionary<string, string>
+        private static readonly List<KeyValuePair<string, string>> OrphanChildCleanups =
+            new List<KeyValuePair<string, string>>
         {
             // 导入批次错误清单：父行 t_import_log 已不存在则错误行无意义
-            { "t_import_error", "DELETE FROM t_import_error WHERE import_id NOT IN (SELECT id FROM t_import_log)" },
+            new KeyValuePair<string, string>("t_import_error",
+                "DELETE FROM t_import_error WHERE import_id NOT IN (SELECT id FROM t_import_log)"),
             // 导入回执逐行结果（CHG-v1.2.0-01）：父行 t_import_log 已不存在则回执行无意义
-            { "t_import_row", "DELETE FROM t_import_row WHERE import_id NOT IN (SELECT id FROM t_import_log)" },
+            new KeyValuePair<string, string>("t_import_row",
+                "DELETE FROM t_import_row WHERE import_id NOT IN (SELECT id FROM t_import_log)"),
             // 支出关联对象：父行 t_expense 已不存在则关联行无意义
-            { "t_expense_object_rel", "DELETE FROM t_expense_object_rel WHERE expense_id NOT IN (SELECT id FROM t_expense)" },
+            new KeyValuePair<string, string>("t_expense_object_rel",
+                "DELETE FROM t_expense_object_rel WHERE expense_id NOT IN (SELECT id FROM t_expense)"),
             // 收款登记「已结清记录归档」标记（CHG-v1.2.0-31）：账单行被物理清理后归档标记无意义
-            { "t_bill_archive", "DELETE FROM t_bill_archive WHERE bill_id NOT IN (SELECT id FROM t_bill)" }
+            new KeyValuePair<string, string>("t_bill_archive",
+                "DELETE FROM t_bill_archive WHERE bill_id NOT IN (SELECT id FROM t_bill)"),
+            // 收据：收款行已被清理则收据行无意义（先于收款清理执行）
+            new KeyValuePair<string, string>("t_receipt",
+                "DELETE FROM t_receipt WHERE payment_id NOT IN (SELECT id FROM t_payment)"),
+            // CHG-v1.3.1-04：账单被物理回收后，其收款行一并清理（真正释放存储）
+            new KeyValuePair<string, string>("t_payment",
+                "DELETE FROM t_payment WHERE bill_id IS NOT NULL AND bill_id NOT IN (SELECT id FROM t_bill)"),
+            // CHG-v1.3.1-04：账单被物理回收后，其退款 / 减免 / 调整行一并清理
+            new KeyValuePair<string, string>("t_payment_refund",
+                "DELETE FROM t_payment_refund WHERE bill_id IS NOT NULL AND bill_id NOT IN (SELECT id FROM t_bill)")
         };
 
         /// <summary>清理单表软删留痕（表无 del_flag 列时返回 0）。</summary>

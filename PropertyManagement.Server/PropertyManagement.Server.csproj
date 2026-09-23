@@ -398,7 +398,10 @@
     	<LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_057.sql</LogicalName>
     </EmbeddedResource>
     <EmbeddedResource Include="Infrastructure\Data\migration_058.sql">
-    	<LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_058.sql</LogicalName>
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_058.sql</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Infrastructure\Data\migration_059.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_059.sql</LogicalName>
     </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>

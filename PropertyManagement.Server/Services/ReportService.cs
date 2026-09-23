@@ -628,6 +628,194 @@ namespace PropertyManagement.Server.Services
                 return log;
             }
         }
+
+        // ========== CHG-v1.3.1-05：财务报表「报表与导出留痕」清单（缓存清理） ==========
+
+        /// <summary>
+        /// 留痕清单：报表留痕（t_report_log）+ 导出留痕（t_export_log）+ **未被任何留痕引用的孤立生成文件**。
+        /// 用途（负责人 2026-09-23）：年度/季度/月度清算时清理"只增不减"的导出缓存；
+        /// 删除 = 留痕软删 + 物理删除生成文件，**不涉及任何账目**（与账单/收款/报表口径无关）。
+        /// </summary>
+        public List<ExportTraceDto> ListExportTraces()
+        {
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                var traces = new List<ExportTraceDto>();
+                var referenced = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (ReportLogDto log in _finance.ListReportLogs(connection))
+                {
+                    traces.Add(BuildTrace("report", log.Id, log.ReportType, log.Period,
+                        log.Format, log.FilePath, log.CreatedAt, referenced));
+                }
+                foreach (ExportLogDto log in _finance.ListExportLogs(connection))
+                {
+                    traces.Add(BuildTrace("export", log.Id, log.Module, null,
+                        log.Format, log.FilePath, log.CreatedAt, referenced));
+                }
+
+                // 孤立生成文件：目录里未被任何留痕（含已软删留痕）引用的文件
+                string dir = DbConfig.ExportDirectory;
+                if (Directory.Exists(dir))
+                {
+                    foreach (string file in Directory.GetFiles(dir))
+                    {
+                        if (referenced.Contains(Path.GetFullPath(file))) { continue; }
+                        if (!IsExportFile(file)) { continue; }
+                        traces.Add(BuildTrace("orphan", 0, "未引用生成文件", null,
+                            null, file, File.GetLastWriteTime(file), referenced));
+                    }
+                }
+
+                return traces.OrderByDescending(x => x.CreatedAt).ThenBy(x => x.Source).ToList();
+            }
+        }
+
+        private static ExportTraceDto BuildTrace(string source, int id, string kind, string period,
+            ExportFormat? format, string filePath, DateTime createdAt, HashSet<string> referenced)
+        {
+            string full = string.IsNullOrWhiteSpace(filePath) ? null : SafeFullPath(filePath);
+            if (full != null) { referenced.Add(full); }
+            bool hasFile = full != null && File.Exists(full);
+            long size = hasFile ? new FileInfo(full).Length : 0L;
+            string ext = full == null ? string.Empty : Path.GetExtension(full);
+            if (ext.StartsWith(".")) { ext = ext.Substring(1); }
+            string formatText = format.HasValue
+                ? (format.Value == ExportFormat.Excel ? "Excel" : "PDF")
+                : (string.Equals(ext, "pdf", StringComparison.OrdinalIgnoreCase) ? "PDF"
+                    : (string.Equals(ext, "xlsx", StringComparison.OrdinalIgnoreCase) ? "Excel" : ext.ToUpperInvariant()));
+            return new ExportTraceDto
+            {
+                Source = source,
+                Id = id,
+                Kind = kind,
+                Period = period,
+                Format = formatText,
+                FileName = full == null ? string.Empty : Path.GetFileName(full),
+                FilePath = full,
+                FileSize = size,
+                CreatedAt = createdAt,
+                HasFile = hasFile,
+                IsOrphan = string.Equals(source, "orphan", StringComparison.OrdinalIgnoreCase),
+                SourceText = string.Equals(source, "report", StringComparison.OrdinalIgnoreCase) ? "报表留痕"
+                    : (string.Equals(source, "export", StringComparison.OrdinalIgnoreCase) ? "导出留痕" : "孤立文件"),
+                FileSizeText = FormatSize(size)
+            };
+        }
+
+        private static string SafeFullPath(string path)
+        {
+            try { return Path.GetFullPath(path); }
+            catch (Exception) { return null; }
+        }
+
+        /// <summary>只认导出目录里的生成物（避免把无关文件列进清单）。</summary>
+        private static bool IsExportFile(string file)
+        {
+            string ext = Path.GetExtension(file);
+            return string.Equals(ext, ".pdf", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(ext, ".xlsx", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string FormatSize(long bytes)
+        {
+            if (bytes >= 1024 * 1024) { return (bytes / 1024.0 / 1024.0).ToString("0.00") + " MB"; }
+            if (bytes >= 1024) { return (bytes / 1024.0).ToString("0.0") + " KB"; }
+            return bytes + " B";
+        }
+
+        /// <summary>
+        /// 留痕清理：逐条「留痕软删 + 物理删除生成文件」。
+        /// 只允许删除导出目录内的文件（路径越界一律拒绝并回报），逐条失败不影响其余条目。
+        /// </summary>
+        public ExportTraceDeleteResultDto DeleteExportTraces(ExportTraceDeleteRequest request,
+            string operatorName = null, string ip = null)
+        {
+            var items = (request == null ? null : request.Items) ?? new List<ExportTraceKey>();
+            if (items.Count == 0)
+            {
+                throw ApiException.BadRequest("请先选择要清理的报表/导出留痕");
+            }
+
+            var reportIds = new List<int>();
+            var exportIds = new List<int>();
+            var files = new List<string>();
+            var skipped = new List<string>();
+            string exportDir = Path.GetFullPath(DbConfig.ExportDirectory);
+
+            foreach (ExportTraceKey item in items)
+            {
+                string source = item == null ? null : item.Source;
+                if (string.Equals(source, "report", StringComparison.OrdinalIgnoreCase) && item.Id > 0)
+                {
+                    reportIds.Add(item.Id);
+                }
+                else if (string.Equals(source, "export", StringComparison.OrdinalIgnoreCase) && item.Id > 0)
+                {
+                    exportIds.Add(item.Id);
+                }
+                else if (!string.Equals(source, "orphan", StringComparison.OrdinalIgnoreCase))
+                {
+                    skipped.Add("来源无法识别，已跳过：" + (item == null ? "（空）" : source));
+                    continue;
+                }
+
+                if (string.IsNullOrWhiteSpace(item.FileName)) { continue; }
+                string full = SafeFullPath(Path.Combine(exportDir, Path.GetFileName(item.FileName)));
+                if (full == null || !full.StartsWith(exportDir, StringComparison.OrdinalIgnoreCase))
+                {
+                    skipped.Add(item.FileName + "：路径越界，未删除");
+                    continue;
+                }
+                files.Add(full);
+            }
+
+            int rows = 0;
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                rows += _finance.SoftDeleteReportLogs(connection, transaction, reportIds);
+                rows += _finance.SoftDeleteExportLogs(connection, transaction, exportIds);
+                transaction.Commit();
+            }
+
+            int deletedFiles = 0;
+            long freed = 0;
+            foreach (string file in files.Distinct(StringComparer.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    if (!File.Exists(file))
+                    {
+                        skipped.Add(Path.GetFileName(file) + "：文件已不存在（仅清理留痕）");
+                        continue;
+                    }
+                    long size = new FileInfo(file).Length;
+                    File.Delete(file);
+                    deletedFiles++;
+                    freed += size;
+                }
+                catch (Exception ex)
+                {
+                    skipped.Add(Path.GetFileName(file) + "：删除失败（" + ex.Message + "）");
+                }
+            }
+
+            string message = "已清理留痕 " + rows + " 条、生成文件 " + deletedFiles + " 个，释放 " + FormatSize(freed)
+                + "（留痕软删，可再随「一键清理残余数据」物理回收；账目数据不受影响）";
+            _audit.Write("EXPORT_TRACE_DELETE", "report_log", null, message,
+                userName: operatorName, ip: ip, module: "财务报表", result: "Success");
+
+            return new ExportTraceDeleteResultDto
+            {
+                DeletedRows = rows,
+                DeletedFiles = deletedFiles,
+                FreedBytes = freed,
+                SkippedItems = skipped,
+                Message = message
+            };
+        }
+
         // ---------- 周期解析 ----------
         private static void ResolvePeriod(FinancialReportQueryRequest query, out DateTime from, out DateTime to)
         {

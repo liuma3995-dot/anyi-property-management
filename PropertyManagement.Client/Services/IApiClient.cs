@@ -159,6 +159,15 @@ namespace PropertyManagement.Client.Services
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);
 
+        /// <summary>
+        /// CHG-v1.3.1-05：财务报表「报表与导出留痕」清单
+        /// （报表留痕 + 导出留痕 + 未被任何留痕引用的孤立生成文件；用于年度/季度/月度清算与缓存清理）。
+        /// </summary>
+        Task<List<ExportTraceDto>> ListExportTracesAsync();
+
+        /// <summary>CHG-v1.3.1-05：清理所选留痕 —— 留痕软删 + 物理删除服务端生成文件（不涉及账目）。</summary>
+        Task<ExportTraceDeleteResultDto> DeleteExportTracesAsync(ExportTraceDeleteRequest request);
+
         /// <summary>CHG-v1.1.0-14：导出收据打印模板（含逐项收款明细）。</summary>
         Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request);
 

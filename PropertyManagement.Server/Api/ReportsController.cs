@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -44,6 +45,27 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<ReportLogDto> ExportReport(ReportExportRequest request)
         {
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportReport(request));
+        }
+
+        /// <summary>
+        /// CHG-v1.3.1-05：财务报表「报表与导出留痕」清单（报表留痕 + 导出留痕 + 未被引用的孤立生成文件）。
+        /// </summary>
+        [HttpGet]
+        [Route("export-traces")]
+        public ApiResponse<List<ExportTraceDto>> ListExportTraces()
+        {
+            return ApiResponse<List<ExportTraceDto>>.Ok(_reports.ListExportTraces());
+        }
+
+        /// <summary>
+        /// CHG-v1.3.1-05：清理所选留痕 —— 留痕软删 + 物理删除服务端生成文件（不涉及任何账目）。
+        /// </summary>
+        [HttpPost]
+        [Route("export-traces/delete")]
+        public ApiResponse<ExportTraceDeleteResultDto> DeleteExportTraces(ExportTraceDeleteRequest request)
+        {
+            return ApiResponse<ExportTraceDeleteResultDto>.Ok(
+                _reports.DeleteExportTraces(request, GetUsername(), GetIp()));
         }
 
         /// <summary>收支明细流水导出（CHG-v1.1.2-05，Excel/PDF，按当前筛选条件导出明细）。</summary>

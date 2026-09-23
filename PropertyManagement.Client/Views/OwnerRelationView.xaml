@@ -1,6 +1,7 @@
 <UserControl x:Class="PropertyManagement.Client.Views.OwnerRelationView"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:controls="clr-namespace:PropertyManagement.Client.Assets.Controls"
              xmlns:hc="https://handyorg.github.io/handycontrol"
              FontFamily="微软雅黑">
     <Grid Margin="16">
@@ -112,23 +113,28 @@
                 <StackPanel>
                     <TextBlock Text="绑定业主-房产关系" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
                     <TextBlock Text="房产" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <!-- F-03/F-04（v1.1.0 返工）：对齐「纠纷登记」单框内检索——同一个框既可输入检索、又可下拉选择；
-                         过滤走 ICollectionView（不重建集合），选中项恒保留，故不会再出现"选不中/存不了" -->
-                    <ComboBox x:Name="PropertyCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
-                              IsSynchronizedWithCurrentItem="False"
-                              ItemsSource="{Binding PropertiesView}" DisplayMemberPath="UnitPath"
-                              SelectedItem="{Binding SelectedProperty, Mode=TwoWay}"
-                              Text="{Binding PropertySearchText, UpdateSourceTrigger=PropertyChanged}"
-                              Height="32" Margin="0,6,0,12" MaxDropDownHeight="220" FontSize="12"
-                              hc:InfoElement.Placeholder="输入楼栋 / 房号 / 业主检索" />
+                    <!-- CHG-v1.3.1-01：改为「服务端检索 + 下拉内翻页」（PagedPicker）——
+                         v1.3.0 及以前只取前 100 条并在本地过滤，房产/业主一多就"只显示一部分、搜什么都搜不到"（负责人现场反馈）。
+                         选中口径仍由 SelectedProperty / FormPropertyId 承载，集合重建不会丢选中项（不会复现"选不中/存不了"）。 -->
+                    <controls:PagedPicker x:Name="PropertyPicker" Style="{StaticResource PagedPickerStyle}"
+                                          Margin="0,6,0,12" FontSize="12"
+                                          ItemsSource="{Binding PropertyOptions}" DisplayMemberPath="UnitPath"
+                                          SelectedItem="{Binding SelectedProperty, Mode=TwoWay}"
+                                          SearchText="{Binding PropertySearchText, Mode=TwoWay}"
+                                          PageText="{Binding PropertyPageText}"
+                                          PrevCommand="{Binding PropertyPrevPageCommand}"
+                                          NextCommand="{Binding PropertyNextPageCommand}"
+                                          Placeholder="输入楼栋 / 单元 / 房号 / 业主 / 电话检索" />
                     <TextBlock Text="业主" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <ComboBox x:Name="OwnerCombo" IsEditable="True" IsTextSearchEnabled="False" StaysOpenOnEdit="True"
-                              IsSynchronizedWithCurrentItem="False"
-                              ItemsSource="{Binding OwnersView}" DisplayMemberPath="OwnerDisplayName"
-                              SelectedItem="{Binding SelectedOwner, Mode=TwoWay}"
-                              Text="{Binding OwnerSearchText, UpdateSourceTrigger=PropertyChanged}"
-                              Height="32" Margin="0,6,0,12" MaxDropDownHeight="220" FontSize="12"
-                              hc:InfoElement.Placeholder="输入姓名 / 电话 / 证件号检索" />
+                    <controls:PagedPicker x:Name="OwnerPicker" Style="{StaticResource PagedPickerStyle}"
+                                          Margin="0,6,0,12" FontSize="12"
+                                          ItemsSource="{Binding OwnerOptions}" DisplayMemberPath="OwnerDisplayName"
+                                          SelectedItem="{Binding SelectedOwner, Mode=TwoWay}"
+                                          SearchText="{Binding OwnerSearchText, Mode=TwoWay}"
+                                          PageText="{Binding OwnerPageText}"
+                                          PrevCommand="{Binding OwnerPrevPageCommand}"
+                                          NextCommand="{Binding OwnerNextPageCommand}"
+                                          Placeholder="输入姓名 / 电话 / 证件号检索" />
                     <TextBlock Text="关系类型" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
                     <ComboBox SelectedValue="{Binding FormRelType}" SelectedValuePath="Tag" Margin="0,6,0,12">
                         <ComboBoxItem Content="业主" Tag="Owner" />

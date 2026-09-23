@@ -18,7 +18,8 @@ namespace PropertyManagement.Server.Infrastructure.Data
     /// </summary>
     public static class DatabaseInitializer
     {
-        private const int SchemaVersion = 58;
+        // CHG-v1.3.1-05：59 = 报表/导出留痕新增 del_flag（「报表与导出留痕」清单可清理）
+        private const int SchemaVersion = 59;
 
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 

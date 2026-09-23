@@ -413,6 +413,19 @@ namespace PropertyManagement.Client.Services
             return PostAsync<ReportExportRequest, ReportLogDto>("reports/export", request);
         }
 
+        /// <summary>CHG-v1.3.1-05：财务报表「报表与导出留痕」清单。</summary>
+        public Task<List<ExportTraceDto>> ListExportTracesAsync()
+        {
+            return GetAsync<List<ExportTraceDto>>("reports/export-traces");
+        }
+
+        /// <summary>CHG-v1.3.1-05：清理所选留痕（留痕软删 + 物理删除服务端生成文件）。</summary>
+        public Task<ExportTraceDeleteResultDto> DeleteExportTracesAsync(ExportTraceDeleteRequest request)
+        {
+            return PostAsync<ExportTraceDeleteRequest, ExportTraceDeleteResultDto>(
+                "reports/export-traces/delete", request);
+        }
+
         /// <summary>CHG-v1.1.2-05：收支明细流水导出（Excel/PDF）。</summary>
         public Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request)
         {

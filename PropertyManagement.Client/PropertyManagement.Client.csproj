@@ -83,6 +83,8 @@
   <ItemGroup>
     <!-- CHG-v1.1.2-08：可复用小数输入控件（统一 5 处金额/面积/单价输入框） -->
     <Compile Include="Assets\Controls\DecimalTextBox.cs" />
+    <!-- CHG-v1.3.1-01：可检索 + 可翻页的单选下拉（业主-房产关系「手动绑定」、业主档案「业主」下拉框） -->
+    <Compile Include="Assets\Controls\PagedPicker.cs" />
   </ItemGroup>
   <ItemGroup>
     <ApplicationDefinition Include="App.xaml">

@@ -34,7 +34,15 @@
                     <ComboBoxItem Content="年报" />
                 </ComboBox>
 
-                <TextBlock Text="会计期间" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,12,0,4" />
+                <!-- CHG-v1.3.1-06：「回到本期」——口径同仪表盘「回到本月」（当前报表类型 → 当前期，对比期 → 上一期） -->
+                <Grid Margin="0,12,0,4">
+                    <TextBlock Text="会计期间" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" />
+                    <Button Content="回到本期" Style="{StaticResource LinkButton}" HorizontalAlignment="Right"
+                            VerticalAlignment="Center" Padding="2,0" FontSize="11"
+                            Command="{Binding GoToCurrentPeriodCommand}"
+                            ToolTip="按当前报表类型回到当前期，对比期回到上一期" />
+                </Grid>
                 <Border Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6">
                     <TextBox Style="{StaticResource SearchTextBox}" Text="{Binding Period, UpdateSourceTrigger=PropertyChanged}"
@@ -70,6 +78,11 @@
                         FontSize="13" Content="导出 Excel" Command="{Binding ExportExcelCommand}" />
                 <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Padding="16,0"
                         FontSize="13" Content="导出 PDF" Command="{Binding ExportPdfCommand}" />
+                <!-- CHG-v1.3.1-05：报表与导出留痕（导出缓存）清单 —— 年度/季度/月度清算用；
+                     删除 = 留痕软删 + 服务端生成文件物理删除，与账目无关 -->
+                <Button Margin="0,10,0,0" Style="{StaticResource ButtonSecondary}" Height="34" Padding="16,0"
+                        FontSize="13" Content="报表与导出留痕" Command="{Binding OpenTracePanelCommand}"
+                        ToolTip="清理只增不减的导出缓存（留痕 + 服务端生成文件）" />
             </StackPanel>
         </Border>
 
@@ -143,5 +156,89 @@
                    FontSize="11" Foreground="{StaticResource SuccessBrush}" />
         <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="3" Text="{Binding ErrorText}"
                    FontSize="11" Foreground="{StaticResource DangerBrush}" />
+
+        <!-- ============ CHG-v1.3.1-05：报表与导出留痕清单（缓存清理） ============ -->
+        <Grid Grid.Row="0" Grid.RowSpan="3" Grid.Column="0" Grid.ColumnSpan="3"
+              Visibility="{Binding IsTracePanelVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="1000" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Style="{StaticResource CardBorder}" Padding="24,20">
+                <StackPanel>
+                    <TextBlock Text="报表与导出留痕" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="删除 = 留痕软删 + 服务端生成文件物理删除（释放磁盘）；仅清理导出缓存，账单 / 收款 / 退款 / 报表金额均不受影响"
+                               FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,6,0,12"
+                               TextWrapping="Wrap" />
+                    <Grid Margin="0,0,0,8">
+                        <TextBlock Text="{Binding TraceSummaryText}" FontSize="12"
+                                   Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                        <TextBlock Text="勾选后点「批量删除」；表头可全选" FontSize="11" HorizontalAlignment="Right"
+                                   Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
+                    </Grid>
+                    <Border Height="330" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8">
+                        <DataGrid ItemsSource="{Binding ExportTraces}" IsReadOnly="True" AutoGenerateColumns="False"
+                                  HeadersVisibility="Column" CanUserAddRows="False">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="46">
+                                    <DataGridTemplateColumn.Header>
+                                        <CheckBox IsChecked="{Binding DataContext.IsTraceSelectAll, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                    </DataGridTemplateColumn.Header>
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                                      Click="RowCheckBox_Click"
+                                                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="来源" Width="78" Binding="{Binding SourceText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="类型" Width="104" Binding="{Binding KindText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="期间" Width="86" Binding="{Binding PeriodText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="格式" Width="56" Binding="{Binding FormatText}" ElementStyle="{StaticResource GridCellText}" />
+                                <!-- 文件名最长（含时间戳），给足宽度并加悬停提示，避免截断 -->
+                                <DataGridTextColumn Header="文件名" Width="*" Binding="{Binding FileNameText}">
+                                    <DataGridTextColumn.ElementStyle>
+                                        <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                            <Setter Property="ToolTip" Value="{Binding FileNameText}" />
+                                        </Style>
+                                    </DataGridTextColumn.ElementStyle>
+                                </DataGridTextColumn>
+                                <DataGridTextColumn Header="大小" Width="74" Binding="{Binding SizeText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="生成时间" Width="132" Binding="{Binding CreatedText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="服务端文件" Width="86" Binding="{Binding FileStateText}" ElementStyle="{StaticResource GridCellText}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+                    <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}"
+                               Margin="0,8,0,0" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="关闭" Command="{Binding CloseTracePanelCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="批量删除" Margin="10,0,0,0"
+                                Command="{Binding RequestDeleteTracesCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- 删除确认（提醒先备份归档） -->
+        <Grid Grid.Row="0" Grid.RowSpan="3" Grid.Column="0" Grid.ColumnSpan="3"
+              Visibility="{Binding IsTraceConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="520" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Style="{StaticResource CardBorder}" Padding="24,20">
+                <StackPanel>
+                    <TextBlock Text="确认清理报表/导出留痕？" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding TraceConfirmText}" FontSize="12" Margin="0,10,0,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" TextWrapping="Wrap" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelDeleteTracesCommand}" />
+                        <Button Style="{StaticResource ButtonPrimary}" Content="确认清理" Margin="10,0,0,0"
+                                Command="{Binding ConfirmDeleteTracesCommand}" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
     </Grid>
 </UserControl>

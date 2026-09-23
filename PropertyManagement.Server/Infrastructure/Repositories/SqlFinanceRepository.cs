@@ -1011,8 +1011,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
             int offset = (pageIndex - 1) * pageSize;
             // CHG-v1.1.2-02：账单被删除（批次删除）后，其收款记录同步不再出现在收款登记记录列表，
-            // 与欠费台账/财务报表/收支流水口径一致；无关联账单（bill_id = 0，冲正或补收调整）的记录保留可见。
-            const string where = " WHERE NOT EXISTS (SELECT 1 FROM t_bill b WHERE b.id = p.bill_id AND b.del_flag = 1)";
+            // 与欠费台账/财务报表/收支流水口径一致；无关联账单（bill_id 为空，冲正或补收调整）的记录保留可见。
+            // CHG-v1.3.1-03：原条件用 NOT EXISTS(del_flag=1)，账单行被「一键清理残余数据」**物理回收**后
+            // NOT EXISTS 反而成立 → 收款记录"复活"。改为正向条件：无账单关联，或账单存在且未删。
+            const string where =
+                " WHERE (p.bill_id IS NULL OR EXISTS (SELECT 1 FROM t_bill b WHERE b.id = p.bill_id AND b.del_flag = 0))";
             total = connection.ExecuteScalar<int>("SELECT COUNT(1) FROM t_payment p" + where);
             return connection.Query<PaymentDto>(
                 "SELECT p.id, p.bill_id AS BillId, p.amount, p.pay_method AS PayMethod, p.paid_at AS PaidAt, " +
@@ -1114,9 +1117,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
             int offset = (pageIndex - 1) * pageSize;
             // CHG-v1.1.2-02：账单删除后其退款/减免/调整记录同步不再显示（口径与收款登记/报表/流水一致）；
-            // 无关联账单（bill_id = 0）的调整记录不因此被隐藏。
+            // 无关联账单（bill_id 为空）的调整记录不因此被隐藏。
+            // CHG-v1.3.1-03：与收款记录同一处根因 —— 账单行被物理回收后 (rb.id IS NULL) 会让记录"复活"，
+            // 改为正向条件：无账单关联，或账单存在且未删。
             const string from = " FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id" +
-                " WHERE (rb.id IS NULL OR rb.del_flag = 0)";
+                " WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0))";
             total = connection.ExecuteScalar<int>("SELECT COUNT(1)" + from);
             return connection.Query<RefundAdjustmentDto>(
                 "SELECT pr.id, pr.bill_id AS BillId, pr.refund_type AS RefundType, pr.amount, pr.reason, " +
@@ -1131,7 +1136,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
                 "LEFT JOIN t_building bld ON bld.id = u.building_id " +
                 "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
-                "WHERE (rb.id IS NULL OR rb.del_flag = 0) " +
+                "WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) " +
                 "ORDER BY pr.id DESC LIMIT @limit OFFSET @offset",
                 new { limit = pageSize, offset }).ToList();
         }
@@ -1417,8 +1422,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id " +
                 "LEFT JOIN t_bill b ON b.id = p.bill_id " +
                 // CHG-v1.1.2-02：账单删除后其流水同步不再计入（与收款登记/财务报表口径一致）
+                // CHG-v1.3.1-03：账单行被物理回收后不再"复活"—— 无账单关联才放行，否则要求账单存在且未删
                 "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
-                "WHERE p.status = 0 AND (b.id IS NULL OR b.del_flag = 0) " +
+                "WHERE p.status = 0 AND (p.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) " +
                 "UNION ALL " +
                 // CHG-v1.1.2-12：账务调整的 +/− 由「方式」决定 —— 调增补收计入收入方向，调减冲正/退款为冲减方向
                 // CHG-v1.1.2-40：减免改为「调减应收」，**不产生资金流出** → 不进收支明细流水（否则会把减免误记成支出）
@@ -1431,7 +1437,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "COALESCE(NULLIF(pr.method, ''), '原路退回') AS PayMethod, '系统管理员', " +
                 ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment_refund pr LEFT JOIN t_bill b ON b.id = pr.bill_id " +
-                "WHERE (b.id IS NULL OR b.del_flag = 0) AND pr.refund_type <> 1 " +
+                "WHERE (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
                 "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
@@ -1439,7 +1445,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "SELECT p.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " +
                 ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id LEFT JOIN t_bill b ON b.id = p.bill_id " +
-                "WHERE p.status = 1 AND (b.id IS NULL OR b.del_flag = 0)) x";
+                "WHERE p.status = 1 AND (p.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0))) x";
 
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;
@@ -1535,11 +1541,12 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             {
                 // CHG-v1.1.2-02：账单删除后，其收款不再计入报表收入（原口径漏过滤账单 del_flag，
                 // 导致「删了账单，报表仍算这笔钱」的账实不一致）。
+                // CHG-v1.3.1-03：账单行被物理回收后不得"复活"（正向条件：无账单关联，或账单存在且未删）。
                 "SELECT p.paid_at AS BizTime, 'income' AS BizType, COALESCE(ci.name, '收款') AS Subject, " +
                 "p.amount AS Signed, COALESCE(r.receipt_no, '') AS Note " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id " +
                 "LEFT JOIN t_bill b ON b.id = p.bill_id LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
-                "WHERE p.status = 0 AND (b.id IS NULL OR b.del_flag = 0) " +
+                "WHERE p.status = 0 AND (p.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) " +
                 "AND date(p.paid_at) >= date(@from) AND date(p.paid_at) <= date(@to)" +
                 (chargeItemId.HasValue ? " AND b.charge_item_id = @cid" : string.Empty)
             };
@@ -1552,7 +1559,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                     "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN pr.amount ELSE -pr.amount END AS Signed, " +
                     "COALESCE(pr.ref_no, '') AS Note " +
                     "FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
-                    "WHERE (rb.id IS NULL OR rb.del_flag = 0) AND pr.refund_type <> 1 " +
+                    "WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) AND pr.refund_type <> 1 " +
                     "AND date(pr.created_at) >= date(@from) AND date(pr.created_at) <= date(@to)" +
                     (chargeItemId.HasValue ? " AND rb.charge_item_id = @cid" : string.Empty));
             }
@@ -1592,6 +1599,43 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.QueryFirstOrDefault<ReportLogDto>(
                 "SELECT id, report_type AS ReportType, period, format, file_path AS FilePath, created_at AS CreatedAt " +
                 "FROM t_report_log WHERE id = @id", new { id });
+        }
+
+        // ---------- CHG-v1.3.1-05：报表与导出留痕清单（财务报表模块缓存清理） ----------
+        /// <summary>报表留痕清单（未软删）。</summary>
+        public List<ReportLogDto> ListReportLogs(IDbConnection connection)
+        {
+            return connection.Query<ReportLogDto>(
+                "SELECT id, report_type AS ReportType, period, format, file_path AS FilePath, created_at AS CreatedAt " +
+                "FROM t_report_log WHERE del_flag = 0 ORDER BY id DESC").ToList();
+        }
+
+        /// <summary>导出留痕清单（未软删）。</summary>
+        public List<ExportLogDto> ListExportLogs(IDbConnection connection)
+        {
+            return connection.Query<ExportLogDto>(
+                "SELECT id, module AS Module, format, file_path AS FilePath, created_at AS CreatedAt " +
+                "FROM t_export_log WHERE del_flag = 0 ORDER BY id DESC").ToList();
+        }
+
+        /// <summary>报表留痕软删（可再被「一键清理残余数据」物理回收）。</summary>
+        public int SoftDeleteReportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids)
+        {
+            List<int> list = (ids ?? Enumerable.Empty<int>()).Distinct().ToList();
+            if (list.Count == 0) { return 0; }
+            return connection.Execute(
+                "UPDATE t_report_log SET del_flag = 1 WHERE id IN @ids AND del_flag = 0",
+                new { ids = list }, transaction);
+        }
+
+        /// <summary>导出留痕软删（同上）。</summary>
+        public int SoftDeleteExportLogs(IDbConnection connection, IDbTransaction transaction, IEnumerable<int> ids)
+        {
+            List<int> list = (ids ?? Enumerable.Empty<int>()).Distinct().ToList();
+            if (list.Count == 0) { return 0; }
+            return connection.Execute(
+                "UPDATE t_export_log SET del_flag = 1 WHERE id IN @ids AND del_flag = 0",
+                new { ids = list }, transaction);
         }
     }
 }

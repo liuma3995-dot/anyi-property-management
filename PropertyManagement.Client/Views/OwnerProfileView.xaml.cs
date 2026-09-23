@@ -21,13 +21,5 @@ namespace PropertyManagement.Client.Views
             }
         }
 
-        private void OwnerPicker_SelectionChanged(object sender, SelectionChangedEventArgs e)
-        {
-            if (DataContext is OwnerProfileViewModel vm && vm.SelectedOwnerId.HasValue)
-            {
-                var row = vm.Owners.FirstOrDefault(x => x.Id == vm.SelectedOwnerId.Value);
-                if (row != null) _ = vm.SelectOwner(row);
-            }
-        }
     }
 }

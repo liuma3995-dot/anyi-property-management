@@ -70,6 +70,17 @@ namespace PropertyManagement.Client.ViewModels
         private string _roomKeyword = string.Empty;
         private string _propertySearchText = string.Empty;
         private string _ownerSearchText = string.Empty;
+        /// <summary>下拉候选分页大小（CHG-v1.3.1-01：负责人 2026-09-23 口径 = 与列表页一致，每页 20 条）。</summary>
+        private const int PickerPageSize = 20;
+        private int _propOptionPage = 1;
+        private int _propOptionTotal;
+        private int _ownerOptionPage = 1;
+        private int _ownerOptionTotal;
+        /// <summary>选中后回填展示名时不触发新一轮检索（避免用"楼栋+单元+房号"整串去搜出 0 条）。</summary>
+        private bool _suppressOptionSearch;
+        /// <summary>服务端检索的竞态保护：只认最后一次请求的结果。</summary>
+        private int _propOptionSeq;
+        private int _ownerOptionSeq;
         private int _pageIndex = 1;
         private int _pageSize = 20;
         private int _total;
@@ -90,6 +101,8 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isBatchSelectAll;
         private List<OwnerPropertyRelationDto> _batchSource = new List<OwnerPropertyRelationDto>();
         private readonly DispatcherTimer _searchDebounce;
+        private readonly DispatcherTimer _propertyOptionDebounce;
+        private readonly DispatcherTimer _ownerOptionDebounce;
 
         public OwnerRelationViewModel(IApiClient api) : base(api)
         {
@@ -100,7 +113,25 @@ namespace PropertyManagement.Client.ViewModels
                 _pageIndex = 1;
                 await LoadAsync();
             };
+            // CHG-v1.3.1-01：手动绑定表单的房产 / 业主候选改为**服务端检索**（输入防抖 300ms），
+            // 修掉「只取前 100 条 + 本地过滤 → 数据一多就搜什么都搜不到」。
+            _propertyOptionDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _propertyOptionDebounce.Tick += async (s, e) =>
+            {
+                _propertyOptionDebounce.Stop();
+                await RunAsync(() => LoadPropertyOptionsAsync(1), null);
+            };
+            _ownerOptionDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _ownerOptionDebounce.Tick += async (s, e) =>
+            {
+                _ownerOptionDebounce.Stop();
+                await RunAsync(() => LoadOwnerOptionsAsync(1), null);
+            };
             QueryCommand = new AsyncRelayCommand(LoadAsync);
+            PropertyPrevPageCommand = new AsyncRelayCommand(() => LoadPropertyOptionsAsync(_propOptionPage - 1), () => CanPropertyPrev);
+            PropertyNextPageCommand = new AsyncRelayCommand(() => LoadPropertyOptionsAsync(_propOptionPage + 1), () => CanPropertyNext);
+            OwnerPrevPageCommand = new AsyncRelayCommand(() => LoadOwnerOptionsAsync(_ownerOptionPage - 1), () => CanOwnerPrev);
+            OwnerNextPageCommand = new AsyncRelayCommand(() => LoadOwnerOptionsAsync(_ownerOptionPage + 1), () => CanOwnerNext);
             // v1.3.0：业主-房产关系列表补齐翻页与记录条数（与「房产列表」同口径）。
             PrevPageCommand = new RelayCommand(() => { if (_pageIndex > 1) { _pageIndex--; _ = LoadAsync(); } });
             NextPageCommand = new RelayCommand(() => { if (_pageIndex * _pageSize < _total) { _pageIndex++; _ = LoadAsync(); } });
@@ -125,8 +156,10 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         public ObservableCollection<OwnerRelationRow> Items { get; } = new ObservableCollection<OwnerRelationRow>();
-        public ObservableCollection<PropertyDto> Properties { get; } = new ObservableCollection<PropertyDto>();
-        public ObservableCollection<OwnerDto> Owners { get; } = new ObservableCollection<OwnerDto>();
+        /// <summary>手动绑定：房产候选（当前页，服务端检索结果）。</summary>
+        public ObservableCollection<PropertyDto> PropertyOptions { get; } = new ObservableCollection<PropertyDto>();
+        /// <summary>手动绑定：业主候选（当前页，服务端检索结果）。</summary>
+        public ObservableCollection<OwnerRow> OwnerOptions { get; } = new ObservableCollection<OwnerRow>();
 
         /// <summary>记录条数与翻页（v1.3.0：与「房产列表」同口径的「共 N 条记录 · 第 X/Y 页」）。</summary>
         public int Total
@@ -155,56 +188,23 @@ namespace PropertyManagement.Client.ViewModels
         public string TotalText { get { return PageInfo; } }
         public bool CanPrev { get { return _pageIndex > 1; } }
         public bool CanNext { get { return _pageIndex * _pageSize < _total; } }
-        private ObservableCollection<OwnerRow> _ownerRows = new ObservableCollection<OwnerRow>();
+        /// <summary>房产候选页脚（下拉浮层内部翻页行）：共 N 条 · 第 X/Y 页。</summary>
+        public string PropertyPageText { get { return PageTextOf(_propOptionTotal, _propOptionPage); } }
+        /// <summary>业主候选页脚（同上）。</summary>
+        public string OwnerPageText { get { return PageTextOf(_ownerOptionTotal, _ownerOptionPage); } }
+        public bool CanPropertyPrev { get { return _propOptionPage > 1; } }
+        public bool CanPropertyNext { get { return _propOptionPage * PickerPageSize < _propOptionTotal; } }
+        public bool CanOwnerPrev { get { return _ownerOptionPage > 1; } }
+        public bool CanOwnerNext { get { return _ownerOptionPage * PickerPageSize < _ownerOptionTotal; } }
 
-        /// <summary>
-        /// F-03 修复：候选列表改用 <see cref="ICollectionView"/> 过滤。
-        /// V1.0.0 用 <c>FilteredProperties.Clear() + Add</c> 过滤，每次文本变化都会向 WPF <c>Selector</c>
-        /// 抛 <c>Reset</c>，导致「刚选中的项被丢弃」→ <c>FormPropertyId</c> 回写 null → 保存必然失败。
-        /// 视图过滤只改可见性、不重建集合，选中项不再丢失。
-        /// </summary>
-        public ICollectionView PropertiesView
+        private static string PageTextOf(int total, int page)
         {
-            get { return _propertiesView ?? (_propertiesView = BuildView(Properties)); }
-        }
-        private ICollectionView _propertiesView;
-        private ICollectionView _ownersView;
-        public ICollectionView OwnersView
-        {
-            get { return _ownersView ?? (_ownersView = BuildView(_ownerRows)); }
+            return "共 " + total + " 条 · 第 " + page + "/" + LastPageOf(total) + " 页";
         }
 
-        private ICollectionView BuildView(System.Collections.IEnumerable source)
+        private static int LastPageOf(int total)
         {
-            var view = CollectionViewSource.GetDefaultView(source);
-            view.Filter = o =>
-            {
-                if (o is PropertyDto) return MatchesProperty((PropertyDto)o);
-                if (o is OwnerRow) return MatchesOwner((OwnerRow)o);
-                return true;
-            };
-            return view;
-        }
-
-        private bool MatchesProperty(PropertyDto p)
-        {
-            // 已选中的房产恒定保留，避免过滤刷新后下拉里找不到当前选中项
-            if (_formPropertyId.HasValue && p.Id == _formPropertyId.Value) return true;
-            string q = (_propertySearchText ?? string.Empty).Trim();
-            if (q.Length == 0) return true;
-            return (p.UnitPath ?? string.Empty).Contains(q)
-                || (p.RoomNo ?? string.Empty).Contains(q)
-                || (p.OwnerName ?? string.Empty).Contains(q);
-        }
-
-        private bool MatchesOwner(OwnerRow o)
-        {
-            if (_formOwnerId.HasValue && o.Id == _formOwnerId.Value) return true;
-            string q = (_ownerSearchText ?? string.Empty).Trim();
-            if (q.Length == 0) return true;
-            return (o.Name ?? string.Empty).Contains(q)
-                || (o.Phone ?? string.Empty).Contains(q)
-                || (o.IdCard ?? string.Empty).Contains(q);
+            return total <= 0 ? 1 : ((total + PickerPageSize - 1) / PickerPageSize);
         }
 
         public string RoomKeyword
@@ -212,8 +212,30 @@ namespace PropertyManagement.Client.ViewModels
             get { return _roomKeyword; }
             set { if (SetProperty(ref _roomKeyword, value)) { _searchDebounce.Stop(); _searchDebounce.Start(); } }
         }
-        public string PropertySearchText { get { return _propertySearchText; } set { if (SetProperty(ref _propertySearchText, value)) { ApplyPropertyFilter(); } } }
-        public string OwnerSearchText { get { return _ownerSearchText; } set { if (SetProperty(ref _ownerSearchText, value)) { ApplyOwnerFilter(); } } }
+        /// <summary>房产下拉的检索文字：变化后防抖 300ms 走**服务端检索**（CHG-v1.3.1-01）。</summary>
+        public string PropertySearchText
+        {
+            get { return _propertySearchText; }
+            set
+            {
+                if (!SetProperty(ref _propertySearchText, value)) { return; }
+                if (_suppressOptionSearch) { return; }
+                _propertyOptionDebounce.Stop();
+                _propertyOptionDebounce.Start();
+            }
+        }
+        /// <summary>业主下拉的检索文字：同上。</summary>
+        public string OwnerSearchText
+        {
+            get { return _ownerSearchText; }
+            set
+            {
+                if (!SetProperty(ref _ownerSearchText, value)) { return; }
+                if (_suppressOptionSearch) { return; }
+                _ownerOptionDebounce.Stop();
+                _ownerOptionDebounce.Start();
+            }
+        }
         public int RelTypeFilter { get { return _relTypeFilter; } set { if (SetProperty(ref _relTypeFilter, value)) { _ = LoadAsync(); } } }
         public int StatusFilter { get { return _statusFilter; } set { if (SetProperty(ref _statusFilter, value)) { _ = LoadAsync(); } } }
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
@@ -231,9 +253,14 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (value == null) return;
                 if (SetProperty(ref _selectedProperty, value)) FormPropertyId = value.Id;
-                // 选中后把输入框文本替换为所选对象的展示文本，避免残留检索关键字（现场反馈）
+                // 选中后把输入框文本替换为所选对象的展示文本，避免残留检索关键字（现场反馈）；
+                // CHG-v1.3.1-01：这是"程序化回填"，不再触发新一轮服务端检索。
+                _propertyOptionDebounce.Stop();
                 string display = string.IsNullOrEmpty(value.UnitPath) ? (value.RoomNo ?? string.Empty) : value.UnitPath;
-                if (!string.Equals(_propertySearchText, display, StringComparison.Ordinal)) PropertySearchText = display;
+                if (!string.Equals(_propertySearchText, display, StringComparison.Ordinal))
+                {
+                    SetOptionSearchText(true, display);
+                }
             }
         }
         private PropertyDto _selectedProperty;
@@ -246,11 +273,30 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (value == null) return;
                 if (SetProperty(ref _selectedOwner, value)) FormOwnerId = value.Id;
+                _ownerOptionDebounce.Stop();
                 string display = value.OwnerDisplayName ?? value.Name ?? string.Empty;
-                if (!string.Equals(_ownerSearchText, display, StringComparison.Ordinal)) OwnerSearchText = display;
+                if (!string.Equals(_ownerSearchText, display, StringComparison.Ordinal))
+                {
+                    SetOptionSearchText(false, display);
+                }
             }
         }
         private OwnerRow _selectedOwner;
+
+        /// <summary>程序化回填检索文字（选中后展示名）—— 不触发新一轮检索。</summary>
+        private void SetOptionSearchText(bool property, string text)
+        {
+            _suppressOptionSearch = true;
+            try
+            {
+                if (property) { PropertySearchText = text; }
+                else { OwnerSearchText = text; }
+            }
+            finally
+            {
+                _suppressOptionSearch = false;
+            }
+        }
         public OwnerRelType FormRelType
         {
             get { return _formRelType; }
@@ -293,6 +339,11 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand QueryCommand { get; }
         public IRelayCommand PrevPageCommand { get; }
         public IRelayCommand NextPageCommand { get; }
+        /// <summary>下拉浮层内的翻页（CHG-v1.3.1-01：作用域 = 当前检索关键字）。</summary>
+        public IAsyncRelayCommand PropertyPrevPageCommand { get; }
+        public IAsyncRelayCommand PropertyNextPageCommand { get; }
+        public IAsyncRelayCommand OwnerPrevPageCommand { get; }
+        public IAsyncRelayCommand OwnerNextPageCommand { get; }
         public IRelayCommand BindCommand { get; }
         public IAsyncRelayCommand ExportCommand { get; }
         public IRelayCommand OpenBatchCommand { get; }
@@ -304,15 +355,97 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand CancelReleaseCommand { get; }
         public IAsyncRelayCommand ConfirmReleaseCommand { get; }
 
-        private void ApplyPropertyFilter()
+        /// <summary>
+        /// 房产候选：按当前关键字走**服务端检索**，只渲染当页（CHG-v1.3.1-01）。
+        /// v1.3.0 及以前是「取前 100 条 + 本地过滤」—— 房产多于 100 套时，第 101 条之后的房产永远搜不到，
+        /// 负责人现场实测（349 套房产）即为此因。
+        /// </summary>
+        private async Task LoadPropertyOptionsAsync(int pageIndex)
         {
-            // F-03：只刷新视图过滤，不重建集合（重建会丢选中项）
-            PropertiesView.Refresh();
+            string keyword = string.IsNullOrWhiteSpace(_propertySearchText) ? null : _propertySearchText.Trim();
+            int target = pageIndex < 1 ? 1 : pageIndex;
+            int seq = ++_propOptionSeq;
+
+            PageResult<PropertyDto> page = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest
+            {
+                PageIndex = target,
+                PageSize = PickerPageSize,
+                Keyword = keyword
+            });
+            if (seq != _propOptionSeq) { return; }
+
+            // 关键字收窄后页码可能越界（例如停在第 5 页时又输入了更严的关键字）→ 回到最后一页重取
+            int last = LastPageOf(page.Total);
+            if (target > last)
+            {
+                target = last;
+                page = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest
+                {
+                    PageIndex = target,
+                    PageSize = PickerPageSize,
+                    Keyword = keyword
+                });
+                if (seq != _propOptionSeq) { return; }
+            }
+
+            _propOptionTotal = page.Total;
+            _propOptionPage = target;
+            PropertyOptions.Clear();
+            foreach (var item in page.Items ?? new List<PropertyDto>()) { PropertyOptions.Add(item); }
+            RaisePropertyOptionState();
         }
 
-        private void ApplyOwnerFilter()
+        /// <summary>业主候选：与房产同口径（服务端检索 + 每页 20 条）。</summary>
+        private async Task LoadOwnerOptionsAsync(int pageIndex)
         {
-            OwnersView.Refresh();
+            string keyword = string.IsNullOrWhiteSpace(_ownerSearchText) ? null : _ownerSearchText.Trim();
+            int target = pageIndex < 1 ? 1 : pageIndex;
+            int seq = ++_ownerOptionSeq;
+
+            PageResult<OwnerDto> page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+            {
+                PageIndex = target,
+                PageSize = PickerPageSize,
+                Keyword = keyword
+            });
+            if (seq != _ownerOptionSeq) { return; }
+
+            int last = LastPageOf(page.Total);
+            if (target > last)
+            {
+                target = last;
+                page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+                {
+                    PageIndex = target,
+                    PageSize = PickerPageSize,
+                    Keyword = keyword
+                });
+                if (seq != _ownerOptionSeq) { return; }
+            }
+
+            _ownerOptionTotal = page.Total;
+            _ownerOptionPage = target;
+            OwnerOptions.Clear();
+            foreach (var dto in page.Items ?? new List<OwnerDto>()) { OwnerOptions.Add(new OwnerRow { Dto = dto }); }
+            RaiseOwnerOptionState();
+        }
+
+        private void RaisePropertyOptionState()
+        {
+            OnPropertyChanged(nameof(PropertyPageText));
+            OnPropertyChanged(nameof(CanPropertyPrev));
+            OnPropertyChanged(nameof(CanPropertyNext));
+            PropertyPrevPageCommand.NotifyCanExecuteChanged();
+            PropertyNextPageCommand.NotifyCanExecuteChanged();
+        }
+
+        private void RaiseOwnerOptionState()
+        {
+            OnPropertyChanged(nameof(OwnerPageText));
+            OnPropertyChanged(nameof(CanOwnerPrev));
+            OnPropertyChanged(nameof(CanOwnerNext));
+            OwnerPrevPageCommand.NotifyCanExecuteChanged();
+            OwnerNextPageCommand.NotifyCanExecuteChanged();
         }
 
         public async Task LoadAsync()
@@ -350,31 +483,32 @@ namespace PropertyManagement.Client.ViewModels
         {
             await RunAsync(async () =>
             {
-                var props = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
-                Properties.Clear();
-                foreach (var p in props.Items) Properties.Add(p);
-                ApplyPropertyFilter();
-                var owners = await Api.QueryOwnersAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100 });
-                Owners.Clear();
-                _ownerRows.Clear();
-                foreach (var o in owners.Items) { Owners.Add(o); _ownerRows.Add(new OwnerRow { Dto = o }); }
-                ApplyOwnerFilter();
-                PropertySearchText = string.Empty;
-                OwnerSearchText = string.Empty;
+                _propertyOptionDebounce.Stop();
+                _ownerOptionDebounce.Stop();
+                SetOptionSearchText(true, string.Empty);
+                SetOptionSearchText(false, string.Empty);
                 FormPropertyId = null;
                 FormOwnerId = null;
                 _selectedProperty = null;
                 _selectedOwner = null;
                 OnPropertyChanged(nameof(SelectedProperty));
                 OnPropertyChanged(nameof(SelectedOwner));
-                PropertiesView.Refresh();
-                OwnersView.Refresh();
+                await LoadPropertyOptionsAsync(1);
+                await LoadOwnerOptionsAsync(1);
                 FormRelType = OwnerRelType.Owner;
                 FormShare = 100;
                 FormStart = DateTime.Today;
                 FormEnd = null;
                 IsFormVisible = true;
-            }, "正在加载可绑定对象…");
+            }, null);
+
+            // CHG-v1.3.1-01：v1.3.0 及以前把「正在加载可绑定对象…」写在**成功文案**上，
+            // 于是加载完成后状态栏反而永久停在这句话（现场看起来像卡死）。这里改为加载结果的实数汇报。
+            if (string.IsNullOrEmpty(ErrorText))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") +
+                    "可绑定对象已加载（房产 " + _propOptionTotal + " · 业主 " + _ownerOptionTotal + "）";
+            }
         }
 
         /// <summary>切换关系类型时同步份额默认值：业主100%、共有人50%、租户备案不适用(0)。</summary>
@@ -388,9 +522,10 @@ namespace PropertyManagement.Client.ViewModels
         private async Task SaveAsync()
         {
             // F-04：手动键入唯一可匹配的房号/姓名/电话时自动落选；否则给出明确指引
-            if (!FormPropertyId.HasValue) { FormPropertyId = ResolvePropertyIdFromText(); }
+            // CHG-v1.3.1-01：精确匹配改为**服务端校验**（不再只在本页候选里找）。
+            if (!FormPropertyId.HasValue) { FormPropertyId = await ResolvePropertyIdFromTextAsync(); }
             if (!FormPropertyId.HasValue) { ErrorText = "请从下拉列表选择房产（或输入可唯一匹配的房号）"; return; }
-            if (!FormOwnerId.HasValue) { FormOwnerId = ResolveOwnerIdFromText(); }
+            if (!FormOwnerId.HasValue) { FormOwnerId = await ResolveOwnerIdFromTextAsync(); }
             if (!FormOwnerId.HasValue) { ErrorText = "请从下拉列表选择业主（或输入可唯一匹配的姓名/电话）"; return; }
             var request = new OwnerPropertyRelationRequest
             {
@@ -410,28 +545,56 @@ namespace PropertyManagement.Client.ViewModels
             }, "关系已绑定");
         }
 
-        /// <summary>F-04：把搜索框文本解析为唯一房产（完整路径或房号精确匹配）。</summary>
-        private int? ResolvePropertyIdFromText()
+        /// <summary>
+        /// F-04：把搜索框文本解析为唯一房产（完整路径或房号精确匹配）。
+        /// CHG-v1.3.1-01：先看当页候选，命中不到再按关键字走服务端精确校验 —— 覆盖"目标不在当前页"的场景。
+        /// </summary>
+        private async Task<int?> ResolvePropertyIdFromTextAsync()
         {
             string q = (_propertySearchText ?? string.Empty).Trim();
-            if (q.Length == 0) return null;
-            var hits = Properties.Where(p =>
-                string.Equals((p.UnitPath ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals((p.RoomNo ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (q.Length == 0) { return null; }
+            var hits = PropertyOptions.Where(p => PropertyTextMatches(p, q)).ToList();
+            if (hits.Count == 1) { return hits[0].Id; }
+            PageResult<PropertyDto> page = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest
+            {
+                PageIndex = 1,
+                PageSize = PickerPageSize,
+                Keyword = q
+            });
+            hits = (page.Items ?? new List<PropertyDto>()).Where(p => PropertyTextMatches(p, q)).ToList();
             return hits.Count == 1 ? (int?)hits[0].Id : null;
         }
 
-        /// <summary>F-04：把搜索框文本解析为唯一业主（姓名/电话/证件号/展示名精确匹配）。</summary>
-        private int? ResolveOwnerIdFromText()
+        private static bool PropertyTextMatches(PropertyDto p, string q)
+        {
+            return string.Equals((p.UnitPath ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals((p.RoomNo ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase);
+        }
+
+        /// <summary>F-04：把搜索框文本解析为唯一业主（姓名 / 电话 / 证件号 / 展示名精确匹配）。</summary>
+        private async Task<int?> ResolveOwnerIdFromTextAsync()
         {
             string q = (_ownerSearchText ?? string.Empty).Trim();
-            if (q.Length == 0) return null;
-            var hits = _ownerRows.Where(o =>
-                string.Equals((o.Name ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals((o.Phone ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals((o.IdCard ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
-                string.Equals((o.OwnerDisplayName ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (q.Length == 0) { return null; }
+            var hits = OwnerOptions.Where(o => OwnerTextMatches(o, q)).ToList();
+            if (hits.Count == 1) { return hits[0].Id; }
+            PageResult<OwnerDto> page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+            {
+                PageIndex = 1,
+                PageSize = PickerPageSize,
+                Keyword = q
+            });
+            hits = (page.Items ?? new List<OwnerDto>()).Select(dto => new OwnerRow { Dto = dto })
+                .Where(o => OwnerTextMatches(o, q)).ToList();
             return hits.Count == 1 ? (int?)hits[0].Id : null;
+        }
+
+        private static bool OwnerTextMatches(OwnerRow o, string q)
+        {
+            return string.Equals((o.Name ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals((o.Phone ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals((o.IdCard ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals((o.OwnerDisplayName ?? string.Empty).Trim(), q, StringComparison.OrdinalIgnoreCase);
         }
 
         private async Task ConfirmReleaseAsync()
