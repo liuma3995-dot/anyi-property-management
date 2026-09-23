@@ -234,7 +234,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             if (!string.IsNullOrWhiteSpace(query.Keyword))
             {
                 string kw = query.Keyword.Trim();
-                where += " AND (p.room_no LIKE @kw OR EXISTS (SELECT 1 FROM t_owner_property_rel rel JOIN t_owner o ON o.id = rel.owner_id " +
+                // v1.3.0：搜索框补齐「楼栋 / 单元」维度 —— 只匹配房号时，输入「1号楼」检索不到该栋任何房产。
+                where += " AND (p.room_no LIKE @kw OR COALESCE(u.unit_no, '') LIKE @kw " +
+                         "OR COALESCE(pb.building_no, b.building_no, '') LIKE @kw " +
+                         "OR EXISTS (SELECT 1 FROM t_owner_property_rel rel JOIN t_owner o ON o.id = rel.owner_id " +
                          "WHERE rel.property_id = p.id AND rel.del_flag = 0 AND (o.name LIKE @kw OR o.phone LIKE @kw)))";
                 p.Add("kw", "%" + kw + "%");
             }

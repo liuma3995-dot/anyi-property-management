@@ -70,6 +70,9 @@ namespace PropertyManagement.Client.ViewModels
         private string _roomKeyword = string.Empty;
         private string _propertySearchText = string.Empty;
         private string _ownerSearchText = string.Empty;
+        private int _pageIndex = 1;
+        private int _pageSize = 20;
+        private int _total;
         private int _relTypeFilter;
         private int _statusFilter;
         private bool _isFormVisible;
@@ -94,9 +97,13 @@ namespace PropertyManagement.Client.ViewModels
             _searchDebounce.Tick += async (s, e) =>
             {
                 _searchDebounce.Stop();
+                _pageIndex = 1;
                 await LoadAsync();
             };
             QueryCommand = new AsyncRelayCommand(LoadAsync);
+            // v1.3.0：业主-房产关系列表补齐翻页与记录条数（与「房产列表」同口径）。
+            PrevPageCommand = new RelayCommand(() => { if (_pageIndex > 1) { _pageIndex--; _ = LoadAsync(); } });
+            NextPageCommand = new RelayCommand(() => { if (_pageIndex * _pageSize < _total) { _pageIndex++; _ = LoadAsync(); } });
             BindCommand = new RelayCommand(StartBind);
             ReleaseCommand = new RelayCommand<OwnerRelationRow>(r => { ReleaseRow = r; });
             ExportCommand = new AsyncRelayCommand(ExportAsync);
@@ -120,6 +127,34 @@ namespace PropertyManagement.Client.ViewModels
         public ObservableCollection<OwnerRelationRow> Items { get; } = new ObservableCollection<OwnerRelationRow>();
         public ObservableCollection<PropertyDto> Properties { get; } = new ObservableCollection<PropertyDto>();
         public ObservableCollection<OwnerDto> Owners { get; } = new ObservableCollection<OwnerDto>();
+
+        /// <summary>记录条数与翻页（v1.3.0：与「房产列表」同口径的「共 N 条记录 · 第 X/Y 页」）。</summary>
+        public int Total
+        {
+            get { return _total; }
+            private set
+            {
+                if (SetProperty(ref _total, value))
+                {
+                    OnPropertyChanged(nameof(PageInfo));
+                    OnPropertyChanged(nameof(TotalText));
+                    OnPropertyChanged(nameof(CanPrev));
+                    OnPropertyChanged(nameof(CanNext));
+                }
+            }
+        }
+        public string PageInfo
+        {
+            get
+            {
+                return _total == 0
+                    ? "共 0 条记录 · 第 0/1 页"
+                    : ("共 " + _total + " 条记录 · 第 " + _pageIndex + "/" + ((_total + _pageSize - 1) / _pageSize) + " 页");
+            }
+        }
+        public string TotalText { get { return PageInfo; } }
+        public bool CanPrev { get { return _pageIndex > 1; } }
+        public bool CanNext { get { return _pageIndex * _pageSize < _total; } }
         private ObservableCollection<OwnerRow> _ownerRows = new ObservableCollection<OwnerRow>();
 
         /// <summary>
@@ -256,6 +291,8 @@ namespace PropertyManagement.Client.ViewModels
         public ObservableCollection<BatchRelationRow> BatchRelations { get; } = new ObservableCollection<BatchRelationRow>();
 
         public IAsyncRelayCommand QueryCommand { get; }
+        public IRelayCommand PrevPageCommand { get; }
+        public IRelayCommand NextPageCommand { get; }
         public IRelayCommand BindCommand { get; }
         public IAsyncRelayCommand ExportCommand { get; }
         public IRelayCommand OpenBatchCommand { get; }
@@ -284,15 +321,28 @@ namespace PropertyManagement.Client.ViewModels
             {
                 var query = new BaseInfoQueryRequest
                 {
-                    PageIndex = 1,
-                    PageSize = 100,
+                    PageIndex = _pageIndex,
+                    PageSize = _pageSize,
                     Keyword = RoomKeyword
                 };
                 if (_relTypeFilter != 0) query.RelType = _relTypeFilter == 1 ? OwnerRelType.Owner : (_relTypeFilter == 2 ? OwnerRelType.CoOwner : OwnerRelType.RentRecord);
                 if (_statusFilter != 0) query.RelStatus = _statusFilter == 1 ? OwnerRelStatus.Active : (_statusFilter == 2 ? OwnerRelStatus.Expiring : OwnerRelStatus.Released);
                 var page = await Api.QueryRelationsAsync(query);
+                Total = page.Total;
+                // 页码越界保护（如筛选后总页数变少）：回到最后一页重新取数
+                int lastPage = _total == 0 ? 1 : ((_total + _pageSize - 1) / _pageSize);
+                if (_pageIndex > lastPage)
+                {
+                    _pageIndex = lastPage;
+                    query.PageIndex = _pageIndex;
+                    page = await Api.QueryRelationsAsync(query);
+                }
                 Items.Clear();
                 foreach (var dto in page.Items) Items.Add(new OwnerRelationRow { Dto = dto });
+                OnPropertyChanged(nameof(PageInfo));
+                OnPropertyChanged(nameof(TotalText));
+                OnPropertyChanged(nameof(CanPrev));
+                OnPropertyChanged(nameof(CanNext));
             }, "关系已加载");
         }
 

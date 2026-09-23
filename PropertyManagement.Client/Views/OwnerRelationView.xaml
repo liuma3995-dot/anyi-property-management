@@ -10,6 +10,7 @@
             <RowDefinition Height="*" />
             <RowDefinition Height="8" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
@@ -88,10 +89,25 @@
             </DataGrid>
         </Border>
 
-        <TextBlock Grid.Row="4" Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" />
+        <!-- 记录条数与翻页（v1.3.0：与「房产列表」同口径） -->
+        <Grid Grid.Row="4" Margin="0,0,0,6">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Grid.Column="0" Text="{Binding TotalText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding StatusText}" Foreground="{StaticResource SuccessBrush}" FontSize="11" TextWrapping="Wrap" VerticalAlignment="Center" Margin="12,0" />
+            <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Height="24" FontSize="12" Background="Transparent" BorderThickness="0" Style="{StaticResource LinkButton}" Content="上一页" Command="{Binding PrevPageCommand}" />
+                <Button Height="24" FontSize="12" Background="Transparent" BorderThickness="0" Style="{StaticResource LinkButton}" Content="下一页" Command="{Binding NextPageCommand}" Margin="6,0,0,0" />
+            </StackPanel>
+        </Grid>
+
+        <TextBlock Grid.Row="5" Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="11" TextWrapping="Wrap" />
 
         <!-- 绑定弹层 -->
-        <Border Grid.RowSpan="5" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
+        <Border Grid.RowSpan="6" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="绑定业主-房产关系" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
@@ -144,7 +160,7 @@
         </Border>
 
         <!-- 解除确认 -->
-        <Border Grid.RowSpan="5" Background="#66000000" Visibility="{Binding IsReleaseVisible, Converter={StaticResource BoolToVis}}">
+        <Border Grid.RowSpan="6" Background="#66000000" Visibility="{Binding IsReleaseVisible, Converter={StaticResource BoolToVis}}">
             <Border Width="400" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="确认解除关系？" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,14" />
@@ -161,7 +177,7 @@
         </Border>
 
         <!-- 批量解除 -->
-        <Border Grid.RowSpan="5" Background="#66000000" Visibility="{Binding IsBatchVisible, Converter={StaticResource BoolToVis}}">
+        <Border Grid.RowSpan="6" Background="#66000000" Visibility="{Binding IsBatchVisible, Converter={StaticResource BoolToVis}}">
             <Border Width="640" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="批量解除关系" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,16" />

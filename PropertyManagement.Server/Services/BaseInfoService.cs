@@ -861,8 +861,10 @@ namespace PropertyManagement.Server.Services
                     "3) 表头顺序可自行调整，导入按表头名识别列（旧版模板仍可继续使用）；" +
                     "4) 原始档案资料可直接整段复制粘贴：日期、数字、全角字符、千分位、空白行都能正常校验，" +
                     "其中「证件号 / 电话 / 编号 / 房号」列已预置为文本格式；" +
-                    "5) 同名业主按「证件号 → 电话 → 姓名」判定：同名但补充信息不重复时按不同业主处理，" +
-                    "仍无法区分的会在结果里提示补充证件号或电话；" +
+                    "5) 同名业主必须补充「业主证件号」或「业主电话」才能自动判定：" +
+                    "与档案一致 → 判为同一人（档案缺该项时按本行值补齐档案）；" +
+                    "与档案不一致 → 判为不同业主（「业主-房产关系」模板按本行信息新建档案并关联房产，「业主」模板新增档案）；" +
+                    "同名且本行未补充信息时不猜，该行会失败并提示（也可先在「业主-房产关系」页面手动绑定）；" +
                     "6) 导入后可在「导入批次记录」下载回执，逐行查看 新增 / 覆盖（覆盖了谁、改了哪些字段）/ 失败；" +
                     "7) 整段复制原始档案时建议用「选择性粘贴 → 值」，数据区已按微软雅黑 11 预置，" +
                     "粘贴为值即可保持模板字体（直接粘贴会带入源文件字号）。";
@@ -930,8 +932,8 @@ namespace PropertyManagement.Server.Services
                     {
                         F("姓名", true, "张伟", "必填"),
                         F("证件类型", false, "身份证", "选填。身份证 / 护照 / 户口簿 / 其他，留空按「身份证」"),
-                        F("证件号", false, "110101198501011234", "选填。同名业主请务必填写，用于区分与查重"),
-                        F("联系电话", false, "13800000001", "选填。同名业主请务必填写，用于区分与查重"),
+                        F("证件号", false, "110101198501011234", "选填。同名业主必填其一：与档案一致 → 覆盖同一人；不一致 → 判为不同业主并新增档案"),
+                        F("联系电话", false, "13800000001", "选填。同名业主必填其一：与档案一致 → 覆盖同一人；不一致 → 判为不同业主并新增档案"),
                         F("常住地址", false, "1号楼1单元101", "选填"),
                         F("紧急联系人", false, "李娜", "选填"),
                         F("紧急联系人电话", false, "13800000002", "选填"),
@@ -956,8 +958,8 @@ namespace PropertyManagement.Server.Services
                         F("单元号", false, "", "选填。无单元请留空"),
                         F("房号", true, "101", "必填。与楼栋号（可选单元号）共同定位一条房产"),
                         F("业主姓名", true, "张伟", "必填。同名业主请补充「业主证件号」或「业主电话」"),
-                        F("业主证件号", false, "110101198501011234", "选填。同名区分用"),
-                        F("业主电话", false, "13800000001", "选填。同名区分用"),
+                        F("业主证件号", false, "110101198501011234", "选填。同名业主必填其一：与档案一致 → 关联同一人（档案缺该项时按本行值补齐）；不一致 → 按本行信息新建档案并关联"),
+                        F("业主电话", false, "13800000001", "选填。同名业主必填其一：与档案一致 → 关联同一人（档案缺该项时按本行值补齐）；不一致 → 按本行信息新建档案并关联"),
                         F("关系类型", false, "业主", "选填。业主 / 共有人 / 租户备案，留空按「业主」"),
                         F("份额", false, "100", "选填。0~100，留空按类型默认（业主 100 / 共有人 50 / 租户备案 0）"),
                         F("起始日期", false, "2026-01-01", "选填。格式 yyyy-MM-dd，留空按当天"),
@@ -1181,7 +1183,7 @@ namespace PropertyManagement.Server.Services
             /// </summary>
             public readonly List<ImportRowResultDto> Rows = new List<ImportRowResultDto>();
 
-            /// <param name="note">可选提示（回执「处理建议」列）：如同名业主兜底配对的核对提醒。</param>
+            /// <param name="note">可选提示（回执「处理建议」列）。</param>
             public void AddInserted(int rowNo, string objectKey, string note = null)
             {
                 Inserted++;
@@ -1705,8 +1707,6 @@ namespace PropertyManagement.Server.Services
             int colStatus = ColIndex(map, "状态");
 
             var count = new ImportCount();
-            // v1.2.0 第 3 轮：同批次内同名业主的占用表 —— 文件里不同楼栋/房号的同名业主逐一配对未被占用的档案
-            var usedOwnerIds = new HashSet<int>();
             int row = 2;
             int lastRow = sheet.LastRowUsed().RowNumber();
             while (row <= lastRow)
@@ -1752,16 +1752,35 @@ namespace PropertyManagement.Server.Services
                     int? propertyId = ResolvePropertyByKeyLoose(c, tx, buildingNo.Trim(), unitNo, roomNo.Trim());
                     // v1.2.0（CHG-v1.2.0-02 / 第 2 轮）：与「业主」模板共用同一套同名判定，并额外把**本行楼栋/房号**作为区分依据
                     // —— 不同楼栋/房号的同名业主属不同业主（先按本房产已绑定的同名业主判定，再按常住地址比对）。
+                    // v1.3.0（负责人 2026-09-23 裁定，两轮）：
+                    //   第 1 轮删除「按文件出现顺序配对同名档案」的兜底；第 2 轮删除「无补充信息就判给唯一一位」的兜底，并补上
+                    //   「与档案一致 → 同一人；与档案不一致 → 不同业主（按本行信息建档并关联）；档案缺该信息 → 判为同一人并回填档案」。
                     OwnerMatch ownerMatch = MatchOwnerForImport(c, tx, ownerName, ownerIdCard, ownerPhone,
-                        propertyId, buildingNo, unitNo, roomNo, relType, usedOwnerIds);
+                        propertyId, buildingNo, unitNo, roomNo, relType);
                     int? ownerId = ownerMatch.OwnerId;
-                    if (ownerId.HasValue) usedOwnerIds.Add(ownerId.Value);
-                    // 兜底配对的行：回执里写明配对到哪个档案，并提示核对（同名业主只能靠档案号/电话分辨）
-                    string pairNote = ownerMatch.PairedByOrder && ownerId.HasValue
-                        ? "同名业主按文件顺序配对到 档案 #" + ownerId.Value
-                          + (string.IsNullOrWhiteSpace(ownerPhone) ? "（本行未填业主电话）" : "（电话 " + ownerPhone.Trim() + "）")
-                          + "：请核对同名业主是否对应正确；如不对，请在本行补填「业主电话」或「业主证件号」后重传"
-                        : null;
+                    string ownerNote = null;
+                    if (ownerId.HasValue && (ownerMatch.BackfillIdCard || ownerMatch.BackfillPhone))
+                    {
+                        // 档案缺「证件号 / 电话」→ 判为同一人，并用本行值补齐档案（回执写明补了什么）
+                        ownerNote = BackfillOwnerFromRelationRow(c, tx, ownerId.Value, ownerIdCard, ownerPhone,
+                            ownerMatch.BackfillIdCard, ownerMatch.BackfillPhone);
+                    }
+                    else if (!ownerId.HasValue && ownerMatch.NewOwnerFromRow)
+                    {
+                        // 同名但补充信息与档案不一致 → 判定为不同业主：按本行信息建档后关联房产（负责人 2026-09-23 裁定）
+                        int newOwnerId = _repo.InsertOwner(c, tx, new OwnerDto
+                        {
+                            Name = ownerName.Trim(),
+                            IdCardType = OwnerIdCardType.IdCard,
+                            IdCard = string.IsNullOrWhiteSpace(ownerIdCard) ? null : ownerIdCard.Trim(),
+                            Phone = string.IsNullOrWhiteSpace(ownerPhone) ? null : ownerPhone.Trim(),
+                            Status = OwnerStatus.Living
+                        });
+                        WriteChangeLog(c, tx, BaseChangeObjectType.Owner, newOwnerId, "档案来源",
+                            string.Empty, "关系模板导入（同名信息与档案不一致）", "批量导入");
+                        ownerId = newOwnerId;
+                        ownerNote = "同名业主信息与档案不一致：已按本行信息新建档案 #" + newOwnerId;
+                    }
                     if (!propertyId.HasValue)
                         rowErrors.Add(Err(row, "房号", propLabel,
                             string.IsNullOrWhiteSpace(unitNo) ? "找不到唯一对应的房产" : "找不到该房产",
@@ -1845,7 +1864,7 @@ namespace PropertyManagement.Server.Services
                                             RelStatusText(beforeRel.Status), RelStatusText(newRelStatus), "批量导入");
                                         changes.Add("状态：" + RelStatusText(beforeRel.Status) + " → " + RelStatusText(newRelStatus));
                                     }
-                                    count.AddUpdated(row, relKey + "（关系 #" + beforeRel.Id + "）", changes, pairNote);
+                                    count.AddUpdated(row, relKey + "（关系 #" + beforeRel.Id + "）", changes, ownerNote);
                                 }
                             }
                             else
@@ -1861,7 +1880,7 @@ namespace PropertyManagement.Server.Services
                                     // 模板「状态」列给了就按填写值落库（历史档案导入），否则按终止日期自动判定
                                     Status = hasStatusText ? relStatus : ResolveRelStatus(expireAt)
                                 });
-                                count.AddInserted(row, relKey, pairNote);
+                                count.AddInserted(row, relKey, ownerNote);
                             }
                         }
                     }
@@ -2054,10 +2073,14 @@ namespace PropertyManagement.Server.Services
             /// <summary>true＝口径上属于「另一位业主」（同名但证件号/电话不同）→ 业主模板可新增。</summary>
             public bool IsNewOwner;
             /// <summary>
-            /// true＝本行是按「文件内同名行的出现顺序 ↔ 同名档案（档案号升序）」配对得到的（v1.2.0 第 3 轮兜底口径），
-            /// 回执需提示用户核对，避免同名配对与实际不符却被静默接受。
+            /// true＝本行带了「业主证件号」或「业主电话」，但档案里没有任何一份能对上，且同名档案都没有登记该信息 →
+            /// 判定为不同业主，可由调用方按本行信息建档后再关联房产（v1.3.0 第 2 轮：关系模板自动建档）。
             /// </summary>
-            public bool PairedByOrder;
+            public bool NewOwnerFromRow;
+            /// <summary>命中档案、但该档案的证件号为空 → 用本行「业主证件号」补齐档案。</summary>
+            public bool BackfillIdCard;
+            /// <summary>命中档案、但该档案的电话为空 → 用本行「业主电话」补齐档案。</summary>
+            public bool BackfillPhone;
             public string Reason;
             public string Suggestion;
             /// <summary>无法唯一判定（同名多条且补充信息无法区分）→ 必须报错，不做自造合并。</summary>
@@ -2074,28 +2097,29 @@ namespace PropertyManagement.Server.Services
         }
 
         /// <summary>
-        /// 导入期业主匹配（v1.2.0 CHG-v1.2.0-02）——业主模板与业主-房产关系模板共用一套判定：
-        ///   1) 填了证件号 → 按「姓名 + 证件号」定位；唯一即命中；没有匹配 → 属另一位业主（业主模板可新增）；
-        ///   2) 否则填了电话 → 按「姓名 + 电话」定位；同上；
-        ///   3) 都没填 → 按姓名找：命中唯一即同一人；命中多条时依次按
-        ///      ① 本行「楼栋/房号」对应房产**已绑定的同名业主** →
-        ///      ② 同名业主「常住地址」与本行「楼栋/房号」一致（唯一） →
-        ///      ③ 只有一名同名业主既无证件号也无电话
-        ///      三者之一区分（负责人 2026-09-21 两轮口径：同名但补充信息不重复、且**不同楼栋/房号的同名业主属不同业主**）；
-        ///      仍无法唯一确定 → <see cref="OwnerMatch.Ambiguous"/>，由调用方按行报错。
+        /// 导入期业主匹配（v1.2.0 CHG-v1.2.0-02，v1.3.0 第 2 轮定稿）——业主模板与业主-房产关系模板共用一套判定。
+        /// **判定三分法**：与档案一致 → 同一人；与档案不一致 → 不同业主；档案缺该信息 → 用本行值补齐档案。
+        ///   1) 填了证件号 → 按「姓名 + 证件号」定位：唯一命中 → 同一人；
+        ///      未命中时看该姓名下「证件号为空」的档案件数 —— 恰好 1 份 → 判为同一人并**回填证件号**（<see cref="OwnerMatch.BackfillIdCard"/>）；
+        ///      0 份 → 同名档案证件号都与本行不同 → **不同业主**（<see cref="OwnerMatch.NewOwnerFromRow"/>，可执行建档）；
+        ///      ≥2 份 → 无法唯一判定 → 报错（档案本身重复，需先整理）。
+        ///   2) 否则填了电话 → 按「姓名 + 电话」定位，口径与证件号完全对称（回填见 <see cref="OwnerMatch.BackfillPhone"/>）。
+        ///   3) 都没填 → 按姓名找：姓名唯一 → 同一人；同名多条时按
+        ///      ① 本行「楼栋/房号」对应房产**已绑定的同名业主**（同关系类型）→
+        ///      ② 同名业主「常住地址」与本行「楼栋/房号」一致（唯一）
+        ///      两条房产侧证据判定；都不成立 → <see cref="OwnerMatch.Ambiguous"/>，由调用方按行报错并要求补「业主证件号」或「业主电话」。
+        /// v1.3.0（负责人 2026-09-23 裁定，两轮）：
+        ///   第 1 轮删除「按文件出现顺序配对同名档案」的兜底；第 2 轮**删除「只有一位同名业主无补充信息就判给它」的兜底** ——
+        ///   该兜底会把同名的多套房产全部堆到同一个人名下（其余同名业主永远为空）；改为「同名必须靠证件号/电话或房产侧证据判定」。
         /// </summary>
         /// <param name="propertyId">本行「楼栋/单元/房号」定位到的房产；业主模板传 null（没有房产上下文，只走姓名口径）。</param>
         /// <param name="buildingNo">本行楼栋号（用于比对同名业主的常住地址）。</param>
         /// <param name="unitNo">本行单元号（可空）。</param>
         /// <param name="roomNo">本行房号。</param>
         /// <param name="relType">本行的关系类型：只认同类型的既有关系（业主行不会被「共有人/租户备案」的同名业主抢走）。</param>
-        /// <param name="usedOwnerIds">
-        /// 同批次内已被占用的同名候选（业主-房产关系模板传入）：文件里同一姓名出现在不同楼栋/房号时，
-        /// 它们本就是不同业主，按出现顺序逐一配对未被占用的同名档案（v1.2.0 第 3 轮兜底口径）。传 null 表示不启用。
-        /// </param>
         private OwnerMatch MatchOwnerForImport(IDbConnection c, IDbTransaction tx, string name, string idCard, string phone,
             int? propertyId = null, string buildingNo = null, string unitNo = null, string roomNo = null,
-            OwnerRelType? relType = null, ISet<int> usedOwnerIds = null)
+            OwnerRelType? relType = null)
         {
             string n = (name ?? string.Empty).Trim();
             string ic = (idCard ?? string.Empty).Trim();
@@ -2113,11 +2137,22 @@ namespace PropertyManagement.Server.Services
                         Reason = "同名且同证件号的业主有 " + byCard.Count + " 名，无法确定对象",
                         Suggestion = "请先在「业主档案」核对重复档案（同证件号不应建档多次）后再导入"
                     };
+                // 档案里没有这个证件号：区分「档案缺证件号（视为同一人并补齐）」与「信息不一致（不同业主）」
+                List<int> blankCard = QueryOwnersWithoutIdCard(c, tx, n);
+                if (blankCard.Count == 1)
+                    return new OwnerMatch { OwnerId = blankCard[0], BackfillIdCard = true };
+                if (blankCard.Count == 0)
+                    return new OwnerMatch
+                    {
+                        IsNewOwner = true,
+                        NewOwnerFromRow = true,
+                        Reason = "同名业主的证件号都与本行不一致，判定为不同业主",
+                        Suggestion = "如确为另一位业主，可直接导入（关系模板会按本行信息建档并关联；业主模板会新增档案）"
+                    };
                 return new OwnerMatch
                 {
-                    IsNewOwner = true,
-                    Reason = "该姓名下没有与此证件号匹配的业主",
-                    Suggestion = "核对证件号；若确为新业主，请在「业主档案」建档或改用「业主」模板导入"
+                    Reason = "同名且「证件号为空」的档案有 " + blankCard.Count + " 份，无法确定是哪一位",
+                    Suggestion = "请先补齐这些档案的证件号（或在本行改填「业主电话」），再重新导入"
                 };
             }
 
@@ -2133,11 +2168,21 @@ namespace PropertyManagement.Server.Services
                         Reason = "同名且同电话的业主有 " + byPhone.Count + " 名，无法确定对象",
                         Suggestion = "请先在「业主档案」核对重复档案后再导入"
                     };
+                List<int> blankPhone = QueryOwnersWithoutPhone(c, tx, n);
+                if (blankPhone.Count == 1)
+                    return new OwnerMatch { OwnerId = blankPhone[0], BackfillPhone = true };
+                if (blankPhone.Count == 0)
+                    return new OwnerMatch
+                    {
+                        IsNewOwner = true,
+                        NewOwnerFromRow = true,
+                        Reason = "同名业主的电话都与本行不一致，判定为不同业主",
+                        Suggestion = "如确为另一位业主，可直接导入（关系模板会按本行信息建档并关联；业主模板会新增档案）"
+                    };
                 return new OwnerMatch
                 {
-                    IsNewOwner = true,
-                    Reason = "该姓名下没有与此电话匹配的业主",
-                    Suggestion = "核对电话；若确为新业主，请在「业主档案」建档或改用「业主」模板导入"
+                    Reason = "同名且「电话为空」的档案有 " + blankPhone.Count + " 份，无法确定是哪一位",
+                    Suggestion = "请先补齐这些档案的联系电话（或在本行改填「业主证件号」），再重新导入"
                 };
             }
 
@@ -2177,27 +2222,6 @@ namespace PropertyManagement.Server.Services
                     if (addressHit.Count == 1) return new OwnerMatch { OwnerId = addressHit[0].Id };
                 }
 
-                // ③ 只有一名同名业主没有任何补充信息 → 判定为该名（v1.2.0 第 1 轮口径）
-                var noExtraInfo = byName.Where(x => x.IdCard.Length == 0 && x.Phone.Length == 0).ToList();
-                if (noExtraInfo.Count == 1) return new OwnerMatch { OwnerId = noExtraInfo[0].Id };
-
-                // ④ 兜底（v1.2.0 第 3 轮，负责人 2026-09-21 口径）：本模板的用途就是「把业主与房产绑定起来」，
-                //    文件里同一姓名出现在不同楼栋/房号时，它们本就是不同业主；
-                //    因此按「本批次内未被占用的同名档案」配对（优先档案里还没有房产的那位，其次按档案号升序），
-                //    并在回执里提示核对（PairedByOrder）。
-                if (usedOwnerIds != null)
-                {
-                    var free = byName.Where(x => !usedOwnerIds.Contains(x.Id)).ToList();
-                    if (free.Count > 0)
-                    {
-                        var neverBound = relType.HasValue
-                            ? free.Where(x => !HasAnyRelation(c, tx, x.Id, relType.Value)).ToList()
-                            : new List<OwnerPick>();
-                        var pick = (neverBound.Count > 0 ? neverBound : free).OrderBy(x => x.Id).First();
-                        return new OwnerMatch { OwnerId = pick.Id, PairedByOrder = true };
-                    }
-                }
-
                 bool hasPropertyContext = !string.IsNullOrWhiteSpace(buildingNo) && !string.IsNullOrWhiteSpace(roomNo);
                 return new OwnerMatch
                 {
@@ -2205,26 +2229,76 @@ namespace PropertyManagement.Server.Services
                         + (hasPropertyContext
                             ? "（本行「" + (buildingNo ?? string.Empty).Trim() + (roomNo ?? string.Empty).Trim()
                               + "」没有绑定其中任何一位，且没有一位的常住地址与本行楼栋/房号一致）"
-                            : (noExtraInfo.Count == 0 ? "（这些同名业主都填了证件号或电话）" : string.Empty)),
+                            : "（本行未填「业主证件号」与「业主电话」，缺少额外判定条件）"),
                     Suggestion = hasPropertyContext
-                        ? "补充「证件号」或「电话」区分同名业主后再导入；或先在「业主-房产关系」为其中一位登记本房产"
-                        : "补充「证件号」或「电话」区分同名业主后再导入"
+                        ? "同名业主绑定不同房产时，请在本行补填「业主证件号」或「业主电话」后再导入；也可在「业主-房产关系」页面手动绑定"
+                        : "请补充「证件号」或「电话」区分同名业主后再导入"
                 };
             }
             return new OwnerMatch
             {
                 IsNewOwner = true,
                 Reason = "找不到该业主",
-                Suggestion = "请先在「业主档案」维护该业主，或填写证件号/电话"
+                Suggestion = "请在「业主档案」维护该业主，或在本行填写「业主证件号」/「业主电话」"
             };
         }
 
-        /// <summary>该业主是否存在未删除的、指定类型的关系（兜底配对时优先挑「档案里还没有房产」的同名业主）。</summary>
-        private static bool HasAnyRelation(IDbConnection c, IDbTransaction tx, int ownerId, OwnerRelType relType)
+        /// <summary>该姓名下「证件号为空」的档案 id（v1.3.0 第 2 轮：档案缺信息 → 视为同一人并用导入值补齐）。</summary>
+        private static List<int> QueryOwnersWithoutIdCard(IDbConnection c, IDbTransaction tx, string name)
         {
-            return c.ExecuteScalar<int>(
-                "SELECT COUNT(1) FROM t_owner_property_rel WHERE owner_id = @ownerId AND del_flag = 0 AND rel_type = @relType",
-                new { ownerId, relType = (int)relType }, tx) > 0;
+            return c.Query<int>(
+                "SELECT id FROM t_owner WHERE name = @n AND del_flag = 0 " +
+                "AND COALESCE(NULLIF(TRIM(id_card), ''), '') = '' ORDER BY id",
+                new { n = name }, tx).ToList();
+        }
+
+        /// <summary>该姓名下「电话为空」的档案 id（口径同「证件号为空」）。</summary>
+        private static List<int> QueryOwnersWithoutPhone(IDbConnection c, IDbTransaction tx, string name)
+        {
+            return c.Query<int>(
+                "SELECT id FROM t_owner WHERE name = @n AND del_flag = 0 " +
+                "AND COALESCE(NULLIF(TRIM(phone), ''), '') = '' ORDER BY id",
+                new { n = name }, tx).ToList();
+        }
+
+        /// <summary>
+        /// 关系模板命中档案、但该档案缺「证件号 / 电话」→ 判为同一人，并用本行值**只补齐空字段**（写变更留痕），
+        /// 返回回执提示文案；没有可补的字段返回 null。v1.3.0 第 2 轮（负责人 2026-09-23 裁定③：允许用导入值补齐档案）。
+        /// </summary>
+        private string BackfillOwnerFromRelationRow(IDbConnection c, IDbTransaction tx, int ownerId,
+            string idCard, string phone, bool fillIdCard, bool fillPhone)
+        {
+            OwnerDto before = LoadOwner(c, tx, ownerId);
+            if (before == null) return null;
+            var after = new OwnerDto
+            {
+                Id = before.Id,
+                Name = before.Name,
+                IdCardType = before.IdCardType,
+                IdCard = before.IdCard,
+                Phone = before.Phone,
+                ResidentAddress = before.ResidentAddress,
+                EmergencyContactName = before.EmergencyContactName,
+                EmergencyContactPhone = before.EmergencyContactPhone,
+                CheckInDate = before.CheckInDate,
+                Status = before.Status
+            };
+            var notes = new List<string>();
+            if (fillIdCard && !string.IsNullOrWhiteSpace(idCard))
+            {
+                after.IdCard = idCard.Trim();
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, ownerId, "证件号", before.IdCard, after.IdCard, "批量导入");
+                notes.Add("证件号 " + Show(before.IdCard) + " → " + Show(after.IdCard));
+            }
+            if (fillPhone && !string.IsNullOrWhiteSpace(phone))
+            {
+                after.Phone = phone.Trim();
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, ownerId, "联系电话", before.Phone, after.Phone, "批量导入");
+                notes.Add("联系电话 " + Show(before.Phone) + " → " + Show(after.Phone));
+            }
+            if (notes.Count == 0) return null;
+            _repo.UpdateOwner(c, tx, after);
+            return "档案 #" + ownerId + " 补齐：" + string.Join("；", notes);
         }
 
         /// <summary>取指定房产的活跃业主 id（业主类型关系，优先），用于车位绑定房产后回填 owner_id。</summary>
