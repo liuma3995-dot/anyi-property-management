@@ -22,6 +22,28 @@ namespace PropertyManagement.Client.Views
             }
         }
 
+        /// <summary>
+        /// CHG-v1.4.0-08（负责人 2026-10-08 反馈「生成账单浮层最大化后缴费对象表格只显示 3 行」）：
+        /// 浮层高度随窗口自适应 —— 可用高度 = 窗口高度 − 上下留白（上限 900、下限 620）。
+        /// 根因：浮层内滚动区原为固定 `MaxHeight=700`、缴费对象表格固定 `MaxHeight=150`
+        /// （150 − 表头 48 = 102 → 32px 行高只能放 3 行），与本机窗口尺寸无关。
+        /// 现表格上限放宽到 8 行（304 = 8×32 + 表头 48），滚动区上限随窗口增长，
+        /// 1366×768 下仍保证底部按钮与滚动条不被遮挡。
+        /// </summary>
+        private void PageGrid_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            ApplyGenerateDialogHeight();
+        }
+
+        private void ApplyGenerateDialogHeight()
+        {
+            if (GenerateDialogScroll == null) { return; }
+            Window host = Window.GetWindow(this);
+            double hostHeight = host == null || host.ActualHeight <= 0 ? 768d : host.ActualHeight;
+            double available = hostHeight - 140d;
+            GenerateDialogScroll.MaxHeight = Math.Max(620d, Math.Min(900d, available));
+        }
+
         /// <summary>CHG-v1.1.0-10：缴费对象勾选写回（生成账单弹窗内只读 DataGrid）。</summary>
         private void ObjectCheckBox_Click(object sender, RoutedEventArgs e)
         {

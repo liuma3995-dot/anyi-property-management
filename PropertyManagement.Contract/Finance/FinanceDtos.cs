@@ -680,6 +680,13 @@ namespace PropertyManagement.Contract.Finance
         public string RemindChannel { get; set; }
 
         /// <summary>
+        /// CHG-v1.4.0-14（负责人 2026-10-08 第 2 轮反馈「催缴备注没有显示入口」）：
+        /// 最近一次催缴记录的备注（t_arrear_remind_log.note）。备注与渠道解耦 ——
+        /// 备注只是催缴记录的一个字段，不再借用「免催缴」渠道来表达。
+        /// </summary>
+        public string RemindNote { get; set; }
+
+        /// <summary>
         /// CHG-v1.2.0-24：账单状态（见 <see cref="PropertyManagement.Contract.Enums.BillStatus"/>）。
         /// 台账页「状态」列据此显示 —— 逾期口径由服务端 MarkOverdue 在查询前统一落库
         /// （到期日之后超过 1 天才算逾期），台账不再出现「已逾期却显示未缴」。

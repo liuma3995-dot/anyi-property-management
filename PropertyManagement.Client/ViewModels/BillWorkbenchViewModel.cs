@@ -185,6 +185,9 @@ namespace PropertyManagement.Client.ViewModels
     {
         private const string AllPeriods = "全部期间";
 
+        /// <summary>CHG-v1.4.0-19：批次年份筛选的「全部」项。</summary>
+        private const string AllYears = "全部年份";
+
         private readonly Action<string> _navigateToPage;
 
         private string _draftText = "0";
@@ -261,6 +264,8 @@ namespace PropertyManagement.Client.ViewModels
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => IsDeleteConfirmVisible = false);
             BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
+            // CHG-v1.4.0-03：导出 PDF（当前筛选下的批次清单 + 每批次缴费对象明细）
+            ExportBatchPdfCommand = new AsyncRelayCommand(ExportBatchPdfAsync);
             DeleteCycleCommand = new RelayCommand(RequestDeleteCycle);
             AddCustomPayerCommand = new RelayCommand(AddCustomPayerRow);
             RemoveCustomPayerCommand = new RelayCommand<BillCustomPayerRow>(RemoveCustomPayerRow);
@@ -330,6 +335,28 @@ namespace PropertyManagement.Client.ViewModels
                 }
             }
         }
+
+        /// <summary>
+        /// CHG-v1.4.0-19（负责人 2026-10-08 第 2 轮反馈「导出 PDF 需要自定义选择年份」）：
+        /// 批次**年份**筛选（选项由现有批次的账期年份派生，含「全部」）。
+        /// 与期间/状态筛选同一口径：筛选结果即列表内容，因此「导出PDF」导出的就是所选年份的批次。
+        /// </summary>
+        public string YearFilter
+        {
+            get { return _yearFilter; }
+            set
+            {
+                if (SetProperty(ref _yearFilter, value) && _inited)
+                {
+                    _ = RefreshBatchesAsync();
+                }
+            }
+        }
+
+        private string _yearFilter = AllYears;
+
+        /// <summary>年份筛选下拉选项（按降序，首项「全部」）。</summary>
+        public ObservableCollection<string> YearFilterOptions { get; } = new ObservableCollection<string> { AllYears };
 
         public int StatusFilter
         {
@@ -535,6 +562,12 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
         public IRelayCommand CancelDeleteCommand { get; }
         public IRelayCommand BatchDeleteCommand { get; }
+
+        /// <summary>
+        /// CHG-v1.4.0-03（负责人 2026-10-08 反馈「已发布账单只显示对象和数字，看不出是哪个对象、缴费人是谁」）：
+        /// 导出 PDF —— 当前筛选下的**批次清单 + 每批次缴费对象明细**（缴费人 / 楼栋·单元·房号 / 应收 / 已收 / 状态）。
+        /// </summary>
+        public IAsyncRelayCommand ExportBatchPdfCommand { get; }
         /// <summary>CHG-v1.1.0-17：删除当前选中的自定义计费周期（删除后从下拉框消失）。</summary>
         public IRelayCommand DeleteCycleCommand { get; }
         /// <summary>CHG-v1.1.0-18：自定义缴费对象手工填写行 —— 新增 / 删除。</summary>
@@ -594,6 +627,8 @@ namespace PropertyManagement.Client.ViewModels
 
             // 期间选项（去重，保留当前选择）
             RefreshPeriodOptions();
+            // CHG-v1.4.0-19：年份选项同步（导出年份选择与列表筛选同源）
+            RefreshYearOptions();
 
             Batches.Clear();
             var query = _allBatches.AsEnumerable();
@@ -607,6 +642,11 @@ namespace PropertyManagement.Client.ViewModels
             if (!string.Equals(PeriodFilter, AllPeriods, StringComparison.Ordinal))
             {
                 query = query.Where(x => string.Equals(x.CyclePeriod, PeriodFilter, StringComparison.Ordinal));
+            }
+            // CHG-v1.4.0-19：按账期年份筛选（「全部年份」= 不筛）
+            if (!string.Equals(YearFilter, AllYears, StringComparison.Ordinal))
+            {
+                query = query.Where(x => string.Equals(BatchYearOf(x.CyclePeriod), YearFilter, StringComparison.Ordinal));
             }
             switch (StatusFilter)
             {
@@ -624,6 +664,103 @@ namespace PropertyManagement.Client.ViewModels
             // CHG-v1.1.0-21：失败批次集合变化 → 同步「一键重推」入口与统计卡
             OnPropertyChanged(nameof(HasFailedBatches));
             FailedText = _allBatches.Count(x => string.Equals(x.Status, "Failed", StringComparison.OrdinalIgnoreCase)).ToString();
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-03：导出 PDF（当前筛选下的**批次清单 + 每批次缴费对象明细**）。
+        /// 口径：只把「页面当前可见批次」的主键交给服务端，服务端按主键回查金额/缴费对象/状态 →
+        /// 导出内容与页面完全一致；文件由服务端生成（写 t_report_log 留痕）后再另存到用户选定路径。
+        /// </summary>
+        private async Task ExportBatchPdfAsync()
+        {
+            await RunAsync(async () =>
+            {
+                List<int> batchIds = Batches
+                    .Where(x => x.Dto != null && x.Dto.Id > 0)
+                    .Select(x => x.Dto.Id)
+                    .Distinct()
+                    .ToList();
+                if (batchIds.Count == 0)
+                {
+                    throw new InvalidOperationException("当前筛选下没有可导出的账单批次");
+                }
+
+                ReportLogDto log = await Api.ExportBillBatchPdfAsync(new BillBatchExportRequest
+                {
+                    Format = ExportFormat.Pdf,
+                    BatchIds = batchIds
+                });
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存账单批次缴费对象明细（PDF）",
+                    Filter = "PDF 文件|*.pdf",
+                    FileName = "账单批次明细_" + DateTime.Now.ToString("yyyyMMddHHmm") + ".pdf"
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "PDF 已在服务端生成（导出日志 " + log.Id + "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "PDF 已导出：" + dialog.FileName +
+                             "（共 " + batchIds.Count + " 个批次）";
+                System.Windows.MessageBox.Show("账单批次缴费对象明细已导出到：" + dialog.FileName, "导出成功",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }, null);
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-19：年份下拉选项 —— 从现有批次的账期期间（`yyyy-MM-dd ~ yyyy-MM-dd`）派生年份，
+        /// 降序排列，首项「全部年份」；就地增删保留当前选择（与期间下拉同一口径，避免选中被重置）。
+        /// </summary>
+        private void RefreshYearOptions()
+        {
+            string current = YearFilter;
+            var desired = new List<string> { AllYears };
+            desired.AddRange(_allBatches
+                .Select(x => BatchYearOf(x.CyclePeriod))
+                .Where(y => !string.IsNullOrEmpty(y))
+                .Distinct()
+                .OrderByDescending(y => y));
+
+            for (int i = YearFilterOptions.Count - 1; i >= 0; i--)
+            {
+                if (!desired.Contains(YearFilterOptions[i])) { YearFilterOptions.RemoveAt(i); }
+            }
+            int insertPos = 0;
+            foreach (string item in desired)
+            {
+                if (!YearFilterOptions.Contains(item))
+                {
+                    if (insertPos >= YearFilterOptions.Count) { YearFilterOptions.Add(item); }
+                    else { YearFilterOptions.Insert(insertPos, item); }
+                }
+                insertPos++;
+            }
+            if (!string.IsNullOrEmpty(current) && !YearFilterOptions.Contains(current))
+            {
+                _yearFilter = AllYears;
+                OnPropertyChanged(nameof(YearFilter));
+            }
+        }
+
+        /// <summary>批次的账期年份（期间文本形如 `2026-01-01 ~ 2026-12-31`，取起始日前 4 位数字）。</summary>
+        private static string BatchYearOf(string cyclePeriod)
+        {
+            if (string.IsNullOrWhiteSpace(cyclePeriod)) { return string.Empty; }
+            string head = cyclePeriod.Trim();
+            if (head.Length < 4) { return string.Empty; }
+            for (int i = 0; i < 4; i++)
+            {
+                if (!char.IsDigit(head[i])) { return string.Empty; }
+            }
+            return head.Substring(0, 4);
         }
 
         private void RefreshPeriodOptions()

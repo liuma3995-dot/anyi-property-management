@@ -458,11 +458,27 @@ namespace PropertyManagement.Client.Services
                 new OwnerProfileExportRequest { Year = year });
         }
 
+        /// <summary>CHG-v1.4.0-13：业主档案导出 Excel（缴费概况 + 账单明细 + 收款明细）。</summary>
+        public Task<ReportLogDto> ExportOwnerProfileExcelAsync(int ownerId, int? year)
+        {
+            return PostAsync<OwnerProfileExportRequest, ReportLogDto>(
+                "reports/owners/" + ownerId + "/profile-excel",
+                new OwnerProfileExportRequest { Year = year });
+        }
+
         /// <summary>CHG-v1.2.0-17：业主档案导出 PDF —— 全部业主（汇总 + 逐户明细）。</summary>
         public Task<ReportLogDto> ExportAllOwnerProfilesPdfAsync(int? year)
         {
             return PostAsync<OwnerProfileExportRequest, ReportLogDto>(
                 "reports/owners/profile-pdf-all",
+                new OwnerProfileExportRequest { Year = year });
+        }
+
+        /// <summary>CHG-v1.4.0-14：业主档案导出 Excel —— 全部业主（概况表 + 业主档案表）。</summary>
+        public Task<ReportLogDto> ExportAllOwnerProfilesExcelAsync(int? year)
+        {
+            return PostAsync<OwnerProfileExportRequest, ReportLogDto>(
+                "reports/owners/profile-excel-all",
                 new OwnerProfileExportRequest { Year = year });
         }
 
@@ -476,6 +492,24 @@ namespace PropertyManagement.Client.Services
         public Task<ReportLogDto> ExportArrearDetailsPdfAsync(ArrearDetailExportRequest request)
         {
             return PostAsync<ArrearDetailExportRequest, ReportLogDto>("reports/arrear-details/export", request);
+        }
+
+        /// <summary>CHG-v1.4.0-01：删除退款/减免/调整记录（仅无关联账单的补收/冲正）。</summary>
+        public Task<RefundAdjustmentDto> DeleteRefundAsync(RefundDeleteRequest request)
+        {
+            return PostAsync<RefundDeleteRequest, RefundAdjustmentDto>("payments/refunds/delete", request);
+        }
+
+        /// <summary>CHG-v1.4.0-03：账单工作台「导出PDF」（批次 + 缴费对象明细）。</summary>
+        public Task<ReportLogDto> ExportBillBatchPdfAsync(BillBatchExportRequest request)
+        {
+            return PostAsync<BillBatchExportRequest, ReportLogDto>("reports/bills/export", request);
+        }
+
+        /// <summary>CHG-v1.4.0-04：欠费台账「导出台账」（PDF / Excel）。</summary>
+        public Task<ReportLogDto> ExportArrearsLedgerAsync(ArrearExportRequest request)
+        {
+            return PostAsync<ArrearExportRequest, ReportLogDto>("reports/arrears/export", request);
         }
 
         // ==================== M5 基础信息与导入 ====================

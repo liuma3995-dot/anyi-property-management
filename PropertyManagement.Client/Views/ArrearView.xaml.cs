@@ -30,22 +30,6 @@ namespace PropertyManagement.Client.Views
             }
         }
 
-        private void CollectButton_Click(object sender, RoutedEventArgs e)
-        {
-                        MessageBox.Show("请在「收款登记」页办理收款。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void BatchRemindButton_Click(object sender, RoutedEventArgs e)
-        {
-            MessageBox.Show("请逐条点击【催缴】选择渠道并登记（当前单机版支持单条催缴留痕）。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
-
-        private void ExportButton_Click(object sender, RoutedEventArgs e)
-        {
-                        MessageBox.Show("导出功能随报表模块统一提供（Excel/PDF）。", "提示",
-                MessageBoxButton.OK, MessageBoxImage.Information);
-        }
+        // CHG-v1.4.0-21：批量催缴入口与占位处理器已下线（功能未实现，负责人裁定下线）
     }
 }

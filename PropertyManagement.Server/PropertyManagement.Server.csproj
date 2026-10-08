@@ -403,6 +403,10 @@
     <EmbeddedResource Include="Infrastructure\Data\migration_059.sql">
       <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_059.sql</LogicalName>
     </EmbeddedResource>
+    <!-- CHG-v1.4.0-01：无关联账单的调整记录可删除（t_payment_refund.del_flag） -->
+    <EmbeddedResource Include="Infrastructure\Data\migration_060.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_060.sql</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

@@ -22,6 +22,26 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>CHG-v1.1.2-41：导出本单据 PDF（留档/审计追溯），由页面 VM 注入。</summary>
         public IAsyncRelayCommand ExportCommand { get; set; }
 
+        /// <summary>
+        /// CHG-v1.4.0-01：删除本条调整记录（仅「无关联账单」的补收/冲正可删），由页面 VM 注入。
+        /// 有关联账单的记录不可删（删除需回退账单应收/实缴，本轮不开放）。
+        /// </summary>
+        public IAsyncRelayCommand DeleteCommand { get; set; }
+
+        /// <summary>记录是否可删除（无关联账单的调整记录）。</summary>
+        public bool CanDelete { get { return Dto.BillId <= 0; } }
+
+        /// <summary>删除入口悬停说明（不可删时给出原因）。</summary>
+        public string DeleteTipText
+        {
+            get
+            {
+                return CanDelete
+                    ? "删除这条无关联账单的调整记录：财务报表与收支明细流水同步不再显示（软删留痕，可一键清理回收）"
+                    : "该记录已关联账单，删除会影响账单的应收/实缴金额；本轮只支持删除「无关联账单」的补收/冲正记录";
+            }
+        }
+
         /// <summary>记录表「经办人」列（旧数据可为空）。</summary>
         public string OperatorText
         {
@@ -246,6 +266,8 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>待确认动作：0 无 / 1 提交登记 / 2 删除旧账单。</summary>
         private int _pendingAction;
         private System.Collections.Generic.List<int> _pendingBillIds;
+        /// <summary>CHG-v1.4.0-01：待确认删除的调整记录（动作 = 3）。</summary>
+        private RefundAdjustmentDto _pendingRefundRecord;
 
         public RefundAdjustmentViewModel(IApiClient api) : base(api)
         {
@@ -260,6 +282,51 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         public ObservableCollection<RefundPropertyOption> Properties { get; } = new ObservableCollection<RefundPropertyOption>();
+
+        /// <summary>
+        /// CHG-v1.4.0-06（负责人 2026-10-08 反馈「关联对象下拉框需要支持搜索对象」）：
+        /// 「关联对象」候选的**过滤后视图** —— 输入关键字即时收敛列表；「不指定（全部账单可选）」恒在首位。
+        /// </summary>
+        public ObservableCollection<RefundPropertyOption> FilteredProperties { get; } = new ObservableCollection<RefundPropertyOption>();
+
+        /// <summary>关联对象下拉浮层是否展开（CHG-v1.4.0-06：改为窗口内浮层 + 搜索框）。</summary>
+        public bool IsObjectPickerOpen { get { return _isObjectPickerOpen; } set { SetProperty(ref _isObjectPickerOpen, value); } }
+        private bool _isObjectPickerOpen;
+
+        /// <summary>关联对象搜索关键字（输入即过滤候选；点选条目后回填为所选对象文本）。</summary>
+        public string ObjectSearchKeyword
+        {
+            get { return _objectSearchKeyword; }
+            set
+            {
+                if (SetProperty(ref _objectSearchKeyword, value))
+                {
+                    ApplyObjectFilter();
+                }
+            }
+        }
+        private string _objectSearchKeyword = string.Empty;
+
+        /// <summary>关联对象搜索匹配情况（浮层内提示）。</summary>
+        public string ObjectMatchText
+        {
+            get
+            {
+                return "命中 " + FilteredProperties.Count + " / 共 " + Properties.Count + " 个关联对象";
+            }
+        }
+
+        /// <summary>关联对象搜索框引导文字。</summary>
+        public string ObjectSearchPlaceholder
+        {
+            get { return "搜索缴费人 / 楼栋 / 房号（可下拉选择）"; }
+        }
+
+        /// <summary>当前关联对象展示文本（未选=「不指定」）。</summary>
+        public string SelectedObjectText
+        {
+            get { return _selectedProperty == null ? "不指定（全部账单可选）" : _selectedProperty.DisplayText; }
+        }
 
         public ObservableCollection<RefundBillRow> Bills { get; } = new ObservableCollection<RefundBillRow>();
 
@@ -276,9 +343,54 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _selectedProperty, value))
                 {
+                    OnPropertyChanged(nameof(SelectedObjectText));
                     FilterBills();
                 }
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-06：按关键字过滤「关联对象」候选（本地过滤，候选总数即页面可见的缴费人集合）。
+        /// 「不指定（全部账单可选）」恒在首位、永不被过滤掉 —— 冲正/补收依赖该入口。
+        /// </summary>
+        private void ApplyObjectFilter()
+        {
+            string kw = (ObjectSearchKeyword ?? string.Empty).Trim();
+            // 点选后搜索框回填的是所选对象全文 → 视为「未过滤」，再次打开浮层仍能看到全部候选
+            if (_selectedProperty != null && kw.Length > 0 &&
+                string.Equals(kw, _selectedProperty.DisplayText, StringComparison.OrdinalIgnoreCase))
+            {
+                kw = string.Empty;
+            }
+            FilteredProperties.Clear();
+            foreach (RefundPropertyOption option in Properties)
+            {
+                if (option.ObjectKind < 0)
+                {
+                    FilteredProperties.Add(option);
+                    continue;
+                }
+                if (kw.Length == 0 || option.DisplayText.IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    FilteredProperties.Add(option);
+                }
+            }
+            OnPropertyChanged(nameof(ObjectMatchText));
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-06：点选关联对象 —— 回填搜索框显示所选对象、收起浮层、按所选对象过滤候选账单。
+        /// 与「关联账单」浮层同一交互口径（点选后浮层收起，输入框保留所选内容）。
+        /// </summary>
+        public void SelectObject(RefundPropertyOption option)
+        {
+            if (option == null) { return; }
+            SelectedProperty = option;
+            // 回填显示（不触发过滤把当前选中项过滤掉：赋值后立即恢复全量候选视图）
+            _objectSearchKeyword = option.DisplayText;
+            OnPropertyChanged(nameof(ObjectSearchKeyword));
+            ApplyObjectFilter();
+            IsObjectPickerOpen = false;
         }
 
         public PaymentBillRow SelectedBill
@@ -326,14 +438,14 @@ namespace PropertyManagement.Client.ViewModels
         public int CheckedBillCount { get { return CheckedBills.Count; } }
 
         /// <summary>
-        /// CHG-v1.2.0-36：**全选是否可用** —— 只有选定具体「关联对象」时才允许全选。
-        /// 背景（负责人 2026-09-22 反馈）：默认关联对象是「不指定（全部账单可选）」，
-        /// 此时全选的作用域是**全库候选账单**（跨业主），误点一次就会把无关业主的账单一起登记退款，
-        /// 那些账单重新欠费后各自出现在收款登记应缴明细里 —— 正是「多出了几条账单记录」。
+        /// CHG-v1.4.0-07（负责人 2026-10-08 裁定 A）：**「不指定关联对象」时同样允许全选** ——
+        /// 全选作用域恒为**当前候选列表**（退款/调整＝有实缴；减免＝有未收余额），
+        /// 防错改由「提交前范围确认弹窗」承担（逐条列明本次处理的账单：缴费人 / 期间 / 金额）。
+        /// 原 CHG-v1.2.0-36 的做法是「不指定即禁用全选」，负责人本轮反馈需要放开。
         /// </summary>
         public bool CanSelectAllBills
         {
-            get { return _selectedProperty != null && _selectedProperty.ObjectKind >= 0; }
+            get { return FilteredBills.Count > 0; }
         }
 
         /// <summary>全选可用性提示（放在「全选」右侧，说明当前全选的作用域）。</summary>
@@ -341,22 +453,24 @@ namespace PropertyManagement.Client.ViewModels
         {
             get
             {
-                if (!CanSelectAllBills)
+                if (!CanSelectAllBills) { return "当前没有候选账单可全选"; }
+                if (_selectedProperty == null || _selectedProperty.ObjectKind < 0)
                 {
-                    return "请先选择「关联对象」后再全选（「不指定」时请逐条勾选）";
+                    // CHG-v1.4.0-07：未指定关联对象 → 作用域＝全部候选账单（跨对象），提交前必须确认
+                    return "全选范围：全部候选账单 " + FilteredBills.Count + " 张（未指定关联对象，提交前需确认）";
                 }
                 return "全选范围：本关联对象下 " + FilteredBills.Count + " 张候选账单";
             }
         }
 
-        /// <summary>全选：作用域＝当前候选列表（退款/调整＝有实缴；减免＝有未收余额）；「不指定」时禁用。</summary>
+        /// <summary>全选：作用域＝当前候选列表（退款/调整＝有实缴；减免＝有未收余额）。</summary>
         public bool IsSelectAllBills
         {
             get { return FilteredBills.Count > 0 && FilteredBills.All(x => x.IsChecked); }
             set
             {
-                // CHG-v1.2.0-36：不指定关联对象时禁止全选（避免跨业主误登记）
-                if (value && !CanSelectAllBills) { return; }
+                // CHG-v1.4.0-07：解除「不指定关联对象」时的禁用，作用域仍是当前候选列表
+                if (value && FilteredBills.Count == 0) { return; }
                 foreach (RefundBillRow row in FilteredBills) { row.IsChecked = value; }
                 NotifyBillPickerChanged();
             }
@@ -656,6 +770,8 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 // CHG-v1.1.2-40：行内金额提示须在筛选（SelectedProperty 赋值会触发 FilterBills）之前就绪
                 RefreshRowMoneyText();
+                // CHG-v1.4.0-06：「关联对象」候选视图（搜索过滤用）与候选本体同步重建
+                ApplyObjectFilter();
                 // 默认仍选第一个真实对象（保持原便利性）；「不指定」作为可选入口供冲正/补收使用
                 // CHG-v1.1.2-17：关联对象默认「不指定（全部已缴账单可选）」—— 由用户自己决定是否要选关联对象
                 SelectedProperty = Properties.FirstOrDefault();
@@ -669,7 +785,9 @@ namespace PropertyManagement.Client.ViewModels
                     Records.Add(new RefundRow
                     {
                         Dto = dto,
-                        ExportCommand = new AsyncRelayCommand(() => ExportRecordPdfAsync(dto))
+                        ExportCommand = new AsyncRelayCommand(() => ExportRecordPdfAsync(dto)),
+                        // CHG-v1.4.0-01：无关联账单的调整记录可删除（软删留痕）
+                        DeleteCommand = new AsyncRelayCommand(() => RequestDeleteRecordAsync(dto))
                     });
                 }
             }, "退款记录已加载");
@@ -972,13 +1090,20 @@ namespace PropertyManagement.Client.ViewModels
         {
             int action = _pendingAction;
             var ids = _pendingBillIds;
+            RefundAdjustmentDto pendingRecord = _pendingRefundRecord;
             IsConfirmVisible = false;
             _pendingAction = 0;
             _pendingBillIds = null;
+            _pendingRefundRecord = null;
 
             if (action == 1)
             {
                 await ExecuteSubmitAsync(CheckedBills);
+                return;
+            }
+            if (action == 3)
+            {
+                await ExecuteDeleteRecordAsync(pendingRecord);
                 return;
             }
             if (action != 2 || ids == null || ids.Count == 0) { return; }
@@ -1011,6 +1136,62 @@ namespace PropertyManagement.Client.ViewModels
             IsConfirmVisible = false;
             _pendingAction = 0;
             _pendingBillIds = null;
+            _pendingRefundRecord = null;
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-01（负责人 2026-10-08 裁定 A）：请求删除一条**无关联账单**的补收/冲正记录。
+        /// 有关联账单的记录直接拦截并说明原因（删除需回退账单应收/实缴，本轮不开放）；
+        /// 通过校验后走「确认弹层」（说明删除 = 软删留痕 + 下游同步不再显示），确认后调服务端删除。
+        /// </summary>
+        private Task RequestDeleteRecordAsync(RefundAdjustmentDto dto)
+        {
+            if (dto == null || dto.Id <= 0)
+            {
+                ErrorText = "请选择要删除的记录";
+                return Task.CompletedTask;
+            }
+            if (dto.BillId > 0)
+            {
+                ErrorText = "该记录已关联账单（账单主键 " + dto.BillId + "），删除会影响账单的应收/实缴金额；" +
+                            "本轮只支持删除「无关联账单」的补收/冲正记录";
+                return Task.CompletedTask;
+            }
+
+            string noText = string.IsNullOrEmpty(dto.RefNo) ? "REF-" + dto.Id.ToString("D4") : dto.RefNo;
+            string sign = dto.AdjustDir == 2 ? "-¥" : "+¥";
+            _pendingAction = 3;
+            _pendingRefundRecord = dto;
+            ConfirmTitle = "删除调整记录";
+            ConfirmOkText = "确认删除";
+            ConfirmMessage =
+                "将删除这条无关联账单的调整记录：\n" + noText + "　" + sign + dto.Amount.ToString("N2") +
+                " 元　原因：" + (string.IsNullOrWhiteSpace(dto.Reason) ? "—" : dto.Reason.Trim()) +
+                "\n\n说明：删除 = 软删留痕 —— 该笔同时从「退款/减免/调整」列表、财务报表与收支明细流水不再显示；" +
+                "留痕记录可由「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。";
+            ErrorText = string.Empty;
+            IsConfirmVisible = true;
+            return Task.CompletedTask;
+        }
+
+        /// <summary>CHG-v1.4.0-01：确认后执行删除（服务端软删 + 三处读数同步过滤）。</summary>
+        private async Task ExecuteDeleteRecordAsync(RefundAdjustmentDto dto)
+        {
+            if (dto == null || dto.Id <= 0) { return; }
+            string message = string.Empty;
+            await RunAsync(async () =>
+            {
+                RefundAdjustmentDto deleted = await Api.DeleteRefundAsync(new RefundDeleteRequest { Id = dto.Id });
+                await LoadAsync();
+                string noText = deleted == null || string.IsNullOrEmpty(deleted.RefNo)
+                    ? "REF-" + dto.Id.ToString("D4")
+                    : deleted.RefNo;
+                message = "已删除调整记录 " + noText + "（财务报表与收支明细流水同步不再显示；留痕可由一键清理回收）";
+            }, null);
+            if (!string.IsNullOrEmpty(message))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + message;
+            }
         }
 
         /// <summary>

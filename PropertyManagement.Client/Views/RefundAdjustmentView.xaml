@@ -80,9 +80,37 @@
                              文案较原「姓名 · 房号」更长 → 补悬停提示，窄面板下也能看清完整关联对象 -->
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="关联对象" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
-                        <ComboBox x:Name="RefundObjectCombo" Grid.Row="0" Grid.Column="1" Height="32" FontSize="12" VerticalContentAlignment="Center"
-                                  ItemsSource="{Binding Properties}" SelectedItem="{Binding SelectedProperty}" DisplayMemberPath="DisplayText"
-                                  ToolTip="{Binding SelectedProperty.DisplayText}" />
+                        <!-- CHG-v1.4.0-06：关联对象由「纯下拉」改为「搜索框 + 窗口内浮层列表」——
+                             输入关键字即时收敛候选（与「关联账单」浮层同一交互口径），点选后回填并收起浮层。 -->
+                        <Grid x:Name="RefundObjectArea" Grid.Row="0" Grid.Column="1">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="0" Height="32" Background="{StaticResource SurfaceAltBrush}"
+                                    BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}"
+                                          Stroke="{StaticResource TextMutedBrush}" Width="13" Height="13" Margin="8,0,0,0"
+                                          VerticalAlignment="Center" />
+                                    <TextBox x:Name="RefundObjectSearchBox" Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                                             FontSize="11" Margin="6,0,10,0"
+                                             Text="{Binding ObjectSearchKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                             hc:InfoElement.Placeholder="{Binding ObjectSearchPlaceholder}"
+                                             GotKeyboardFocus="ObjectSearchBox_GotKeyboardFocus"
+                                             ToolTip="{Binding SelectedObjectText}" />
+                                </Grid>
+                            </Border>
+                            <ToggleButton x:Name="RefundObjectSelector" Grid.Column="1" Width="30" Height="32" Margin="4,0,0,0"
+                                          IsChecked="{Binding IsObjectPickerOpen, Mode=OneWay}"
+                                          Click="ObjectPickerToggle_Click">
+                                <TextBlock Text="▼" FontSize="9" Foreground="{StaticResource TextMutedBrush}" />
+                            </ToggleButton>
+                        </Grid>
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="关联账单" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                                    VerticalAlignment="Center" />
@@ -272,12 +300,32 @@
                         <!-- CHG-v1.1.2-12：原「当前节点」为开发期 mock 列，改为展示已落库的「方式」 -->
                         <DataGridTextColumn Header="方式" Width="120" Binding="{Binding MethodText}" ElementStyle="{StaticResource GridCellText}" />
                         <!-- CHG-v1.1.2-41：提交后可导出单据 PDF（退款申请/费用减免/财务调整详情），用于留档与审计追溯 -->
-                        <DataGridTemplateColumn Header="操作" Width="96">
+                        <!-- CHG-v1.4.0-01：新增「删除」——只对无关联账单的补收/冲正记录可用（有关联账单的记录禁用并给出悬停说明） -->
+                        <DataGridTemplateColumn Header="操作" Width="168">
                             <DataGridTemplateColumn.CellTemplate>
                                 <DataTemplate>
-                                    <Button Content="导出PDF" FontSize="11" Padding="10,2" Margin="4,0"
-                                            Style="{StaticResource LinkButton}"
-                                            Command="{Binding ExportCommand}" />
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button Content="导出PDF" FontSize="11" Padding="10,2" Margin="4,0"
+                                                Style="{StaticResource LinkButton}"
+                                                Command="{Binding ExportCommand}" />
+                                        <Button Content="删除" FontSize="11" Padding="10,2" Margin="4,0"
+                                                IsEnabled="{Binding CanDelete}"
+                                                ToolTip="{Binding DeleteTipText}"
+                                                Command="{Binding DeleteCommand}">
+                                            <Button.Style>
+                                                <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
+                                                    <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
+                                                    <!-- CHG-v1.4.0-01：有关联账单的记录不可删 —— 禁用态用弱色明确表达，避免「点了没反应」 -->
+                                                    <Style.Triggers>
+                                                        <Trigger Property="IsEnabled" Value="False">
+                                                            <Setter Property="Foreground" Value="{StaticResource TextMutedBrush}" />
+                                                            <Setter Property="Opacity" Value="0.55" />
+                                                        </Trigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </StackPanel>
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
@@ -356,8 +404,45 @@
             </StackPanel>
         </Border>
 
+        <!-- ============ 关联对象搜索浮层（CHG-v1.4.0-06：窗口内浮层，与「关联账单」同口径） ============ -->
+        <!-- 位置/宽度/最大高度由代码后置按「关联对象」选择器实时计算（UpdateObjectFlyoutPlacement），
+             始终在软件窗口内部；点选某一行即回填搜索框并收起浮层。 -->
+        <Border x:Name="ObjectPickerFlyout" Panel.ZIndex="95"
+                Visibility="{Binding IsObjectPickerOpen, Converter={StaticResource BoolToVis}}"
+                HorizontalAlignment="Left" VerticalAlignment="Top"
+                Background="{StaticResource SurfaceBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                BorderThickness="1" CornerRadius="6" MinWidth="320">
+            <StackPanel>
+                <Border Background="#F7F4EE" Padding="10,6">
+                    <TextBlock Text="{Binding ObjectMatchText}" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" />
+                </Border>
+                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="220">
+                    <ItemsControl ItemsSource="{Binding FilteredProperties}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button HorizontalContentAlignment="Left" Padding="10,6" BorderThickness="0"
+                                        Background="Transparent" Cursor="Hand"
+                                        Click="ObjectOption_Click" Tag="{Binding}">
+                                    <TextBlock Text="{Binding DisplayText}" FontSize="11"
+                                               Foreground="{StaticResource TextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis" MaxWidth="400" />
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <Border Background="#FAF8F4" Padding="10,6">
+                    <TextBlock Text="{Binding SelectedObjectText}" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" />
+                </Border>
+            </StackPanel>
+        </Border>
+
         <!-- ============ 确认弹层（CHG-v1.2.0-36：多选提交范围确认 / 删除旧账单确认） ============ -->
-        <Grid Grid.RowSpan="5" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
+        <!-- CHG-v1.4.0-17（负责人 2026-10-08 第 2 轮反馈「删除旧账单时下拉框挡住确认弹窗」）：
+             确认弹层必须盖在窗口内浮层之上 —— 两个浮层 ZIndex 分别 90/95，这里显式抬到 120。 -->
+        <Grid x:Name="ConfirmOverlay" Grid.RowSpan="5" Panel.ZIndex="120" Background="#66000000" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Width="520" Style="{StaticResource CardBorder}" Padding="24,20"
                     VerticalAlignment="Center" HorizontalAlignment="Center">
                 <StackPanel>

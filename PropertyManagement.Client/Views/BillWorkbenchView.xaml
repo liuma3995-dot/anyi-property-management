@@ -126,7 +126,7 @@
         </Style>
     </UserControl.Resources>
 
-    <Grid Margin="24,20">
+    <Grid x:Name="PageGrid" Margin="24,20" SizeChanged="PageGrid_SizeChanged">
         <Grid.RowDefinitions>
             <RowDefinition Height="118" />
             <RowDefinition Height="14" />
@@ -184,17 +184,21 @@
         </UniformGrid>
 
         <!-- ============ 工具栏（T4F-2-1：期间/状态筛选） ============ -->
-        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
+        <Border x:Name="ToolbarCard" Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="260" />
+                    <!-- CHG-v1.4.0-24（负责人 2026-10-08 第 3 轮）：1366×768 下工具栏拥挤、年份下拉被遮挡 ——
+                         按建议收窄搜索框（260→150）并把期间/状态下拉一并收窄，为年份下拉与右侧按钮让出空间 -->
+                    <ColumnDefinition Width="150" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="140" />
+                    <ColumnDefinition Width="118" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="130" />
+                    <ColumnDefinition Width="104" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <!-- CHG-v1.4.0-03：新增「导出PDF」按钮列 -->
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
                 <Border Grid.Column="0" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
@@ -216,23 +220,39 @@
                 <TextBlock Grid.Column="1" Text="账单期间" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                            VerticalAlignment="Center" Margin="14,0,8,0" />
                 <ComboBox Grid.Column="2" Height="32" FontSize="12" VerticalContentAlignment="Center"
-                          ItemsSource="{Binding PeriodFilterOptions}" SelectedItem="{Binding PeriodFilter}" />
+                          ItemsSource="{Binding PeriodFilterOptions}" SelectedItem="{Binding PeriodFilter}"
+                          ToolTip="{Binding PeriodFilter}" />
                 <TextBlock Grid.Column="3" Text="状态" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
                            VerticalAlignment="Center" Margin="14,0,8,0" />
                 <ComboBox Grid.Column="4" Height="32" FontSize="12" VerticalContentAlignment="Center"
-                          SelectedIndex="{Binding StatusFilter}">
+                          SelectedIndex="{Binding StatusFilter}" ToolTip="按发布状态筛选批次">
                     <ComboBoxItem Content="全部" />
                     <ComboBoxItem Content="草稿" />
                     <ComboBoxItem Content="已发布" />
                     <ComboBoxItem Content="部分缴纳" />
                     <ComboBoxItem Content="发布失败" />
                 </ComboBox>
+                <!-- CHG-v1.4.0-19：年份筛选（选项由批次账期年份派生）；「导出PDF」导出的是当前筛选结果，
+                     因此这里选择年份 = 选择要导出的年份 -->
+                <StackPanel Grid.Column="5" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <TextBlock Text="年份" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
+                               VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox x:Name="YearFilterCombo" Height="32" FontSize="12" VerticalContentAlignment="Center" MinWidth="104"
+                              ItemsSource="{Binding YearFilterOptions}" SelectedItem="{Binding YearFilter}"
+                              ToolTip="按账期年份筛选批次；导出PDF 导出的是当前筛选结果" />
+                </StackPanel>
                 <Button Grid.Column="6" Style="{StaticResource ButtonPrimary}" Content="生成账单"
                         Command="{Binding OpenGenerateCommand}" Margin="0,0,10,0" />
                 <Button Grid.Column="7" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
                         Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}" Margin="0,0,10,0" />
-                <Button Grid.Column="8" Style="{StaticResource LinkButton}" Content="失败清单"
+                <!-- CHG-v1.4.0-03：新增「导出PDF」——当前筛选下的批次清单 + 每批次缴费对象明细；
+                     尺寸/间距与「批量删除」同一口径（GridStyle 工具栏按钮规范） -->
+                <Button Grid.Column="8" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
+                        Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                        BorderThickness="1" Content="导出PDF" Command="{Binding ExportBatchPdfCommand}" Margin="0,0,10,0"
+                        ToolTip="导出当前筛选下的批次与缴费对象明细（缴费人 / 楼栋·单元·房号 / 应收 / 已收 / 状态）" />
+                <Button Grid.Column="9" Style="{StaticResource LinkButton}" Content="失败清单"
                         FontSize="13" VerticalAlignment="Center" Command="{Binding ShowAllFailuresCommand}" />
             </Grid>
         </Border>
@@ -271,7 +291,8 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="发布时间" Width="120" Binding="{Binding PublishTimeText}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.4.0-26：发布时间「yyyy-MM-dd HH:mm:ss」在 120px 下被截断（本轮遮挡复查发现），加宽到 148 -->
+                    <DataGridTextColumn Header="发布时间" Width="148" Binding="{Binding PublishTimeText}" ElementStyle="{StaticResource GridCellText}" />
                     <DataGridTemplateColumn Header="操作" Width="250">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
@@ -398,8 +419,12 @@
         <!-- ============ 生成账单浮层 ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
-            <Border Width="1000" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
-                <ScrollViewer VerticalScrollBarVisibility="Auto" MaxHeight="700">
+            <!-- CHG-v1.4.0-08（负责人 2026-10-08 反馈「最大化后缴费对象数据表格只显示 3 行」）：
+                 浮层高度改为随窗口自适应（尺寸由代码后置按窗口高度回写），并放宽内部滚动上限，
+                 使缴费对象表格在最大化下显示 8 行（见下方 DataGrid MaxHeight）。 -->
+            <Border x:Name="GenerateDialog" Width="1000" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Style="{StaticResource CardBorder}" Padding="26,22">
+                <ScrollViewer x:Name="GenerateDialogScroll" VerticalScrollBarVisibility="Auto" MaxHeight="700">
                 <StackPanel>
                     <TextBlock Text="生成账单（草稿）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Text="依次选择收费项目、计费周期与缴费对象，生成草稿账单；校验不通过的对象进入失败清单"
@@ -499,7 +524,7 @@
                     <Border BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="6"
                             Visibility="{Binding IsStandardChargeObject, Converter={StaticResource BoolToVis}}">
                         <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding BillObjects}" IsReadOnly="True"
-                                  RowHeight="32" MaxHeight="150" HeadersVisibility="Column" ColumnHeaderHeight="48">
+                                  RowHeight="32" MinHeight="150" MaxHeight="304" HeadersVisibility="Column" ColumnHeaderHeight="48">
                             <DataGrid.Columns>
                                 <!-- CHG-v1.1.2-35 / -36：勾选列用「GridCheckCell + GridCheckBox」专用样式（去单元格 12px 内边距），
                                      否则默认单元格内边距会把 24px 宽的勾选框裁掉一半（全仓其它模块同口径） -->

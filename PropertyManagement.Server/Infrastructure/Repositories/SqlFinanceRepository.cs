@@ -674,6 +674,19 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 where += " AND b.due_at <= @dueTo";
                 parameters.Add("dueTo", query.DueTo.Value);
             }
+
+            // CHG-v1.4.0-04：按主键集合过滤（欠费台账导出用）—— 只导出客户端指定的那些台账行
+            List<int> billIds = query.BillIds == null
+                ? new List<int>()
+                : query.BillIds.Where(x => x > 0).Distinct().ToList();
+            if (billIds.Count > 0)
+            {
+                where += " AND b.id IN (" + string.Join(",", billIds.Select((x, i) => "@billId" + i)) + ")";
+                for (int i = 0; i < billIds.Count; i++)
+                {
+                    parameters.Add("billId" + i, billIds[i]);
+                }
+            }
             if (query.ArrearsOnly)
             {
                 where += " AND b.amount > b.paid_amount AND b.status IN (0,1,2)";
@@ -857,6 +870,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "     WHEN COALESCE(b.payer_name, '') <> '' THEN 'custom' ELSE '' END AS ObjectKind, " +
                 "CAST(julianday('now','localtime') - julianday(b.due_at) AS INTEGER) AS AgingDays, " +
                 "COALESCE((SELECT r.channel FROM t_arrear_remind_log r WHERE r.bill_id = b.id ORDER BY r.id DESC LIMIT 1), '') AS RemindChannel, " +
+                // CHG-v1.4.0-14：催缴备注（最近一次催缴记录的备注），供台账列展示与导出留痕
+                "COALESCE((SELECT COALESCE(r.note, '') FROM t_arrear_remind_log r WHERE r.bill_id = b.id ORDER BY r.id DESC LIMIT 1), '') AS RemindNote, " +
                 // CHG-v1.2.0-27：新增「楼栋/房号」列 —— 房产账单取本房产；车位 / 业主直缴账单按**业主-房产关系**回查主房产
                 "COALESCE(NULLIF(" + billPropertyPath + ", ''), " +
                 "  (SELECT " + ownerPropertyPath + " FROM t_owner_property_rel r6 " +
@@ -1120,8 +1135,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             // 无关联账单（bill_id 为空）的调整记录不因此被隐藏。
             // CHG-v1.3.1-03：与收款记录同一处根因 —— 账单行被物理回收后 (rb.id IS NULL) 会让记录"复活"，
             // 改为正向条件：无账单关联，或账单存在且未删。
+            // CHG-v1.4.0-01：已删除（软删留痕）的调整记录一律不再显示。
             const string from = " FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id" +
-                " WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0))";
+                " WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0))";
             total = connection.ExecuteScalar<int>("SELECT COUNT(1)" + from);
             return connection.Query<RefundAdjustmentDto>(
                 "SELECT pr.id, pr.bill_id AS BillId, pr.refund_type AS RefundType, pr.amount, pr.reason, " +
@@ -1136,7 +1152,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
                 "LEFT JOIN t_building bld ON bld.id = u.building_id " +
                 "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
-                "WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) " +
+                "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) " +
                 "ORDER BY pr.id DESC LIMIT @limit OFFSET @offset",
                 new { limit = pageSize, offset }).ToList();
         }
@@ -1178,6 +1194,33 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "   AND rel.del_flag = 0 AND rel.rel_status <> 2 ORDER BY rel.id DESC LIMIT 1), " +
                 "  ps.owner_id) " +
                 "WHERE pr.id = @id", new { id });
+        }
+
+        /// <summary>
+        /// 某账单已冲减实缴的金额合计（CHG-v1.1.2-07，CHG-v1.1.2-40 收口）：
+        /// CHG-v1.4.0-01：按主键取记录本体（已软删返回 null）—— 删除前做业务校验用。
+        /// </summary>
+        public RefundAdjustmentDto GetRefund(IDbConnection connection, int id)
+        {
+            if (id <= 0) { return null; }
+            return connection.QueryFirstOrDefault<RefundAdjustmentDto>(
+                "SELECT pr.id, COALESCE(pr.bill_id, 0) AS BillId, pr.refund_type AS RefundType, pr.amount, " +
+                "pr.reason, pr.ref_no AS RefNo, pr.method AS Method, COALESCE(pr.adjust_dir, 0) AS AdjustDir, " +
+                "COALESCE(pr.operator_name, '') AS OperatorName, pr.created_at AS CreatedAt " +
+                "FROM t_payment_refund pr WHERE pr.id = @id AND pr.del_flag = 0",
+                new { id });
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-01：软删退款/减免/调整记录（留痕由「一键清理残余数据」物理回收）。
+        /// 只改标记，不动上游账单 —— 调用方（PaymentService）已保证仅对无关联账单的记录执行。
+        /// </summary>
+        public int SoftDeleteRefund(IDbConnection connection, IDbTransaction transaction, int id)
+        {
+            if (id <= 0) { return 0; }
+            return connection.Execute(
+                "UPDATE t_payment_refund SET del_flag = 1 WHERE id = @id AND del_flag = 0",
+                new { id }, transaction);
         }
 
         /// <summary>
@@ -1437,7 +1480,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "COALESCE(NULLIF(pr.method, ''), '原路退回') AS PayMethod, '系统管理员', " +
                 ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment_refund pr LEFT JOIN t_bill b ON b.id = pr.bill_id " +
-                "WHERE (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
+                // CHG-v1.4.0-01：已删除（软删留痕）的调整记录不再计入流水
+                "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
                 "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
@@ -1559,7 +1603,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                     "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN pr.amount ELSE -pr.amount END AS Signed, " +
                     "COALESCE(pr.ref_no, '') AS Note " +
                     "FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
-                    "WHERE (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) AND pr.refund_type <> 1 " +
+                    // CHG-v1.4.0-01：已删除（软删留痕）的调整记录不再计入财务报表
+                    "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) AND pr.refund_type <> 1 " +
                     "AND date(pr.created_at) >= date(@from) AND date(pr.created_at) <= date(@to)" +
                     (chargeItemId.HasValue ? " AND rb.charge_item_id = @cid" : string.Empty));
             }

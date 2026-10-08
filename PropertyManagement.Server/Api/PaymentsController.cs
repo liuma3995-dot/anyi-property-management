@@ -76,6 +76,17 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<PageResult<RefundAdjustmentDto>>.Ok(_payments.QueryRefunds(request));
         }
 
+        /// <summary>
+        /// 删除退款/减免/调整记录（CHG-v1.4.0-01）：只允许删除「无关联账单」的补收/冲正记录；
+        /// 软删留痕 + 下游（退款列表 / 财务报表 / 收支明细流水）同步不再显示。
+        /// </summary>
+        [HttpPost]
+        [Route("refunds/delete")]
+        public ApiResponse<RefundAdjustmentDto> DeleteRefund(RefundDeleteRequest request)
+        {
+            return ApiResponse<RefundAdjustmentDto>.Ok(_payments.DeleteRefund(request, GetUsername(), GetIp()));
+        }
+
         [HttpGet]
         [Route("{id:int}")]
         public ApiResponse<PaymentDto> GetPayment(int id)

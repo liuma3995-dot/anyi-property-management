@@ -72,6 +72,8 @@ namespace PropertyManagement.Client.ViewModels
             CancelBatchDeleteCommand = new RelayCommand(CloseBatchDelete);
             ExportCommand = new AsyncRelayCommand(ExportAsync);
             ExportProfilePdfCommand = new AsyncRelayCommand(ExportProfilePdfAsync);
+            // CHG-v1.4.0-13：新增「导出Excel（缴费概况 + 账单明细 + 收款明细）」
+            ExportProfileExcelCommand = new AsyncRelayCommand(ExportProfileExcelAsync);
             ExportAllProfilesPdfCommand = new AsyncRelayCommand(ExportAllProfilesPdfAsync);
             ViewRelationCommand = new RelayCommand<OwnerPropertyRelationRow>(row => ViewRelationRow = row);
             CloseViewCommand = new RelayCommand(() => ViewRelationRow = null);
@@ -190,10 +192,21 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand CancelDeleteCommand { get; }
         public IAsyncRelayCommand ConfirmBatchDeleteCommand { get; }
         public IRelayCommand CancelBatchDeleteCommand { get; }
+        /// <summary>
+        /// CHG-v1.4.0-14：导出全部业主 Excel（工作表①缴费概况与「导出全部 PDF」同列 + 工作表②业主档案），
+        /// 导出时弹保存路径对话框（原实现直接落到「我的文档」，用户无法选择位置）。
+        /// </summary>
         public IAsyncRelayCommand ExportCommand { get; }
 
         /// <summary>CHG-v1.2.0-13：导出业主本年度缴费概况与缴费明细 PDF。</summary>
         public IAsyncRelayCommand ExportProfilePdfCommand { get; }
+
+        /// <summary>
+        /// CHG-v1.4.0-13（负责人 2026-10-08 第 2 轮反馈「导出 Excel 也看不到账单/收款明细」）：
+        /// 导出该业主的缴费概况 + 账单明细 + 收款明细 Excel（三个工作表），与 PDF 同口径
+        /// （往年账期但在本年度收款/冲减的账单同样列入）。
+        /// </summary>
+        public IAsyncRelayCommand ExportProfileExcelCommand { get; }
 
         /// <summary>CHG-v1.2.0-17：导出**全部业主**本年度缴费概况与缴费明细 PDF（汇总 + 逐户）。</summary>
         public IAsyncRelayCommand ExportAllProfilesPdfCommand { get; }
@@ -465,34 +478,38 @@ namespace PropertyManagement.Client.ViewModels
             }, "已批量删除 " + rows.Count + " 户业主（软删除）");
         }
 
+        /// <summary>
+        /// CHG-v1.4.0-14（负责人 2026-10-08 第 6 轮反馈）：
+        /// 「导出 Excel（全部业主）」改为 —— 工作表①「缴费概况」与「导出全部 PDF」的汇总表**同列同顺序**（含合计行），
+        /// 工作表②「业主档案」保留原「业主档案表格」9 列；同时改为**用户自选保存路径**（原来直接静默落到「我的文档」）。
+        /// </summary>
         private async Task ExportAsync()
         {
-            IsBusy = true;
-            ErrorText = string.Empty;
-            try
+            string savedPath = null;
+            await RunAsync(async () =>
             {
-                var log = await Api.ExportAsync(new BaseInfoExportRequest
+                ReportLogDto log = await Api.ExportAllOwnerProfilesExcelAsync(DateTime.Today.Year);
+                if (log == null || log.Id <= 0)
                 {
-                    ExportType = "owner",
-                    Format = ExportFormat.Excel,
-                    Filter = new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100000, Keyword = string.IsNullOrWhiteSpace(_searchText) ? string.Empty : _searchText.Trim() }
-                });
-                string path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "业主档案_" + DateTime.Now.ToString("yyyyMMddHHmmss") + ".xlsx");
-                await Api.DownloadExportFileAsync(log.Id, path);
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已导出到：" + path;
-                MessageBox.Show("已导出到：\n" + path, "导出完成", MessageBoxButton.OK, MessageBoxImage.Information);
-            }
-            catch (ApiClientException ex)
+                    throw new InvalidOperationException("导出失败：服务端未生成导出记录");
+                }
+                var dialog = new SaveFileDialog
+                {
+                    Title = "导出全部业主缴费概况与业主档案（Excel）",
+                    Filter = "Excel 文件|*.xlsx",
+                    FileName = "安怡物业-全部业主缴费概况-" + DateTime.Today.Year + ".xlsx"
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "Excel 已在服务端生成（导出日志 " + log.Id + "），未另存到本机";
+                    return;
+                }
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                savedPath = dialog.FileName;
+            }, null);
+            if (!string.IsNullOrEmpty(savedPath))
             {
-                ErrorText = ex.Message;
-            }
-            catch (Exception ex)
-            {
-                ErrorText = "导出失败：" + ex.Message;
-            }
-            finally
-            {
-                IsBusy = false;
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "全部业主 Excel 已导出：" + savedPath;
             }
         }
 
@@ -530,6 +547,42 @@ namespace PropertyManagement.Client.ViewModels
             if (!string.IsNullOrEmpty(savedPath))
             {
                 StatusText = DateTime.Now.ToString("HH:mm:ss ") + "业主缴费概况 PDF 已导出：" + savedPath;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-13：导出该业主的「缴费概况 + 账单明细 + 收款明细」Excel（与 PDF 同口径同数据源）。
+        /// </summary>
+        private async Task ExportProfileExcelAsync()
+        {
+            if (_selected == null || _selected.Id <= 0)
+            {
+                ErrorText = "请先选择要导出的业主";
+                return;
+            }
+            int ownerId = _selected.Id;
+            string ownerName = _selected.Name ?? string.Empty;
+            string savedPath = null;
+            await RunAsync(async () =>
+            {
+                ReportLogDto log = await Api.ExportOwnerProfileExcelAsync(ownerId, DateTime.Today.Year);
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException("导出失败：服务端未生成导出记录");
+                }
+                var dialog = new SaveFileDialog
+                {
+                    Title = "导出业主缴费概况与缴费明细（Excel）",
+                    Filter = "Excel 文件|*.xlsx",
+                    FileName = "安怡物业-业主缴费概况-" + ownerName + "-" + DateTime.Today.Year + ".xlsx"
+                };
+                if (dialog.ShowDialog() != true) { return; }
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                savedPath = dialog.FileName;
+            }, null);
+            if (!string.IsNullOrEmpty(savedPath))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "业主缴费概况 Excel 已导出：" + savedPath;
             }
         }
 

@@ -143,6 +143,19 @@ namespace PropertyManagement.Server.Domain.Repositories
         RefundRecordDetailDto GetRefundRecord(IDbConnection connection, int id);
 
         /// <summary>
+        /// CHG-v1.4.0-01：按主键取记录本体（含 bill_id / refund_type / 编号 / 金额 / 软删标记），
+        /// 供删除前做业务校验（只允许删除无关联账单的调整记录）。
+        /// 已软删的记录返回 null。
+        /// </summary>
+        RefundAdjustmentDto GetRefund(IDbConnection connection, int id);
+
+        /// <summary>
+        /// CHG-v1.4.0-01：软删一条退款/减免/调整记录（del_flag 置 1，留痕由一键清理回收）。
+        /// 返回受影响行数（0 = 记录不存在或已删除）。
+        /// </summary>
+        int SoftDeleteRefund(IDbConnection connection, IDbTransaction transaction, int id);
+
+        /// <summary>
         /// 某账单**已冲减实缴**的金额合计（退款 + 调减冲正，CHG-v1.1.2-07：按累计口径封顶）。
         /// CHG-v1.1.2-40：减免（refund_type = 1）改为调减应收、不再冲减实缴，故不计入本合计。
         /// </summary>

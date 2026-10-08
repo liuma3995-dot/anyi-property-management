@@ -331,6 +331,30 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
+        /// <summary>
+        /// CHG-v1.4.0-09（欠费台账「收款」一键跳转）：预置缴费对象搜索关键字。
+        /// 口径：把关键字写进搜索框 → 触发过滤（ApplyPropertyFilter 在无当前选中时自动选中第一条命中项）
+        /// → 该缴费对象的应缴明细随之加载，用户可直接勾选收款。
+        /// 关键字由欠费台账按「楼栋/单元/房号」优先给出（同名业主也能唯一命中）。
+        /// </summary>
+        public void ApplyPreset(string keyword)
+        {
+            if (string.IsNullOrWhiteSpace(keyword)) { return; }
+            PropertySearchKeyword = keyword.Trim();
+            OnPropertyChanged(nameof(PresetHintText));
+        }
+
+        /// <summary>预置提示（供页面状态条展示「本次从欠费台账带入的检索条件」）。</summary>
+        public string PresetHintText
+        {
+            get
+            {
+                return string.IsNullOrWhiteSpace(_propertySearchKeyword)
+                    ? string.Empty
+                    : "已按「" + _propertySearchKeyword.Trim() + "」检索缴费对象";
+            }
+        }
+
         public string Remark
         {
             get { return _remark; }

@@ -55,15 +55,79 @@ namespace PropertyManagement.Client.Views
         }
 
         /// <summary>
+        /// CHG-v1.4.0-06：「关联对象」搜索框获得焦点即展开候选浮层（输入即过滤）；
+        /// 浮层为窗口内元素，且不抢占键盘焦点，因此不影响继续输入。
+        /// </summary>
+        private void ObjectSearchBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e)
+        {
+            if (!(DataContext is RefundAdjustmentViewModel vm)) { return; }
+            vm.IsObjectPickerOpen = true;
+            Dispatcher.BeginInvoke(new System.Action(UpdateObjectFlyoutPlacement),
+                System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        /// <summary>CHG-v1.4.0-06：「关联对象」浮层展开/收起（唯一状态入口，避免与点击外部冲突）。</summary>
+        private void ObjectPickerToggle_Click(object sender, RoutedEventArgs e)
+        {
+            if (!(DataContext is RefundAdjustmentViewModel vm)) { return; }
+            vm.IsObjectPickerOpen = !vm.IsObjectPickerOpen;
+            if (vm.IsObjectPickerOpen)
+            {
+                Dispatcher.BeginInvoke(new System.Action(UpdateObjectFlyoutPlacement),
+                    System.Windows.Threading.DispatcherPriority.Loaded);
+            }
+        }
+
+        /// <summary>CHG-v1.4.0-06：点选关联对象 —— 回填搜索框显示所选对象并收起浮层。</summary>
+        private void ObjectOption_Click(object sender, RoutedEventArgs e)
+        {
+            var button = sender as System.Windows.Controls.Button;
+            var option = button == null ? null : button.Tag as RefundPropertyOption;
+            if (option == null || !(DataContext is RefundAdjustmentViewModel vm)) { return; }
+            vm.SelectObject(option);
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-06：把「关联对象」浮层贴在搜索框正下方，并限制宽度与最大高度
+        /// （超出窗口可用高度时压缩高度，内部滚动）—— 与「关联账单」浮层同一口径。
+        /// </summary>
+        private void UpdateObjectFlyoutPlacement()
+        {
+            if (ObjectPickerFlyout == null || RefundObjectArea == null || PageGrid == null) { return; }
+            if (ObjectPickerFlyout.Visibility != Visibility.Visible) { return; }
+            try
+            {
+                Point topLeft = RefundObjectArea.TransformToAncestor(PageGrid).Transform(new Point(0, 0));
+                double width = System.Math.Max(320, RefundObjectArea.ActualWidth + 34);
+                double top = topLeft.Y + RefundObjectArea.ActualHeight + 2;
+
+                double pageBottom = PageGrid.ActualHeight + PageGrid.Margin.Top + PageGrid.Margin.Bottom;
+                double available = pageBottom - top - 10;
+                double maxHeight = System.Math.Max(160, System.Math.Min(280, available));
+
+                ObjectPickerFlyout.Margin = new Thickness(topLeft.X, top, 0, 0);
+                ObjectPickerFlyout.Width = width;
+                ObjectPickerFlyout.MaxHeight = maxHeight;
+            }
+            catch (System.InvalidOperationException)
+            {
+                // 控件尚未接入可视树（布局未完成）时忽略本次定位
+            }
+        }
+
+        /// <summary>
         /// 窗口位置变化时的处理：收起「关联对象」下拉（WPF ComboBox 的下拉是独立 Popup，不会自动跟随窗口）。
         /// CHG-v1.2.0-37：关联账单多选浮层已改为**窗口内元素**（BillPickerFlyout），会随窗口一起移动，
         /// 因此不再需要在这里收起它。
         /// </summary>
         private void CloseFlyouts()
         {
-            if (RefundObjectCombo != null && RefundObjectCombo.IsDropDownOpen)
+            // CHG-v1.4.0-06：关联对象 / 关联账单两个浮层都是窗口内元素 ——
+            // 窗口移动时统一收起，避免「浮层与窗口分离」的观感问题
+            if (DataContext is RefundAdjustmentViewModel vm)
             {
-                RefundObjectCombo.IsDropDownOpen = false;
+                vm.IsObjectPickerOpen = false;
+                vm.IsBillPickerOpen = false;
             }
         }
 
@@ -78,6 +142,8 @@ namespace PropertyManagement.Client.Views
             ApplyRecordsTableHeight();
             // CHG-v1.2.0-37：浮层为窗口内元素 —— 窗口尺寸变化时同步重算位置/高度
             UpdateBillFlyoutPlacement();
+            // CHG-v1.4.0-06：关联对象浮层同口径
+            UpdateObjectFlyoutPlacement();
         }
 
         // ==================== CHG-v1.2.0-37：关联账单多选浮层（窗口内元素） ====================
@@ -93,7 +159,9 @@ namespace PropertyManagement.Client.Views
             {
                 Point topLeft = RefundBillSelector.TransformToAncestor(PageGrid)
                     .Transform(new Point(0, 0));
-                double width = System.Math.Max(320, RefundObjectCombo == null ? 320 : RefundObjectCombo.ActualWidth);
+                // CHG-v1.4.0-06：关联对象改为「搜索框 + 浮层」，宽度按搜索区（含右侧箭头按钮）对齐
+                double width = System.Math.Max(320,
+                    RefundObjectArea == null ? 320 : RefundObjectArea.ActualWidth + 34);
                 double top = topLeft.Y + RefundBillSelector.ActualHeight + 2;
 
                 // 可用高度：页面高度（含外边距）− 浮层顶部 − 底部留白；下限 180，上限 300
@@ -176,11 +244,23 @@ namespace PropertyManagement.Client.Views
         /// </summary>
         private void Root_PreviewMouseDown(object sender, MouseButtonEventArgs e)
         {
-            if (!(DataContext is RefundAdjustmentViewModel vm) || !vm.IsBillPickerOpen) { return; }
+            if (!(DataContext is RefundAdjustmentViewModel vm)) { return; }
             var source = e.OriginalSource as DependencyObject;
-            if (IsDescendantOf(RefundBillSelector, source)) { return; }   // 选择器自身：交给 Click 处理
-            if (IsDescendantOf(BillPickerFlyout, source)) { return; }      // 浮层内部（勾选/删除）：保持展开
-            vm.IsBillPickerOpen = false;
+
+            if (vm.IsBillPickerOpen &&
+                !IsDescendantOf(RefundBillSelector, source) &&   // 选择器自身：交给 Click 处理
+                !IsDescendantOf(BillPickerFlyout, source))       // 浮层内部（勾选/删除）：保持展开
+            {
+                vm.IsBillPickerOpen = false;
+            }
+
+            // CHG-v1.4.0-06：关联对象搜索浮层同口径（搜索框/浮层内部点击不收起）
+            if (vm.IsObjectPickerOpen &&
+                !IsDescendantOf(RefundObjectArea, source) &&
+                !IsDescendantOf(ObjectPickerFlyout, source))
+            {
+                vm.IsObjectPickerOpen = false;
+            }
         }
 
         private static bool IsDescendantOf(DependencyObject ancestor, DependencyObject node)

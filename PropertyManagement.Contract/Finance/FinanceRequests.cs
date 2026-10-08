@@ -235,6 +235,12 @@ namespace PropertyManagement.Contract.Finance
     {
         public BillStatus? Status { get; set; }
         public int? PropertyId { get; set; }
+
+        /// <summary>
+        /// CHG-v1.4.0-04：按账单主键集合过滤（**仅欠费台账导出**使用）——
+        /// 客户端把页面当前可见行的主键交给服务端，服务端按主键回查台账口径，保证导出与页面一致。
+        /// </summary>
+        public List<int> BillIds { get; set; }
         /// <summary>CHG-v1.1.0-11：按业主直缴账单过滤（收款侧按缴费对象取账单）。</summary>
         public int? OwnerId { get; set; }
         /// <summary>
@@ -292,6 +298,33 @@ namespace PropertyManagement.Contract.Finance
 
         /// <summary>缴费对象展示名（业主姓名 / 自定义缴费对象名称），仅用于 PDF 抬头。</summary>
         public string PayerDisplay { get; set; }
+    }
+
+    /// <summary>
+    /// 账单工作台「导出PDF」（CHG-v1.4.0-03，负责人 2026-10-08 裁定 A）：
+    /// 导出**当前筛选下的批次清单 + 每批次缴费对象明细**。
+    /// 批次主键由客户端按页面当前筛选结果给出；服务端按主键回查批次与账单明细
+    /// （金额、对象、状态一律取库内值，不采信客户端传值）。
+    /// </summary>
+    public class BillBatchExportRequest
+    {
+        public ExportFormat Format { get; set; }
+
+        /// <summary>要导出的批次主键集合（页面当前筛选结果；空集合 = 无可导出内容）。</summary>
+        public List<int> BatchIds { get; set; }
+    }
+
+    /// <summary>
+    /// 欠费台账「导出台账」（CHG-v1.4.0-04，负责人 2026-10-08 反馈「只有占位提示」）：
+    /// 支持 PDF / Excel，口径 = 页面当前筛选下的台账行。
+    /// 账单主键由客户端给出，服务端按主键回查台账行（金额、账龄、状态取库内值），文末给合计。
+    /// </summary>
+    public class ArrearExportRequest
+    {
+        public ExportFormat Format { get; set; }
+
+        /// <summary>要导出的欠费账单主键集合（页面当前可见行；空集合 = 无可导出内容）。</summary>
+        public List<int> BillIds { get; set; }
     }
 
     /// <summary>收款登记请求（UC-FIN-003：全额/部分缴/超额转预存 P-06）。</summary>
@@ -405,6 +438,19 @@ namespace PropertyManagement.Contract.Finance
     {
         public int BillId { get; set; }
         public decimal Amount { get; set; }
+    }
+
+    /// <summary>
+    /// 删除退款/减免/调整记录（CHG-v1.4.0-01，负责人 2026-10-08 裁定 A）。
+    /// 适用范围：**无关联账单**的补收/冲正记录（`t_payment_refund.bill_id IS NULL`）——
+    /// 这类记录不影响任何账单的应收/实缴，删除成本最低；有关联账单的记录会被服务端拒绝。
+    /// 删除语义：软删留痕（`del_flag = 1`）+ 下游读数过滤（退款列表 / 财务报表 / 收支明细流水
+    /// 同步不再显示）；留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
+    /// </summary>
+    public class RefundDeleteRequest
+    {
+        /// <summary>要删除的退款/减免/调整记录主键（t_payment_refund.id）。</summary>
+        public int Id { get; set; }
     }
 
     /// <summary>

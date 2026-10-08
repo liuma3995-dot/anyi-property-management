@@ -1156,6 +1156,19 @@ namespace PropertyManagement.Client.Services
             });
         }
 
+        /// <summary>CHG-v1.4.0-13：演示实现——业主档案导出 Excel（缴费概况 + 账单/收款明细）。</summary>
+        public Task<ReportLogDto> ExportOwnerProfileExcelAsync(int ownerId, int? year)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 5,
+                ReportType = "owner_profile",
+                Period = (year ?? DateTime.Today.Year) + "-" + ownerId,
+                Format = ExportFormat.Excel,
+                FilePath = "owner_profile_demo.xlsx"
+            });
+        }
+
         /// <summary>CHG-v1.2.0-17：演示实现——业主档案导出 PDF（全部业主）。</summary>
         public Task<ReportLogDto> ExportAllOwnerProfilesPdfAsync(int? year)
         {
@@ -1166,6 +1179,19 @@ namespace PropertyManagement.Client.Services
                 Period = (year ?? DateTime.Today.Year) + "-ALL",
                 Format = ExportFormat.Pdf,
                 FilePath = "owner_profile_all_demo.pdf"
+            });
+        }
+
+        /// <summary>CHG-v1.4.0-14：演示实现——业主档案导出 Excel（全部业主：缴费概况 + 业主档案）。</summary>
+        public Task<ReportLogDto> ExportAllOwnerProfilesExcelAsync(int? year)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 6,
+                ReportType = "owner_profile",
+                Period = (year ?? DateTime.Today.Year) + "-ALL",
+                Format = ExportFormat.Excel,
+                FilePath = "owner_profile_all_demo.xlsx"
             });
         }
 
@@ -1192,6 +1218,60 @@ namespace PropertyManagement.Client.Services
                 Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
                 Format = ExportFormat.Pdf,
                 FilePath = "arrear_detail_demo.pdf"
+            });
+        }
+
+        /// <summary>CHG-v1.4.0-01：演示实现——删除无关联账单的调整记录。</summary>
+        public Task<RefundAdjustmentDto> DeleteRefundAsync(RefundDeleteRequest request)
+        {
+            if (request == null || request.Id <= 0)
+            {
+                throw new InvalidOperationException("请选择要删除的调整记录");
+            }
+            var record = _refunds.FirstOrDefault(x => x.Id == request.Id);
+            if (record == null)
+            {
+                throw new InvalidOperationException("调整记录不存在或已被删除");
+            }
+            if (record.BillId > 0)
+            {
+                throw new InvalidOperationException("该记录已关联账单，删除会影响账单应收/实缴；只能删除无关联账单的补收/冲正记录");
+            }
+            _refunds.Remove(record);
+            return Task.FromResult(record);
+        }
+
+        /// <summary>CHG-v1.4.0-03：演示实现——账单工作台导出 PDF（批次明细）。</summary>
+        public Task<ReportLogDto> ExportBillBatchPdfAsync(BillBatchExportRequest request)
+        {
+            if (request == null || request.BatchIds == null || request.BatchIds.Count == 0)
+            {
+                throw new InvalidOperationException("当前筛选下没有可导出的账单批次");
+            }
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 7,
+                ReportType = "bill_batch",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = ExportFormat.Pdf,
+                FilePath = "bill_batch_demo.pdf"
+            });
+        }
+
+        /// <summary>CHG-v1.4.0-04：演示实现——欠费台账导出（PDF / Excel）。</summary>
+        public Task<ReportLogDto> ExportArrearsLedgerAsync(ArrearExportRequest request)
+        {
+            if (request == null || request.BillIds == null || request.BillIds.Count == 0)
+            {
+                throw new InvalidOperationException("当前筛选下没有可导出的欠费台账记录");
+            }
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 8,
+                ReportType = "arrear_ledger",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = request.Format,
+                FilePath = "arrear_ledger_demo" + (request.Format == ExportFormat.Excel ? ".xlsx" : ".pdf")
             });
         }
 

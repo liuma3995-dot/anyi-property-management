@@ -40,6 +40,10 @@
     <Reference Include="WindowsBase" />
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
+    <!-- CHG-v1.4.0-10：托盘常驻（关闭 → 隐藏到 Windows 通知区域）用 .NET Framework 内置的
+         WinForms NotifyIcon（Win7 兼容，不新增第三方依赖） -->
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
     <Reference Include="HandyControl">
       <HintPath>$(MSBuildProjectDirectory)\..\packages\HandyControl.3.5.1\lib\net48\HandyControl.dll</HintPath>
     </Reference>
@@ -280,6 +284,9 @@
     <Compile Include="Services\NativeWindowInterop.cs" />
     
     <Compile Include="Services\SessionManager.cs" />
+    <!-- CHG-v1.4.0-10/-11：托盘常驻（NotifyIcon）与客户端单实例守卫 -->
+    <Compile Include="Services\TrayService.cs" />
+    <Compile Include="Services\SingleInstanceGuard.cs" />
     <Compile Include="ViewModels\ChangePasswordViewModel.cs" />
     <Compile Include="ViewModels\DashboardViewModel.cs" />
     <Compile Include="ViewModels\NavNode.cs" />

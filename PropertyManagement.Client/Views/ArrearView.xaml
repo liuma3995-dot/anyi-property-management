@@ -55,16 +55,18 @@
         </UniformGrid>
 
         <!-- ============ 工具栏 ============ -->
-        <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
+        <Border x:Name="ArrearToolbarCard" Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
             <Grid>
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="260" />
+                    <!-- CHG-v1.4.0-28（第 4 轮遮挡复查，125% 缩放下发现）：工具栏在窄有效宽度下把「批量移出」挤成「批」，
+                         按同一口径收窄搜索框与三个筛选下拉，为右侧按钮让位 -->
+                    <ColumnDefinition Width="170" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="100" />
+                    <ColumnDefinition Width="88" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="100" />
+                    <ColumnDefinition Width="88" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="110" />
+                    <ColumnDefinition Width="96" />
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="Auto" />
@@ -109,10 +111,16 @@
                     <ComboBoxItem Content="已催缴" />
                     <ComboBoxItem Content="免催缴" />
                 </ComboBox>
-                <Button Grid.Column="8" Style="{StaticResource LinkButton}" Content="批量催缴" FontSize="13"
-                        VerticalAlignment="Center" Click="BatchRemindButton_Click" Margin="0,0,14,0" />
-                <Button Grid.Column="9" Style="{StaticResource LinkButton}" Content="导出台账" FontSize="13"
-                        VerticalAlignment="Center" Click="ExportButton_Click" />
+                <!-- CHG-v1.4.0-21（负责人 2026-10-08 第 2 轮裁定）：批量催缴功能未实现 → 入口下线（催缴统一走行内「催缴」） -->
+                <!-- CHG-v1.4.0-04：原「导出台账」只弹占位提示 —— 改为真实导出（Excel / PDF，含合计） -->
+                <StackPanel Grid.Column="9" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource LinkButton}" Content="导出Excel" FontSize="13"
+                            VerticalAlignment="Center" Command="{Binding ExportLedgerExcelCommand}"
+                            ToolTip="导出当前筛选下的欠费台账（Excel，含欠费合计）" />
+                    <Button Style="{StaticResource LinkButton}" Content="导出PDF" FontSize="13"
+                            VerticalAlignment="Center" Margin="10,0,0,0" Command="{Binding ExportLedgerPdfCommand}"
+                            ToolTip="导出当前筛选下的欠费台账（PDF，含欠费合计）" />
+                </StackPanel>
                 <!-- CHG-v1.1.2-03：已移出台账记录（可恢复）；台账「删除」语义已改为「移出台账」 -->
                 <Button Grid.Column="10" Style="{StaticResource LinkButton}" Content="已移出记录" FontSize="13"
                         VerticalAlignment="Center" Command="{Binding OpenDismissedCommand}" Margin="14,0,0,0" />
@@ -125,7 +133,14 @@
 
         <!-- ============ 台账表格 ============ -->
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
-            <DataGrid ItemsSource="{Binding Items}" IsReadOnly="True">
+            <!-- CHG-v1.4.0-27（负责人 2026-10-08 第 4 轮反馈：1366×768 下最早欠期/账龄/催缴状态被遮挡）：
+                 CHG-v1.4.0-30（第 5/6 轮复测）：欠费期间被裁（列宽 < 文本 109 + 内边距 24 = 133）；
+                 CHG-v1.4.0-31：上一版把 MinWidth 设成与 Width 相等 → 用户**拖不窄**（看起来像被固定）。
+                 最终口径：**Width = 内容需要 + 余量（默认不被裁），MinWidth = 内容需要（拖到最小也不裁）**，
+                 这样既恢复手动拖动列宽，又保证默认与最窄状态下内容都完整；列总宽超出视口时由横向滚动承接。 -->
+            <DataGrid ItemsSource="{Binding Items}" IsReadOnly="True"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                      CanUserResizeColumns="True">
                 <DataGrid.Columns>
                     <!-- CHG-v1.2.0-29：勾选列改用已验证的 GridCheckCell + GridCheckBox（去单元格 12px 内边距）并加宽到 52，
                          修复「表头全选框 / 行勾选框被单元格内边距挤压、贴边裁切」的遮挡问题 -->
@@ -143,10 +158,16 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <!-- CHG-v1.1.0-12：列头由「房产」改为「缴费对象」（含房产/车位/业主直缴，显示口径见 PropertyNo） -->
-                    <DataGridTextColumn Header="缴费对象" Width="100" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="业主" Width="88" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.4.0-25（负责人 2026-10-08 第 3 轮裁定）：「催缴备注」列下线（表格拥挤），
+                         备注仍保留在催缴弹窗预填与导出 PDF/Excel 中（功能解耦）；列宽恢复到加列之前的分配 -->
+                    <!-- CHG-v1.4.0-33（负责人 2026-10-08 复测：表头「象」被裁 / 账龄缺「天」/ 状态缺「期」/ 催缴状态缺「信催缴」）：
+                         根因 = 上述列宽**刚好等于**内容所需宽度（含单元格 12px 内边距与徽标 8px 内边距），
+                         字形最右侧 1~2px 被切。现按「需要宽度 + 24(单元格内边距) + 8(安全余量)」定 MinWidth，
+                         Width = MinWidth + 8 作为默认（同时保留拖动余量）。 -->
+                    <DataGridTextColumn Header="缴费对象" Width="84" MinWidth="76" Binding="{Binding PropertyNo}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTextColumn Header="业主" Width="104" MinWidth="96" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
                     <!-- CHG-v1.2.0-27：新增「楼栋/房号」列（房产账单取本房产；车位/业主直缴按业主-房产关系回查） -->
-                    <DataGridTemplateColumn Header="楼栋/房号" Width="132">
+                    <DataGridTemplateColumn Header="楼栋/房号" Width="134" MinWidth="126">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding BuildingPathText}" Style="{StaticResource GridCellText}"
@@ -154,7 +175,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="欠费项目" Width="*">
+                    <DataGridTemplateColumn Header="欠费项目" Width="*" MinWidth="96">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding ChargeItemName}" Style="{StaticResource GridCellText}"
@@ -163,7 +184,9 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <!-- CHG-v1.1.2-54：欠费期间改引用账单真实账期；同年账期压缩显示，悬停给完整起止 -->
-                    <DataGridTemplateColumn Header="欠费期间" Width="138">
+                    <!-- CHG-v1.4.0-30（负责人 2026-10-08 复测：欠费期间「xxxx-xx-xx~xx-x6」被裁）：
+                         实测文本「2026-01-01~12-31」= 109pt + 单元格内边距 24 = 133 > 原列宽 130 → 末尾数字被裁。 -->
+                    <DataGridTemplateColumn Header="欠费期间" Width="150" MinWidth="142">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <TextBlock Text="{Binding PeriodText}" Style="{StaticResource GridCellText}"
@@ -171,9 +194,14 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="欠费金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTextColumn Header="最早欠期" Width="92" Binding="{Binding EarliestDueText}" ElementStyle="{StaticResource GridCellText}" />
-                    <DataGridTemplateColumn Header="账龄" Width="76">
+                    <DataGridTextColumn Header="欠费金额" Width="96" MinWidth="88" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                    <!-- CHG-v1.4.0-23：新增「催缴备注」列后按 1366×768 实测收窄其余列，保证「欠费项目」不被过度挤压 -->
+                    <!-- CHG-v1.4.0-29（负责人 2026-10-08 第 5 轮反馈：账龄「xxxx 天」、催缴状态「xxxx 缴」仍被遮挡）：
+                         根因 = 单元格模板左右各 12px 内边距（Theme.xaml DataGridCell Padding=12,0）+ 徽标自身 8px 内边距，
+                         原先按「文本宽 + 14」估算列宽，实际可用内容区比估算少 ~10px → 徽标右端被裁。
+                         现按「文本宽 + 徽标内边距 16 + 单元格内边距 24 + 余量」重设列宽。 -->
+                    <DataGridTextColumn Header="最早欠期" Width="108" MinWidth="100" Binding="{Binding EarliestDueText}" ElementStyle="{StaticResource GridCellText}" />
+                    <DataGridTemplateColumn Header="账龄" Width="90" MinWidth="82">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Background="{Binding AgingBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
@@ -184,7 +212,7 @@
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
                     <!-- CHG-v1.2.0-24：新增「状态」列 —— 逾期 / 部分缴 / 待缴（逾期 = 到期日之后超过 1 天） -->
-                    <DataGridTemplateColumn Header="状态" Width="76">
+                    <DataGridTemplateColumn Header="状态" Width="90" MinWidth="82">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Background="{Binding StatusBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
@@ -194,7 +222,7 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="催缴状态" Width="96">
+                    <DataGridTemplateColumn Header="催缴状态" Width="118" MinWidth="110">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <Border Background="{Binding RemindBg}" CornerRadius="10" Padding="8,2" HorizontalAlignment="Left">
@@ -204,29 +232,26 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="操作" Width="168">
+                    <!-- CHG-v1.4.0-20：操作列只留 催缴/收款/移出台账（上门/法务/备注三个入口已下线） -->
+                    <!-- CHG-v1.4.0-32：操作列三个行内按钮合计约 150pt（催缴+收款+移出台账），
+                         原先按单个文本块估算 142 会被表格右边界裁掉「移出台账」 -->
+                    <DataGridTemplateColumn Header="操作" Width="172" MinWidth="164">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
+                                    <!-- CHG-v1.4.0-20：催缴入口文字固定为「催缴」，渠道在弹窗内选择；
+                                         原先按渠道派生的 上门/法务/备注 三个入口已下线（备注改为独立列 + 弹窗字段） -->
                                     <Button Style="{StaticResource LinkButton}" Content="催缴"
                                             Visibility="{Binding CanRemind, Converter={StaticResource BoolToVis}}"
                                             Command="{Binding DataContext.RemindCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}" />
-                                    <Button Style="{StaticResource LinkButton}" Content="上门"
-                                            Visibility="{Binding CanVisit, Converter={StaticResource BoolToVis}}"
-                                            Command="{Binding DataContext.VisitCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}" />
-                                    <Button Style="{StaticResource LinkButton}" Content="法务"
-                                            Visibility="{Binding CanLegal, Converter={StaticResource BoolToVis}}"
-                                            Command="{Binding DataContext.LegalCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}" />
-                                    <Button Style="{StaticResource LinkButton}" Content="备注"
-                                            Visibility="{Binding CanNote, Converter={StaticResource BoolToVis}}"
-                                            Command="{Binding DataContext.NoteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}" />
+                                            CommandParameter="{Binding}"
+                                            ToolTip="登记催缴（渠道与备注在弹窗内填写；重复催缴会新增一条留痕）" />
+                                    <!-- CHG-v1.4.0-09：「收款」由占位提示改为跳转「收款登记」并预置缴费对象 -->
                                     <Button Style="{StaticResource LinkButton}" Content="收款"
                                             Visibility="{Binding CanCollect, Converter={StaticResource BoolToVis}}"
-                                            Click="CollectButton_Click" />
+                                            Command="{Binding DataContext.CollectCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="跳转到「收款登记」并自动检索该缴费对象" />
                                     <!-- CHG-v1.1.2-03：「删除」改为「移出台账」——只影响台账显示，不再删账单 -->
                                     <Button Style="{StaticResource LinkButton}" Content="移出台账" Foreground="{StaticResource DangerBrush}"
                                             Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"

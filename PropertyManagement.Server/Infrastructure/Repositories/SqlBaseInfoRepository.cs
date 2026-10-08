@@ -603,6 +603,15 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         /// 年度口径与**仪表盘**统一为「账期起始日所在年度」（`COALESCE(cycle.start_date, due_at)`）——
         /// 原口径按「到期日年度」，而跨年账期（如 2026-06-30 ~ 2027-06-30）的到期日落在次年，
         /// 于是本年度刚收的款在业主概况里显示 0；仪表盘早已按账期起始日统计，两处口径因此还对不上。
+        ///
+        /// CHG-v1.4.0-02（负责人 2026-10-08 反馈「缴清往年欠费后本年度概况全是 0」的根因，裁定 A）：
+        /// 原实现把**应缴/已缴**都按「账期年度 = 统计年度」过滤，而「当前欠费」不带年度过滤 ——
+        /// 往年账期的逾期账单只出现在欠费里，业主缴清后应缴/已缴仍恒为 0，出现「刚收了钱却全是 0」。
+        /// 现口径：
+        ///   ① 应缴合计 = 本年账期应收 **+** 往年结转欠费（往年账期且未结清的余额）；
+        ///   ② 已缴合计 = 本年账期已缴 **+** 本年度实际收回的往年账期款项（年内收款 − 年内冲减，净额）；
+        ///   ③ 当前欠费 = 全部未结清余额（跨年度，不变）。
+        /// 仪表盘「本期应收/已收/收缴率」口径不受影响（那是"本期经营"视角，本方法是"业主往来"视角）。
         /// </remarks>
         private static Dictionary<int, OwnerStat> QueryOwnerStats(IDbConnection connection, List<int> ids, int? year = null)
         {
@@ -616,31 +625,64 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 string byOwner = string.Join(",", ids.Select((x, i) => "@o" + i));
                 cmd.CommandText =
                     "SELECT x.owner_id, " +
-                    "SUM(CASE WHEN COALESCE(strftime('%Y', x.cycle_start), strftime('%Y', x.due_at)) = @statYear THEN x.amount ELSE 0 END), " +
-                    "SUM(CASE WHEN COALESCE(strftime('%Y', x.cycle_start), strftime('%Y', x.due_at)) = @statYear THEN x.paid_amount ELSE 0 END), " +
+                    // ① 应缴合计（CHG-v1.4.0-02，负责人 2026-10-08 裁定 A）=
+                    //    本年账期应收 + 往年结转欠费（往年账期且未结清的余额）
+                    "SUM(CASE WHEN x.cycle_year = @statYear THEN x.amount " +
+                    "         WHEN x.cycle_year < @statYear AND x.amount > x.paid_amount AND x.status IN (0,1,2) " +
+                    "              THEN x.amount - x.paid_amount " +
+                    "         ELSE 0 END), " +
+                    // ② 已缴合计 = 本年账期已缴 + 本年度实际收回的往年账期款项（净额：年内收款 − 年内冲减）
+                    "SUM(CASE WHEN x.cycle_year = @statYear THEN x.paid_amount " +
+                    "         WHEN x.cycle_year < @statYear THEN x.prior_year_cash " +
+                    "         ELSE 0 END), " +
+                    // ③ 当前欠费 = 全部未结清余额（跨年度，口径不变）
                     "SUM(CASE WHEN x.amount > x.paid_amount AND x.status IN (0,1,2) THEN x.amount - x.paid_amount ELSE 0 END) " +
                     "FROM (" +
                     // ① 房产账单：按房产的业主关系归属
                     "SELECT r.owner_id AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, cy.start_date AS cycle_start, " +
-                    "       b.created_at AS created_at " +
+                    "       b.created_at AS created_at, " +
+                    "       COALESCE(strftime('%Y', cy.start_date), strftime('%Y', b.due_at)) AS cycle_year, " +
+                    "       COALESCE(py.cash, 0) - COALESCE(pc.cut, 0) AS prior_year_cash " +
                     "FROM t_owner_property_rel r JOIN t_bill b ON b.property_id = r.property_id " +
                     "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "LEFT JOIN (SELECT p.bill_id AS bill_id, SUM(p.amount) AS cash FROM t_payment p " +
+                    "           WHERE p.status = 0 AND strftime('%Y', p.paid_at) = @statYear " +
+                    "           GROUP BY p.bill_id) py ON py.bill_id = b.id " +
+                    "LEFT JOIN (SELECT rf.bill_id AS bill_id, SUM(rf.amount) AS cut FROM t_payment_refund rf " +
+                    "           WHERE rf.del_flag = 0 AND rf.refund_type <> 1 AND COALESCE(rf.adjust_dir, 0) <> 1 " +
+                    "             AND strftime('%Y', rf.created_at) = @statYear GROUP BY rf.bill_id) pc ON pc.bill_id = b.id " +
                     "WHERE r.del_flag = 0 AND b.del_flag = 0 AND r.owner_id IN (" + byProperty + ") " +
                     "UNION ALL " +
                     // ② 车位账单：按车位绑定业主归属；车位没绑业主时回落到车位绑定房产的业主
                     "SELECT COALESCE(pk.owner_id, r2.owner_id) AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, " +
-                    "       cy.start_date AS cycle_start, b.created_at AS created_at " +
+                    "       cy.start_date AS cycle_start, b.created_at AS created_at, " +
+                    "       COALESCE(strftime('%Y', cy.start_date), strftime('%Y', b.due_at)) AS cycle_year, " +
+                    "       COALESCE(py.cash, 0) - COALESCE(pc.cut, 0) AS prior_year_cash " +
                     "FROM t_bill b " +
                     "LEFT JOIN t_parking_space pk ON pk.id = b.parking_id AND pk.del_flag = 0 " +
                     "LEFT JOIN t_owner_property_rel r2 ON r2.property_id = pk.property_id AND r2.del_flag = 0 " +
                     "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "LEFT JOIN (SELECT p.bill_id AS bill_id, SUM(p.amount) AS cash FROM t_payment p " +
+                    "           WHERE p.status = 0 AND strftime('%Y', p.paid_at) = @statYear " +
+                    "           GROUP BY p.bill_id) py ON py.bill_id = b.id " +
+                    "LEFT JOIN (SELECT rf.bill_id AS bill_id, SUM(rf.amount) AS cut FROM t_payment_refund rf " +
+                    "           WHERE rf.del_flag = 0 AND rf.refund_type <> 1 AND COALESCE(rf.adjust_dir, 0) <> 1 " +
+                    "             AND strftime('%Y', rf.created_at) = @statYear GROUP BY rf.bill_id) pc ON pc.bill_id = b.id " +
                     "WHERE b.del_flag = 0 AND b.parking_id IS NOT NULL AND COALESCE(pk.owner_id, r2.owner_id) IN (" + byParking + ") " +
                     "UNION ALL " +
                     // ③ 业主直缴账单：账单 owner_id 即业主本人
                     "SELECT b.owner_id AS owner_id, b.amount, b.paid_amount, b.status, b.due_at, " +
-                    "       cy.start_date AS cycle_start, b.created_at AS created_at " +
+                    "       cy.start_date AS cycle_start, b.created_at AS created_at, " +
+                    "       COALESCE(strftime('%Y', cy.start_date), strftime('%Y', b.due_at)) AS cycle_year, " +
+                    "       COALESCE(py.cash, 0) - COALESCE(pc.cut, 0) AS prior_year_cash " +
                     "FROM t_bill b " +
                     "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
+                    "LEFT JOIN (SELECT p.bill_id AS bill_id, SUM(p.amount) AS cash FROM t_payment p " +
+                    "           WHERE p.status = 0 AND strftime('%Y', p.paid_at) = @statYear " +
+                    "           GROUP BY p.bill_id) py ON py.bill_id = b.id " +
+                    "LEFT JOIN (SELECT rf.bill_id AS bill_id, SUM(rf.amount) AS cut FROM t_payment_refund rf " +
+                    "           WHERE rf.del_flag = 0 AND rf.refund_type <> 1 AND COALESCE(rf.adjust_dir, 0) <> 1 " +
+                    "             AND strftime('%Y', rf.created_at) = @statYear GROUP BY rf.bill_id) pc ON pc.bill_id = b.id " +
                     "WHERE b.del_flag = 0 AND b.owner_id IS NOT NULL AND b.property_id IS NULL AND b.parking_id IS NULL " +
                     "AND b.owner_id IN (" + byOwner + ")" +
                     ") x GROUP BY x.owner_id";

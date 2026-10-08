@@ -7,6 +7,8 @@ using System.Windows.Media;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
+using PropertyManagement.Contract.Common;
+using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 
 namespace PropertyManagement.Client.ViewModels
@@ -182,14 +184,24 @@ namespace PropertyManagement.Client.ViewModels
 
         public bool IsPending { get { return string.IsNullOrEmpty(Dto.RemindChannel); } }
 
-        // 操作派生（T4F-6-1）：待催缴→催缴/收款；已短信→上门；已函件→法务；免催缴→备注；其余→催缴/收款
-        public bool CanRemind { get { return IsPending || Dto.RemindChannel == "电话" || Dto.RemindChannel == "上门" || Dto.RemindChannel == "微信"; } }
+        /// <summary>
+        /// CHG-v1.4.0-20（负责人 2026-10-08 第 2 轮反馈「点了催缴后按钮文字会跟着渠道变」）：
+        /// 行内只保留一个**文字固定为「催缴」**的入口 —— 渠道在选择弹窗里决定，按钮本身不再随渠道改名
+        /// （原实现按渠道把按钮换成 上门/法务/备注，用户找不到固定入口）。
+        /// 催缴入口对全部在账记录可用（含已催缴、免催缴），重复催缴即再记一条留痕。
+        /// </summary>
+        public bool CanRemind { get { return true; } }
 
-        public bool CanVisit { get { return Dto.RemindChannel == "短信"; } }
+        /// <summary>
+        /// CHG-v1.4.0-14：最近一次催缴备注（与渠道解耦，单独展示 / 导出）。
+        /// </summary>
+        public string RemindNoteText
+        {
+            get { return string.IsNullOrWhiteSpace(Dto.RemindNote) ? "—" : Dto.RemindNote.Trim(); }
+        }
 
-        public bool CanLegal { get { return Dto.RemindChannel == "函件"; } }
-
-        public bool CanNote { get { return IsFreeRemind; } }
+        /// <summary>是否有催缴备注（用于列内强调与悬停提示）。</summary>
+        public bool HasRemindNote { get { return !string.IsNullOrWhiteSpace(Dto.RemindNote); } }
 
         public bool CanCollect { get { return !IsFreeRemind; } }
 
@@ -237,12 +249,18 @@ namespace PropertyManagement.Client.ViewModels
 
         private static readonly string[] Channels = { "短信", "电话", "函件", "上门", "微信", "法务", "免催缴" };
 
-        public ArrearViewModel(IApiClient api) : base(api)
+        /// <summary>
+        /// CHG-v1.4.0-09：注入「跳转收款登记」回调（沿用 BillWorkbenchViewModel / OwnerRelationViewModel
+        /// 的导航注入模式）—— 行内「收款」由占位提示改为真实跳转并预置缴费对象。
+        /// </summary>
+        private readonly Action<string> _openPaymentEntry;
+
+        public ArrearViewModel(IApiClient api, Action<string> openPaymentEntry = null) : base(api)
         {
-            RemindCommand = new RelayCommand<ArrearRow>(row => OpenRemind(row, 0));
-            VisitCommand = new RelayCommand<ArrearRow>(row => OpenRemind(row, 3));   // 已短信 → 上门
-            LegalCommand = new RelayCommand<ArrearRow>(row => OpenRemind(row, 5));   // 已函件 → 法务
-            NoteCommand = new RelayCommand<ArrearRow>(row => OpenRemind(row, 6));    // 免催缴 → 备注
+            _openPaymentEntry = openPaymentEntry;
+            // CHG-v1.4.0-20：行内只保留固定文字的「催缴」入口（渠道在弹窗里选），
+            // 原先按渠道派生的 上门/法务/备注 三个入口已下线。
+            RemindCommand = new RelayCommand<ArrearRow>(row => OpenRemind(row));
             SubmitRemindCommand = new AsyncRelayCommand(SubmitRemindAsync);
             CloseRemindCommand = new RelayCommand(() => IsRemindVisible = false);
             SearchCommand = new AsyncRelayCommand(LoadAsync);
@@ -255,6 +273,10 @@ namespace PropertyManagement.Client.ViewModels
             OpenDismissedCommand = new AsyncRelayCommand(LoadDismissedAsync);
             CloseDismissedCommand = new RelayCommand(() => IsDismissedVisible = false);
             RestoreDismissedCommand = new AsyncRelayCommand<ArrearDismissRow>(RestoreDismissedAsync);
+            // CHG-v1.4.0-04/-09：导出台账（Excel / PDF）与「收款」一键跳转收款登记
+            ExportLedgerExcelCommand = new AsyncRelayCommand(() => ExportLedgerAsync(ExportFormat.Excel));
+            ExportLedgerPdfCommand = new AsyncRelayCommand(() => ExportLedgerAsync(ExportFormat.Pdf));
+            CollectCommand = new RelayCommand<ArrearRow>(Collect);
             _ = LoadAsync();
         }
 
@@ -314,12 +336,6 @@ namespace PropertyManagement.Client.ViewModels
 
         public IRelayCommand<ArrearRow> RemindCommand { get; }
 
-        public IRelayCommand<ArrearRow> VisitCommand { get; }
-
-        public IRelayCommand<ArrearRow> LegalCommand { get; }
-
-        public IRelayCommand<ArrearRow> NoteCommand { get; }
-
         public IAsyncRelayCommand SubmitRemindCommand { get; }
 
         public IRelayCommand CloseRemindCommand { get; }
@@ -333,6 +349,16 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand OpenDismissedCommand { get; private set; }
         public IRelayCommand CloseDismissedCommand { get; private set; }
         public IAsyncRelayCommand<ArrearDismissRow> RestoreDismissedCommand { get; private set; }
+
+        /// <summary>
+        /// CHG-v1.4.0-04（负责人 2026-10-08 反馈「导出台账只有占位提示」）：
+        /// 导出台账（Excel / PDF）—— 口径 = 页面当前筛选下的可见行（含合计），文件由服务端生成留痕。
+        /// </summary>
+        public IAsyncRelayCommand ExportLedgerExcelCommand { get; }
+        public IAsyncRelayCommand ExportLedgerPdfCommand { get; }
+
+        /// <summary>CHG-v1.4.0-09：行内「收款」→ 跳转收款登记并预置缴费对象（原为占位提示）。</summary>
+        public IRelayCommand<ArrearRow> CollectCommand { get; }
 
         public bool IsDismissedVisible { get { return _isDismissedVisible; } private set { SetProperty(ref _isDismissedVisible, value); } }
 
@@ -446,6 +472,90 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>涉及户数按房产（楼栋+房号/车位）去重，避免同一房产多笔欠费被重复计入（如 401/402 两户却显示 4 户）。</summary>
         private static int HouseholdCount(IEnumerable<ArrearDto> rows)
         {
+            return HouseholdCountCore(rows);
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-04（负责人 2026-10-08 反馈「导出台账只有占位提示」）：导出台账（Excel / PDF）。
+        /// 口径：把**页面当前筛选后的可见行**主键交给服务端，服务端按主键回查台账行（金额/账龄/状态取库内值），
+        /// 因此导出与页面一致；文件由服务端生成（写 t_report_log 留痕）后再另存到用户指定路径。
+        /// </summary>
+        private async Task ExportLedgerAsync(ExportFormat format)
+        {
+            await RunAsync(async () =>
+            {
+                string type = format == ExportFormat.Excel ? "Excel" : "PDF";
+                List<int> billIds = Items
+                    .Where(x => x.Dto != null && x.Dto.BillId > 0)
+                    .Select(x => x.Dto.BillId)
+                    .Distinct()
+                    .ToList();
+                if (billIds.Count == 0)
+                {
+                    throw new InvalidOperationException("当前筛选下没有可导出的欠费记录");
+                }
+
+                ReportLogDto log = await Api.ExportArrearsLedgerAsync(new ArrearExportRequest
+                {
+                    Format = format,
+                    BillIds = billIds
+                });
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException(type + " 导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存欠费台账（" + type + "）",
+                    Filter = format == ExportFormat.Excel ? "Excel 文件|*.xlsx" : "PDF 文件|*.pdf",
+                    FileName = "欠费台账_" + DateTime.Now.ToString("yyyyMMddHHmm") +
+                               (format == ExportFormat.Excel ? ".xlsx" : ".pdf")
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + type +
+                                 " 已在服务端生成（导出日志 " + log.Id + "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 台账已导出：" + dialog.FileName +
+                             "（" + billIds.Count + " 条，含合计）";
+                System.Windows.MessageBox.Show(type + " 欠费台账已导出到：" + dialog.FileName, "导出成功",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }, null);
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-09：行内「收款」→ 跳到「收款登记」并预置缴费对象（原实现只弹提示不让跳）。
+        /// 关键字优先取「楼栋/单元/房号」（收款登记按地址可检索）—— 同名业主也能唯一命中；
+        /// 无地址时回落业主姓名，再回落缴费对象编号。
+        /// </summary>
+        private void Collect(ArrearRow row)
+        {
+            if (row == null || row.Dto == null) { return; }
+            if (_openPaymentEntry == null)
+            {
+                ErrorText = "请手动切换到「收款登记」页办理收款";
+                return;
+            }
+            string keyword = BuildPaymentKeyword(row.Dto);
+            _openPaymentEntry(keyword);
+        }
+
+        private static string BuildPaymentKeyword(ArrearDto dto)
+        {
+            if (dto == null) { return string.Empty; }
+            string path = (dto.BuildingPath ?? string.Empty).Trim();
+            if (path.Length > 0) { return path; }
+            string owner = (dto.OwnerName ?? string.Empty).Trim();
+            if (owner.Length > 0) { return owner; }
+            return (dto.PropertyNo ?? string.Empty).Trim();
+        }
+
+        private static int HouseholdCountCore(IEnumerable<ArrearDto> rows)
+        {
             return rows
                 .Select(x => string.IsNullOrEmpty(x.BuildingNo) ? (x.PropertyNo ?? string.Empty) : x.BuildingNo + "-" + (x.PropertyNo ?? string.Empty))
                 .Where(x => !string.IsNullOrWhiteSpace(x))
@@ -453,12 +563,17 @@ namespace PropertyManagement.Client.ViewModels
                 .Count();
         }
 
-        private void OpenRemind(ArrearRow row, int channelIndex)
+        /// <summary>
+        /// CHG-v1.4.0-14/-20：打开催缴登记弹窗 —— 渠道与备注都按该行**最近一次催缴记录**预填
+        /// （可修改后再提交，形成新的一条留痕），不再按渠道改写按钮。
+        /// </summary>
+        private void OpenRemind(ArrearRow row)
         {
             if (row == null) { return; }
             SelectedArrear = row;
-            RemindChannel = channelIndex;
-            RemindNote = string.Empty;
+            int index = Array.IndexOf(Channels, row.Dto.RemindChannel ?? string.Empty);
+            RemindChannel = index >= 0 ? index : 0;
+            RemindNote = row.Dto.RemindNote ?? string.Empty;
             OnPropertyChanged(nameof(RemindTargetText));
             IsRemindVisible = true;
         }

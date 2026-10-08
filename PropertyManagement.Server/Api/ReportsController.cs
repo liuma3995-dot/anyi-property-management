@@ -107,6 +107,28 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportArrearDetails(request, GetUsername()));
         }
 
+        /// <summary>
+        /// 账单工作台「导出PDF」（CHG-v1.4.0-03）：导出当前筛选下的批次清单 + 每批次缴费对象明细。
+        /// 文件写 t_report_log（report_type = bill_batch），下载走 /reports/files/{id}。
+        /// </summary>
+        [HttpPost]
+        [Route("bills/export")]
+        public ApiResponse<ReportLogDto> ExportBillBatches(BillBatchExportRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportBillBatches(request, GetUsername()));
+        }
+
+        /// <summary>
+        /// 欠费台账「导出台账」（CHG-v1.4.0-04）：PDF / Excel，含合计。
+        /// 文件写 t_report_log（report_type = arrear_ledger），下载走 /reports/files/{id}。
+        /// </summary>
+        [HttpPost]
+        [Route("arrears/export")]
+        public ApiResponse<ReportLogDto> ExportArrearsLedger(ArrearExportRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportArrearsLedger(request, GetUsername()));
+        }
+
         /// <summary>导出收据打印模板（CHG-v1.1.0-14：收据号下线，模板含逐项收款明细）。</summary>
         [HttpPost]
         [Route("receipt-template")]
@@ -139,6 +161,18 @@ namespace PropertyManagement.Server.Api
         }
 
         /// <summary>
+        /// CHG-v1.4.0-13：业主档案导出 **Excel**（缴费概况 + 账单明细 + 收款明细 三个工作表）。
+        /// 与 PDF 同口径：往年账期但在本年度收款/冲减的账单同样列入，收款按收款发生年度归属。
+        /// </summary>
+        [HttpPost]
+        [Route("owners/{id:int}/profile-excel")]
+        public ApiResponse<ReportLogDto> ExportOwnerProfileExcel(int id, OwnerProfileExportRequest request)
+        {
+            int? year = request == null ? null : request.Year;
+            return ApiResponse<ReportLogDto>.Ok(_ownerProfile.ExportExcel(id, year, GetUsername()));
+        }
+
+        /// <summary>
         /// 业主档案导出 PDF —— **全部业主**（CHG-v1.2.0-17）：汇总表 + 逐户概况/账单/收款明细。
         /// 请求体可带 year（默认当前年度）。
         /// </summary>
@@ -148,6 +182,19 @@ namespace PropertyManagement.Server.Api
         {
             int? year = request == null ? null : request.Year;
             return ApiResponse<ReportLogDto>.Ok(_ownerProfile.ExportAll(year, GetUsername()));
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-14：业主档案导出 Excel —— **全部业主**。
+        /// 工作表①「一、缴费概况」与「导出全部 PDF」的汇总表同列同顺序（含合计行）；
+        /// 工作表②「业主档案」保留原「导出 Excel（业主档案表格）」的 9 列。
+        /// </summary>
+        [HttpPost]
+        [Route("owners/profile-excel-all")]
+        public ApiResponse<ReportLogDto> ExportAllOwnerProfilesExcel(OwnerProfileExportRequest request)
+        {
+            int? year = request == null ? null : request.Year;
+            return ApiResponse<ReportLogDto>.Ok(_ownerProfile.ExportAllExcel(year, GetUsername()));
         }
 
         [HttpGet]

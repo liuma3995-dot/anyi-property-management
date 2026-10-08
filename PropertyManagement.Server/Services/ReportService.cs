@@ -25,17 +25,30 @@ namespace PropertyManagement.Server.Services
     {
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly IFinanceRepository _finance;
+        private readonly IChargeStandardRepository _standards;
         private readonly AuditService _audit;
 
         public ReportService()
-            : this(new SqliteConnectionFactory(), new SqlFinanceRepository(), new AuditService())
+            : this(new SqliteConnectionFactory(), new SqlFinanceRepository(), new SqlChargeStandardRepository(), new AuditService())
         {
         }
 
         public ReportService(IDbConnectionFactory connectionFactory, IFinanceRepository finance, AuditService audit)
+            : this(connectionFactory, finance, new SqlChargeStandardRepository(), audit)
+        {
+        }
+
+        /// <summary>
+        /// CHG-v1.4.0-14（负责人 2026-10-08 第 6 轮反馈「导出 PDF 模板缺少项目里所包含的规格明细」）：
+        /// 收费项目清单 PDF 需要展开价目表规格，追加「价目表仓储」依赖；
+        /// 旧的三参构造保留并内部回落默认实现，既有调用与测试不受影响。
+        /// </summary>
+        public ReportService(IDbConnectionFactory connectionFactory, IFinanceRepository finance,
+            IChargeStandardRepository standards, AuditService audit)
         {
             _connectionFactory = connectionFactory;
             _finance = finance;
+            _standards = standards ?? new SqlChargeStandardRepository();
             _audit = audit;
         }
 
@@ -416,7 +429,8 @@ namespace PropertyManagement.Server.Services
         /// <summary>
         /// CHG-v1.1.2-33：收费项目清单导出（PDF / Excel）。
         /// 复用财务报表同一条导出通道（ClosedXML / PDFsharp + PdfFontSupport），并写 t_report_log 留痕。
-        /// 列：项目编号 / 收费标准 / 类别 / 缴费对象 / 规格 / 默认单价 / 状态。
+        /// Excel：列 = 项目编号 / 收费标准 / 类别 / 缴费对象 / 规格 / 默认单价 / 状态（与列表页一致）；
+        /// PDF（CHG-v1.4.0-14）：项目行 + 其下展开的**规格明细**（规格 / 适用条件 / 单价 / 计算规则 / 计费周期 / 状态）。
         /// </summary>
         public ReportLogDto ExportChargeItems(ChargeItemExportRequest request)
         {
@@ -425,6 +439,8 @@ namespace PropertyManagement.Server.Services
             {
                 List<ChargeItemDto> items = _finance.ListChargeItems(connection, request.Keyword, request.Category)
                     ?? new List<ChargeItemDto>();
+                // CHG-v1.4.0-14：一次性取齐涉及到的收费标准（含规格与变量名快照），供 PDF 展开规格明细
+                Dictionary<int, ChargeStandardDto> standards = LoadStandardsForItems(connection, items);
 
                 string period = DateTime.Now.ToString("yyyyMMddHHmmss");
                 string fileName = "charge_items_" + period + (request.Format == ExportFormat.Excel ? ".xlsx" : ".pdf");
@@ -436,7 +452,7 @@ namespace PropertyManagement.Server.Services
                 }
                 else
                 {
-                    ExportChargeItemsPdf(filePath, items);
+                    ExportChargeItemsPdf(filePath, items, standards);
                 }
 
                 var log = new ReportLogDto
@@ -570,50 +586,248 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        private static void ExportChargeItemsPdf(string filePath, List<ChargeItemDto> items)
+        /// <summary>
+        /// 取收费项目涉及的收费标准（按 StandardId 去重；未迁移的历史项目 = 无标准，PDF 按「未维护规格」展示）。
+        /// </summary>
+        private Dictionary<int, ChargeStandardDto> LoadStandardsForItems(IDbConnection connection, List<ChargeItemDto> items)
+        {
+            var map = new Dictionary<int, ChargeStandardDto>();
+            foreach (int standardId in (items ?? new List<ChargeItemDto>())
+                .Where(x => x.StandardId.HasValue && x.StandardId.Value > 0)
+                .Select(x => x.StandardId.Value)
+                .Distinct())
+            {
+                ChargeStandardDto dto = _standards.GetStandard(connection, standardId);
+                if (dto != null) { map[standardId] = dto; }
+            }
+            return map;
+        }
+
+        /// <summary>
+        /// 收费项目清单 PDF（CHG-v1.4.0-14，负责人 2026-10-08 第 6 轮反馈）：
+        /// 两级表格 —— 项目行 + 其下缩进的**规格明细**（规格 / 适用条件 / 单价 / 计算规则 / 计费周期 / 状态）；
+        /// 计算规则按变量名快照替换 `{v:ID}` 记号，未绑定变量显示「未绑定变量」，与价目表列表口径一致；
+        /// 内容超出一页时自动翻页并重画两级表头（旧实现在页尾静默截断）。
+        /// </summary>
+        private static void ExportChargeItemsPdf(string filePath, List<ChargeItemDto> items,
+            Dictionary<int, ChargeStandardDto> standards)
         {
             PdfFontSupport.Ensure();
 
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
+            var noteFont = new XFont("SimHei", 7.5, XFontStyleEx.Regular);
+
+            // 列位：半角「¥」在 SimHei 子集缺字（渲染成方框），PDF 金额统一用全角「￥」（见本文件既有约定）
+            string[] itemHeads = { "项目编号", "收费标准", "类别", "缴费对象", "规格", "状态" };
+            double[] itemXs = { 36, 100, 252, 322, 410, 516 };
+            double[] itemW = { 62, 150, 68, 86, 102, 34 };
+            string[] specHeads = { "规格", "适用条件", "单价", "计算规则", "计费周期", "状态" };
+            double[] specXs = { 48, 100, 212, 304, 446, 490 };
+            double[] specW = { 50, 110, 90, 140, 42, 30 };
+
             using (var document = new PdfDocument())
             {
-                PdfPage page = document.AddPage();
-                page.Size = PdfSharp.PageSize.A4;
-                using (XGraphics gfx = XGraphics.FromPdfPage(page))
+                XGraphics gfx = null;
+                double pageHeight = 0;
+                double y = 0;
+                bool firstPage = true;
+                bool pageHasItem = false;
+
+                Action openPage = () =>
                 {
-                    var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
-                    var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
-                    var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
-
-                    double y = 30;
-                    gfx.DrawString("安怡物业 · 收费项目清单", titleFont, XBrushes.Black, 36, y);
-                    y += 20;
-                    gfx.DrawString("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 条",
-                        bodyFont, XBrushes.Black, 36, y);
-                    y += 20;
-
-                    string[] headers = { "项目编号", "收费标准", "类别", "缴费对象", "规格 / 默认单价", "状态" };
-                    double[] xs = { 36, 96, 196, 256, 326, 506 };
-                    double[] widths = { 58, 98, 58, 68, 178, 40 };
-                    for (int i = 0; i < headers.Length; i++)
+                    if (gfx != null) { gfx.Dispose(); }
+                    PdfPage page = document.AddPage();
+                    page.Size = PdfSharp.PageSize.A4;
+                    pageHeight = page.Height.Point;
+                    gfx = XGraphics.FromPdfPage(page);
+                    y = 30;
+                    if (firstPage)
                     {
-                        gfx.DrawString(headers[i], headerFont, XBrushes.Black, xs[i], y);
+                        gfx.DrawString("安怡物业 · 收费项目清单", titleFont, XBrushes.Black, 36, y);
+                        y += 20;
+                        gfx.DrawString("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                       "，共 " + items.Count + " 条项目（项目下列出该收费标准的全部规格）",
+                            bodyFont, XBrushes.Black, 36, y);
+                        y += 20;
+                        firstPage = false;
                     }
-                    y += 14;
-
-                    foreach (ChargeItemDto item in items)
+                    else
                     {
-                        if (y > page.Height.Point - 40) { break; }
-                        string[] values = ChargeItemRowValues(item);
-                        string[] cells = { values[0], values[1], values[2], values[3], values[4] + " · " + values[5], values[6] };
-                        for (int i = 0; i < cells.Length; i++)
+                        gfx.DrawString("安怡物业 · 收费项目清单（续）", headerFont, XBrushes.Black, 36, y);
+                        y += 18;
+                    }
+                    DrawChargeItemHeaderRow(gfx, headerFont, y, itemHeads, itemXs, specHeads, specXs);
+                    // 两级表头下画一条浅分隔线，避免「项目行」与「规格表头」视觉粘连
+                    gfx.DrawLine(XPens.LightGray, 36, y + 21, 553, y + 21);
+                    pageHasItem = false;
+                    y += 26;
+                };
+
+                openPage();
+                foreach (ChargeItemDto item in items)
+                {
+                    ChargeStandardDto standard = null;
+                    if (item.StandardId.HasValue) { standards.TryGetValue(item.StandardId.Value, out standard); }
+                    List<ChargeStandardSpecDto> specs = standard == null
+                        ? new List<ChargeStandardSpecDto>()
+                        : (standard.Specs ?? new List<ChargeStandardSpecDto>())
+                            .OrderBy(x => x.IsFallback).ThenBy(x => x.Id).ToList();
+
+                    // 项目行 + 规格行整体不拆页；项目较高时（规格多）允许中途翻页并重画项目行
+                    double need = 20 + Math.Max(specs.Count, 1) * 12 + 6;
+                    if (y + need > pageHeight - 40 && y > 60) { openPage(); }
+                    if (pageHasItem)
+                    {
+                        // 项目之间加浅分隔线，便于区分「项目行 + 其规格」分组
+                        gfx.DrawLine(XPens.LightGray, 36, y - 4, 553, y - 4);
+                    }
+                    pageHasItem = true;
+
+                    string[] itemValues = ChargeItemRowValues(item);
+                    string[] itemCells =
+                    {
+                        itemValues[0], itemValues[1], itemValues[2], itemValues[3],
+                        specs.Count == 0
+                            ? "未维护规格"
+                            : specs.Count + " 条规格（" + specs.Count(x => x.Status == 0) + " 条启用）",
+                        itemValues[6]
+                    };
+                    DrawChargeItemRow(gfx, headerFont, y, itemCells, itemW, itemXs);
+                    y += 13;
+
+                    if (specs.Count == 0)
+                    {
+                        gfx.DrawString("（该收费标准未维护规格）", noteFont, XBrushes.Black, specXs[0], y);
+                        y += 12;
+                    }
+                    else
+                    {
+                        Dictionary<int, string> varNames = VariableNameMap(standard);
+                        foreach (ChargeStandardSpecDto spec in specs)
                         {
-                            gfx.DrawString(FitToWidth(gfx, cells[i], bodyFont, widths[i]), bodyFont, XBrushes.Black, xs[i], y);
+                            if (y + 12 > pageHeight - 36)
+                            {
+                                openPage();
+                                // 翻页后重画项目行，避免续页规格脱离所属项目
+                                DrawChargeItemRow(gfx, headerFont, y, itemCells, itemW, itemXs);
+                                pageHasItem = true;
+                                y += 13;
+                            }
+                            string[] cells =
+                            {
+                                SpecNameText(spec), SpecConditionText(spec), SpecPriceText(spec),
+                                SpecFormulaText(spec, varNames), SpecCycleText(spec),
+                                spec.Status == 0 ? "启用" : "停用"
+                            };
+                            DrawChargeItemRow(gfx, bodyFont, y, cells, specW, specXs);
+                            y += 12;
                         }
-                        y += 13;
                     }
+                    y += 5;
                 }
+                if (gfx != null) { gfx.Dispose(); }
                 document.Save(filePath);
             }
+        }
+
+        private static void DrawChargeItemHeaderRow(XGraphics gfx, XFont font, double y,
+            string[] itemHeads, double[] itemXs, string[] specHeads, double[] specXs)
+        {
+            for (int i = 0; i < itemHeads.Length && i < itemXs.Length; i++)
+            {
+                gfx.DrawString(itemHeads[i], font, XBrushes.Black, itemXs[i], y);
+            }
+            for (int i = 0; i < specHeads.Length && i < specXs.Length; i++)
+            {
+                gfx.DrawString(specHeads[i], font, XBrushes.Black, specXs[i], y + 13);
+            }
+        }
+
+        private static void DrawChargeItemRow(XGraphics gfx, XFont font, double y,
+            string[] cells, double[] widths, double[] xs)
+        {
+            for (int i = 0; i < cells.Length && i < xs.Length; i++)
+            {
+                gfx.DrawString(FitToWidth(gfx, cells[i] ?? string.Empty, font, widths[i]), font, XBrushes.Black, xs[i], y);
+            }
+        }
+
+        /// <summary>规格适用条件文本（与价目表列表口径一致；已下线的维度如实标注）。</summary>
+        private static string SpecConditionText(ChargeStandardSpecDto spec)
+        {
+            var parts = new List<string>();
+            if (spec.MatchUsage.HasValue)
+            {
+                string usage = spec.MatchUsage.Value == 1 ? "商铺" : (spec.MatchUsage.Value == 2 ? "空置" : "住宅");
+                parts.Add("房产用途 = " + usage);
+            }
+            if (spec.MatchStatus.HasValue)
+            {
+                string text = spec.MatchStatus.Value == 0 ? "空置" : (spec.MatchStatus.Value == 1 ? "入住" : "装修中");
+                parts.Add("房产状态 = " + text + "（已下线，请改选）");
+            }
+            if (spec.MatchSpaceType.HasValue)
+            {
+                string text = spec.MatchSpaceType.Value == 0 ? "产权" : (spec.MatchSpaceType.Value == 1 ? "普通" : "临时");
+                parts.Add("车位类型 = " + text);
+            }
+            if (!string.IsNullOrWhiteSpace(spec.MatchBuilding)) { parts.Add("楼栋 = " + spec.MatchBuilding); }
+            if (spec.IsFallback) { parts.Add("不限（兜底）"); }
+            return parts.Count == 0 ? "不限" : string.Join(" · ", parts);
+        }
+
+        private static Dictionary<int, string> VariableNameMap(ChargeStandardDto standard)
+        {
+            var map = new Dictionary<int, string>();
+            if (standard == null) { return map; }
+            foreach (ChargeVariableDto variable in standard.Variables ?? new List<ChargeVariableDto>())
+            {
+                if (!map.ContainsKey(variable.Id)) { map[variable.Id] = variable.VarName; }
+            }
+            return map;
+        }
+
+        /// <summary>计算规则展示文本：把 `{v:ID}` 记号替换为变量名，未绑定变量不暴露落库记号。</summary>
+        private static string SpecFormulaText(ChargeStandardSpecDto spec, Dictionary<int, string> varNames)
+        {
+            if (string.IsNullOrWhiteSpace(spec.Formula)) { return "单价"; }
+            string text = spec.Formula;
+            foreach (KeyValuePair<int, string> pair in varNames)
+            {
+                text = text.Replace("{v:" + pair.Key + "}", pair.Value);
+            }
+            while (text.Contains("{v:"))
+            {
+                int start = text.IndexOf("{v:", StringComparison.Ordinal);
+                int end = text.IndexOf('}', start);
+                if (end < 0) { break; }
+                text = text.Substring(0, start) + "未绑定变量" + text.Substring(end + 1);
+            }
+            return text;
+        }
+
+        private static string SpecNameText(ChargeStandardSpecDto spec)
+        {
+            return string.IsNullOrWhiteSpace(spec.SpecName) ? "—" : spec.SpecName;
+        }
+
+        /// <summary>
+        /// 规格单价展示：PDF 用全角「￥」（半角 ¥ 在 SimHei 子集缺字，会渲染成方框；
+        /// 见本文件「收据模板 / 财务报表」同类约定）；单价单位去掉重复的「元/」前缀（前面已带 ￥）。
+        /// </summary>
+        private static string SpecPriceText(ChargeStandardSpecDto spec)
+        {
+            string unit = spec.PriceUnit ?? string.Empty;
+            if (unit.StartsWith("元/", StringComparison.Ordinal)) { unit = unit.Substring(2); }
+            return "￥" + spec.UnitPrice.ToString("0.00") +
+                   (string.IsNullOrWhiteSpace(unit) ? string.Empty : " / " + unit);
+        }
+
+        private static string SpecCycleText(ChargeStandardSpecDto spec)
+        {
+            return string.IsNullOrWhiteSpace(spec.CycleName) ? "一次性" : spec.CycleName;
         }
 
         public ReportLogDto GetReportLog(int logId)
@@ -1549,58 +1763,679 @@ namespace PropertyManagement.Server.Services
         {
             PdfFontSupport.Ensure();
 
-            using (var document = new PdfDocument())
+            // CHG-v1.4.0-05（负责人 2026-10-08）：修两个缺陷 ——
+            //   ① 原实现单页画满即 `break`，超过一页的流水被**静默丢弃**（导出上限 5000 行，必然截断）；
+            //   ② 原模板没有数据合计（Excel 有、PDF 没有）。
+            // 现改为分页输出 + 末页合计「收入/支出/结余/条数」，与 Excel 合计口径一致。
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
+
+            // CHG-v1.1.2-21 / CHG-v1.1.2-23：PDF 列布局按 A4 版面重排 ——
+            // 每列先按「实际量宽（MeasureString）」裁剪，只有真正放不下才截断，
+            // 并把「关联单据」列加宽到 120pt，使 RF-yyyyMMddHHmmssfff-NN / PAY-yyyyMMdd-NNNN 完整显示。
+            string[] headers = { "流水号", "日期", "收/支", "项目", "楼栋/房号/单元", "付款人", "金额", "关联单据" };
+            double[] xs = { 36, 88, 150, 174, 244, 330, 382, 440 };
+            double[] widths = { 50, 60, 22, 68, 84, 50, 56, 120 };
+
+            decimal income = 0m;
+            decimal outcome = 0m;
+            foreach (LedgerEntryDto item in items)
             {
-                PdfPage page = document.AddPage();
-                page.Size = PdfSharp.PageSize.A4;
-                using (XGraphics gfx = XGraphics.FromPdfPage(page))
+                if (item.InAmount > 0) { income += item.InAmount; }
+                if (item.OutAmount > 0) { outcome += item.OutAmount; }
+            }
+
+            using (var document = new PdfDocument())
+            using (var canvas = new PdfTableCanvas(document, titleFont, headerFont, bodyFont))
+            {
+                canvas.Title("安怡物业 · 收支明细流水");
+                canvas.Line("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 条");
+                canvas.Gap(2);
+                canvas.Head(headers, xs);
+
+                foreach (LedgerEntryDto item in items)
                 {
-                    var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
-                    var headerFont = new XFont("SimHei", 9, XFontStyleEx.Bold);
-                    var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
-
-                    double y = 30;
-                    gfx.DrawString("安怡物业 · 收支明细流水", titleFont, XBrushes.Black, 36, y);
-                    y += 20;
-                    gfx.DrawString("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 条",
-                        bodyFont, XBrushes.Black, 36, y);
-                    y += 20;
-
-                    // CHG-v1.1.2-21 / CHG-v1.1.2-23：PDF 列布局按 A4 版面重排 ——
-                    // 每列先按「实际量宽（MeasureString）」裁剪，只有真正放不下才截断，
-                    // 并把「关联单据」列加宽到 120pt，使 RF-yyyyMMddHHmmssfff-NN / PAY-yyyyMMdd-NNNN 完整显示。
-                    string[] headers = { "流水号", "日期", "收/支", "项目", "楼栋/房号/单元", "付款人", "金额", "关联单据" };
-                    double[] xs = { 36, 88, 150, 174, 244, 330, 382, 440 };
-                    double[] widths = { 50, 60, 22, 68, 84, 50, 56, 120 };
-                    for (int i = 0; i < headers.Length; i++)
+                    canvas.EnsureRow(14, headers, xs);
+                    decimal signed = item.InAmount != 0 ? item.InAmount : -item.OutAmount;
+                    string[] cells =
                     {
-                        gfx.DrawString(headers[i], headerFont, XBrushes.Black, xs[i], y);
+                        "LS-" + item.Id.ToString("D4"),
+                        item.BizTime.ToString("MM-dd HH:mm"),
+                        item.InAmount > 0 ? "收" : "支",
+                        item.Subject,
+                        item.ObjectText,
+                        item.OwnerName,
+                        signed.ToString("0.00"),
+                        item.BizNo
+                    };
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        canvas.Cell(FitToWidth(canvas.Gfx, cells[i], bodyFont, widths[i]), xs[i]);
                     }
-                    y += 14;
+                    canvas.NextRow(13);
+                }
 
-                    foreach (LedgerEntryDto item in items)
+                canvas.Gap(6);
+                canvas.Line("合计：收入 " + income.ToString("0.00") + " 元　　支出 " + outcome.ToString("0.00") +
+                            " 元　　结余 " + (income - outcome).ToString("0.00") + " 元　　共 " + items.Count + " 条");
+                document.Save(filePath);
+            }
+        }
+
+        // ---------- 账单工作台：批次明细导出（CHG-v1.4.0-03） ----------
+
+        /// <summary>账单批次明细导出上限（一次导出最多 5000 行明细）。</summary>
+        private const int BillBatchExportMaxRows = 5000;
+
+        /// <summary>
+        /// 账单工作台「导出PDF」（CHG-v1.4.0-03，负责人 2026-10-08 裁定 A）：
+        /// 口径 = **当前筛选下的批次清单 + 每批次缴费对象明细**。
+        ///
+        /// 设计：批次/明细主键由客户端按页面当前筛选结果给出，服务端按主键**回查**批次与账单
+        /// （金额、对象、状态一律取库内值，不采信客户端传值），保证导出与页面同口径且可核对；
+        /// 每批次一段：抬头（批次号 / 项目 / 期间 / 户数 / 总金额 / 状态 / 发布时间）
+        /// + 明细表（缴费人 / 楼栋·单元·房号 / 收费项目 / 应缴 / 已收 / 状态 / 到期日）+ 小计。
+        ///
+        /// 原口径下账单工作台**没有任何导出**，已发布批次只显示对象数与金额，看不出是哪个对象、缴费人是谁。
+        /// 文件写 t_report_log（report_type = bill_batch），下载走 /reports/files/{id}；本导出只读。
+        /// </summary>
+        public ReportLogDto ExportBillBatches(BillBatchExportRequest request, string operatorName = null)
+        {
+            if (request == null || request.BatchIds == null || request.BatchIds.Count == 0)
+            {
+                throw ApiException.BadRequest("当前筛选下没有可导出的账单批次");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                Dictionary<int, BillBatchDto> batches = (_finance.QueryGenerateLogs(connection) ?? new List<BillBatchDto>())
+                    .GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First());
+
+                var sections = new List<BillBatchExportSection>();
+                int rowCount = 0;
+                foreach (int batchId in request.BatchIds.Distinct())
+                {
+                    if (rowCount >= BillBatchExportMaxRows) { break; }
+                    BillBatchDto batch;
+                    if (!batches.TryGetValue(batchId, out batch)) { continue; }
+
+                    var items = new List<BillListItemDto>();
+                    items.AddRange(_finance.ListPublishedBillsByBatch(connection, batchId) ?? new List<BillListItemDto>());
+                    items.AddRange(_finance.ListDraftBillsByBatch(connection, batchId) ?? new List<BillListItemDto>());
+                    items = items.GroupBy(x => x.Id).Select(g => g.First())
+                        .OrderBy(x => x.DueAt).ThenBy(x => x.Id).ToList();
+                    if (rowCount + items.Count > BillBatchExportMaxRows)
                     {
-                        if (y > page.Height.Point - 40) { break; }
-                        decimal signed = item.InAmount != 0 ? item.InAmount : -item.OutAmount;
+                        items = items.Take(BillBatchExportMaxRows - rowCount).ToList();
+                    }
+                    rowCount += items.Count;
+
+                    sections.Add(new BillBatchExportSection
+                    {
+                        Batch = batch,
+                        Items = items,
+                        Truncated = false
+                    });
+                }
+
+                if (sections.Count == 0)
+                {
+                    throw ApiException.NotFound("没有找到可导出的账单批次（批次可能已被删除）");
+                }
+
+                string period = DateTime.Now.ToString("yyyyMMddHHmmss");
+                string fileName = "bill_batch_" + period + ".pdf";
+                string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+                WriteBillBatchPdf(filePath, sections, rowCount, operatorName);
+
+                var log = new ReportLogDto
+                {
+                    ReportType = "bill_batch",
+                    Period = period,
+                    Format = ExportFormat.Pdf,
+                    FilePath = filePath
+                };
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    log.Id = _finance.InsertReportLog(connection, transaction, log);
+                    transaction.Commit();
+                }
+
+                _audit.Write("BILL_BATCH_EXPORT", "report_log", log.Id.ToString(),
+                    "账单工作台批次明细导出：" + sections.Count + " 个批次 / " + rowCount + " 条明细，文件 " + fileName,
+                    userName: operatorName, result: "成功");
+
+                ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
+                return saved ?? log;
+            }
+        }
+
+        private sealed class BillBatchExportSection
+        {
+            public BillBatchDto Batch { get; set; }
+            public List<BillListItemDto> Items { get; set; }
+            public bool Truncated { get; set; }
+        }
+
+        private static void WriteBillBatchPdf(string filePath, List<BillBatchExportSection> sections,
+            int rowCount, string operatorName)
+        {
+            PdfFontSupport.Ensure();
+
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headFont = new XFont("SimHei", 10, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 8, XFontStyleEx.Regular);
+
+            string[] headers = { "缴费人", "楼栋/单元/房号", "收费项目", "应缴", "已收", "状态", "到期日" };
+            double[] xs = { 36, 122, 250, 342, 390, 438, 486 };
+            double[] widths = { 82, 124, 88, 44, 44, 44, 58 };
+
+            using (var document = new PdfDocument())
+            using (var canvas = new PdfTableCanvas(document, titleFont, headFont, bodyFont))
+            {
+                canvas.Title("安怡物业 · 账单批次缴费对象明细");
+                canvas.Line("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "　批次：" +
+                            sections.Count + " 个　明细：" + rowCount + " 条" +
+                            (string.IsNullOrWhiteSpace(operatorName) ? string.Empty : "　操作人：" + operatorName));
+                canvas.Gap(4);
+
+                int index = 0;
+                // CHG-v1.4.0-16（负责人 2026-10-08 第 2 轮反馈「导出的 PDF 缺少合计」）：文末给总计
+                decimal grandAmount = 0m;
+                decimal grandPaid = 0m;
+                int grandRows = 0;
+                foreach (BillBatchExportSection section in sections)
+                {
+                    index++;
+                    canvas.EnsureRow(60, headers, xs);
+                    canvas.Section("批次 " + index + "：" + Text(section.Batch.BatchNo) + "　｜　" +
+                                   "收费项目：" + Text(section.Batch.ChargeItemName) + "　｜　" +
+                                   "账单期间：" + Text(section.Batch.CyclePeriod), headFont, bodyFont);
+                    canvas.Line("户数：" + section.Batch.HouseCount + "　总金额：" +
+                                section.Batch.TotalAmount.ToString("0.00") + " 元　状态：" +
+                                BillBatchStatusText(section.Batch) + "　发布时间：" + Text(section.Batch.PublishedAt) +
+                                "　明细：" + section.Items.Count + " 条");
+                    canvas.Head(headers, xs);
+
+                    decimal amountSum = 0m;
+                    decimal paidSum = 0m;
+                    foreach (BillListItemDto item in section.Items)
+                    {
+                        canvas.EnsureRow(14, headers, xs);
+                        amountSum += item.Amount;
+                        paidSum += item.PaidAmount;
+                        grandAmount += item.Amount;
+                        grandPaid += item.PaidAmount;
+                        grandRows++;
                         string[] cells =
                         {
-                            "LS-" + item.Id.ToString("D4"),
-                            item.BizTime.ToString("MM-dd HH:mm"),
-                            item.InAmount > 0 ? "收" : "支",
-                            item.Subject,
-                            item.ObjectText,
-                            item.OwnerName,
-                            signed.ToString("0.00"),
-                            item.BizNo
+                            BillPayerText(item),
+                            BillObjectPath(item),
+                            Text(item.ChargeItemName),
+                            item.Amount.ToString("0.00"),
+                            item.PaidAmount.ToString("0.00"),
+                            BillBatchItemStatusText(item),
+                            item.DueAt.ToString("yyyy-MM-dd")
                         };
                         for (int i = 0; i < cells.Length; i++)
                         {
-                            gfx.DrawString(FitToWidth(gfx, cells[i], bodyFont, widths[i]), bodyFont, XBrushes.Black, xs[i], y);
+                            canvas.Cell(FitToWidth(canvas.Gfx, cells[i], bodyFont, widths[i]), xs[i]);
                         }
-                        y += 13;
+                        canvas.NextRow(13);
                     }
+                    canvas.Gap(2);
+                    canvas.Line("小计：应缴 " + amountSum.ToString("0.00") + " 元　已收 " + paidSum.ToString("0.00") +
+                                " 元　欠费 " + (amountSum - paidSum).ToString("0.00") + " 元");
+                    canvas.Gap(10);
                 }
+
+                canvas.Gap(6);
+                canvas.Line("总计：批次 " + sections.Count + " 个　　明细 " + grandRows + " 条　　应缴合计 " +
+                            grandAmount.ToString("0.00") + " 元　　已收合计 " + grandPaid.ToString("0.00") +
+                            " 元　　欠费合计 " + (grandAmount - grandPaid).ToString("0.00") + " 元");
+
                 document.Save(filePath);
+            }
+        }
+
+        /// <summary>批次状态文案（与账单工作台「状态」列口径一致）。</summary>
+        private static string BillBatchStatusText(BillBatchDto batch)
+        {
+            if (batch == null) { return "—"; }
+            if (batch.FailCount > 0 && batch.SuccessCount == 0 && batch.DraftCount == 0 && batch.PendingCount == 0
+                && batch.PartialCount == 0 && batch.PaidCount == 0)
+            {
+                return "发布失败";
+            }
+            if (batch.PendingCount > 0 || batch.PartialCount > 0) { return "部分缴纳"; }
+            if (batch.PaidCount > 0 && batch.DraftCount == 0 && batch.PendingCount == 0 && batch.PartialCount == 0)
+            {
+                return "已发布";
+            }
+            if (batch.DraftCount > 0) { return "草稿 / 部分发布"; }
+            return "已发布";
+        }
+
+        /// <summary>单据状态（账单工作台明细口径：草稿 / 待缴 / 部分缴 / 已缴 / 逾期 / 已冲正）。</summary>
+        private static string BillBatchItemStatusText(BillListItemDto item)
+        {
+            if (item == null) { return "—"; }
+            if (item.Status == BillStatus.Draft) { return "草稿"; }
+            if (item.PaidAmount >= item.Amount && item.Amount > 0m) { return "已缴"; }
+            switch (item.Status)
+            {
+                case BillStatus.Partial: return "部分缴";
+                case BillStatus.Overdue: return "逾期";
+                case BillStatus.Reversed: return "已冲正";
+                case BillStatus.Paid: return "已缴";
+                default: return "待缴";
+            }
+        }
+
+        /// <summary>缴费人文本：业主名优先，其次自定义缴费对象名称；房产无业主时标注「空置」。</summary>
+        private static string BillPayerText(BillListItemDto item)
+        {
+            if (item == null) { return "—"; }
+            if (!string.IsNullOrWhiteSpace(item.OwnerName)) { return item.OwnerName.Trim(); }
+            if (!string.IsNullOrWhiteSpace(item.PayerName)) { return item.PayerName.Trim(); }
+            return item.PropertyId.HasValue ? "—（空置）" : "—";
+        }
+
+        /// <summary>
+        /// 缴费对象「楼栋/单元/房号」文本（口径与 SqlAddress.BuildingUnitRoom 一致）：
+        /// 单元为空整段省略、已以「单元」结尾不重复补后缀；车位显示「车位 X」；无档案对象回落房产编号。
+        /// </summary>
+        private static string BillObjectPath(BillListItemDto item)
+        {
+            if (item == null) { return "—"; }
+            if (!string.IsNullOrWhiteSpace(item.SpaceNo)) { return "车位 " + item.SpaceNo.Trim(); }
+
+            string building = (item.BuildingNo ?? string.Empty).Trim();
+            string unit = (item.UnitNo ?? string.Empty).Trim();
+            string room = (item.RoomNo ?? string.Empty).Trim();
+            string text = building;
+            if (unit.Length > 0)
+            {
+                text += "/" + (unit.EndsWith("单元", StringComparison.Ordinal) ? unit : unit + "单元");
+            }
+            if (room.Length > 0) { text += "/" + room; }
+            if (text.Length == 0) { text = (item.PropertyNo ?? string.Empty).Trim(); }
+            return text.Length == 0 ? "—" : text;
+        }
+
+        // ---------- 欠费台账导出（CHG-v1.4.0-04） ----------
+
+        /// <summary>欠费台账导出上限（一次导出最多 5000 行）。</summary>
+        private const int ArrearLedgerExportMaxRows = 5000;
+
+        /// <summary>
+        /// 欠费台账「导出台账」（CHG-v1.4.0-04，负责人 2026-10-08 反馈「只有占位提示」）：
+        /// 支持 **Excel / PDF**，口径 = 页面当前筛选下的台账行，文末给合计（欠费合计 / 记录数 / 涉及户数）。
+        ///
+        /// 设计：账单主键由客户端按页面当前可见行给出，服务端按主键回查台账行（金额、账龄、状态取库内值）；
+        /// 列：缴费对象 / 业主 / 楼栋·单元·房号 / 欠费项目 / 欠费期间 / 应收 / 已收 / 欠费 / 最早欠期 /
+        /// 账龄 / 状态 / 催缴状态。文件写 t_report_log（report_type = arrear_ledger）；本导出只读。
+        /// </summary>
+        public ReportLogDto ExportArrearsLedger(ArrearExportRequest request, string operatorName = null)
+        {
+            if (request == null || request.BillIds == null || request.BillIds.Count == 0)
+            {
+                throw ApiException.BadRequest("当前筛选下没有可导出的欠费台账记录");
+            }
+            if (request.BillIds.Count > ArrearLedgerExportMaxRows)
+            {
+                throw ApiException.ValidationFailed(
+                    "一次最多导出 " + ArrearLedgerExportMaxRows + " 条欠费记录，请先按楼栋 / 账龄筛选后再导出");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                var query = new BillQueryRequest
+                {
+                    ArrearsOnly = true,
+                    BillIds = request.BillIds.Distinct().ToList(),
+                    PageIndex = 1,
+                    PageSize = ArrearLedgerExportMaxRows
+                };
+                List<ArrearDto> rows = (_finance.QueryArrears(connection, query).Items ?? new List<ArrearDto>())
+                    .Where(x => x.BillId > 0)
+                    .OrderBy(x => x.AgingDays)
+                    .ToList();
+                if (rows.Count == 0)
+                {
+                    throw ApiException.NotFound("没有找到可导出的欠费记录（账单可能已结清或已从台账移出）");
+                }
+
+                string period = DateTime.Now.ToString("yyyyMMddHHmmss");
+                bool excel = request.Format == ExportFormat.Excel;
+                string fileName = "arrear_ledger_" + period + (excel ? ".xlsx" : ".pdf");
+                string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+
+                if (excel)
+                {
+                    ExportArrearLedgerExcel(filePath, rows);
+                }
+                else
+                {
+                    WriteArrearLedgerPdf(filePath, rows, operatorName);
+                }
+
+                var log = new ReportLogDto
+                {
+                    ReportType = "arrear_ledger",
+                    Period = period,
+                    Format = request.Format,
+                    FilePath = filePath
+                };
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    log.Id = _finance.InsertReportLog(connection, transaction, log);
+                    transaction.Commit();
+                }
+
+                _audit.Write("ARREAR_LEDGER_EXPORT", "report_log", log.Id.ToString(),
+                    "欠费台账导出：" + rows.Count + " 条，" + request.Format + "，文件 " + fileName,
+                    userName: operatorName, result: "成功");
+
+                ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
+                return saved ?? log;
+            }
+        }
+
+        private static string[] ArrearLedgerHeaders()
+        {
+            // CHG-v1.4.0-14：新增「催缴备注」列（渠道 + 备注解耦后可单独导出）
+            return new[] { "缴费对象", "业主", "楼栋/单元/房号", "欠费项目", "欠费期间", "应收", "已收", "欠费",
+                "最早欠期", "账龄", "状态", "催缴状态", "催缴备注" };
+        }
+
+        private static void ExportArrearLedgerExcel(string filePath, List<ArrearDto> rows)
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.Worksheets.Add("欠费台账");
+                sheet.Cell(1, 1).Value = "安怡物业 · 欠费台账";
+                sheet.Cell(2, 1).Value = "导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                         "，共 " + rows.Count + " 条，涉及 " + ArrearHouseholdCount(rows) + " 户";
+
+                string[] headers = ArrearLedgerHeaders();
+                int start = 4;
+                for (int c = 1; c <= headers.Length; c++)
+                {
+                    sheet.Cell(start, c).Value = headers[c - 1];
+                    sheet.Cell(start, c).Style.Font.Bold = true;
+                }
+
+                int row = start + 1;
+                foreach (ArrearDto item in rows)
+                {
+                    sheet.Cell(row, 1).Value = ArrearLedgerObjectText(item);
+                    sheet.Cell(row, 2).Value = Text(item.OwnerName);
+                    sheet.Cell(row, 3).Value = Text(item.BuildingPath);
+                    sheet.Cell(row, 4).Value = Text(item.ChargeItemName);
+                    sheet.Cell(row, 5).Value = ArrearPeriodText(item);
+                    sheet.Cell(row, 6).Value = item.Amount;
+                    sheet.Cell(row, 7).Value = item.PaidAmount;
+                    sheet.Cell(row, 8).Value = item.ArrearAmount;
+                    sheet.Cell(row, 9).Value = item.DueAt.ToString("yyyy-MM-dd");
+                    sheet.Cell(row, 10).Value = item.AgingDays + " 天";
+                    sheet.Cell(row, 11).Value = ArrearStatusText(item);
+                    sheet.Cell(row, 12).Value = Text(item.RemindChannel);
+                    // CHG-v1.4.0-14：催缴备注列（渠道与备注解耦，备注单独成列可筛查）
+                    sheet.Cell(row, 13).Value = string.IsNullOrWhiteSpace(item.RemindNote)
+                        ? "—"
+                        : item.RemindNote.Trim();
+                    row++;
+                }
+
+                // 合计行（CHG-v1.4.0-04）：与页面顶部卡片同口径
+                int sumRow = row + 1;
+                sheet.Cell(sumRow, 1).Value = "合计";
+                sheet.Cell(sumRow, 2).Value = "记录 " + rows.Count + " 条";
+                sheet.Cell(sumRow, 3).Value = "涉及 " + ArrearHouseholdCount(rows) + " 户";
+                sheet.Cell(sumRow, 4).Value = "应收 " + rows.Sum(x => x.Amount).ToString("0.00") + " 元";
+                sheet.Cell(sumRow, 5).Value = "已收 " + rows.Sum(x => x.PaidAmount).ToString("0.00") + " 元";
+                sheet.Cell(sumRow, 6).Value = "欠费 " + rows.Sum(x => x.ArrearAmount).ToString("0.00") + " 元";
+                for (int c = 1; c <= 6; c++)
+                {
+                    sheet.Cell(sumRow, c).Style.Font.Bold = true;
+                    sheet.Cell(sumRow, c).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
+                }
+
+                for (int c = 1; c <= headers.Length; c++)
+                {
+                    sheet.Column(c).Width = c == 4 || c == 5 ? 22 : (c == 13 ? 30 : 16);
+                }
+                workbook.SaveAs(filePath);
+            }
+        }
+
+        private static void WriteArrearLedgerPdf(string filePath, List<ArrearDto> rows, string operatorName)
+        {
+            PdfFontSupport.Ensure();
+
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 8, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 7, XFontStyleEx.Regular);
+
+            string[] headers = ArrearLedgerHeaders();
+            // CHG-v1.4.0-15：13 列改横向 A4（842×595），列位与宽度按实测重排，右侧列不再出页
+            double[] xs = { 30, 88, 132, 220, 294, 372, 408, 444, 484, 532, 568, 606, 654 };
+            double[] widths = { 56, 42, 86, 72, 76, 34, 34, 38, 46, 34, 36, 46, 158 };
+
+            using (var document = new PdfDocument())
+            using (var canvas = new PdfTableCanvas(document, titleFont, headerFont, bodyFont, landscape: true))
+            {
+                canvas.Title("安怡物业 · 欠费台账");
+                canvas.Line("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "　记录：" + rows.Count +
+                            " 条　涉及：" + ArrearHouseholdCount(rows) + " 户" +
+                            (string.IsNullOrWhiteSpace(operatorName) ? string.Empty : "　操作人：" + operatorName));
+                canvas.Gap(2);
+                canvas.Head(headers, xs);
+
+                foreach (ArrearDto item in rows)
+                {
+                    canvas.EnsureRow(13, headers, xs);
+                    string[] cells =
+                    {
+                        ArrearLedgerObjectText(item),
+                        Text(item.OwnerName),
+                        Text(item.BuildingPath),
+                        Text(item.ChargeItemName),
+                        ArrearPeriodText(item),
+                        item.Amount.ToString("0.00"),
+                        item.PaidAmount.ToString("0.00"),
+                        item.ArrearAmount.ToString("0.00"),
+                        item.DueAt.ToString("yyyy-MM-dd"),
+                        item.AgingDays + " 天",
+                        ArrearStatusText(item),
+                        Text(item.RemindChannel),
+                        // CHG-v1.4.0-14：催缴备注（最近一次催缴记录的备注），与渠道解耦、可单独归档
+                        string.IsNullOrWhiteSpace(item.RemindNote) ? "—" : item.RemindNote.Trim()
+                    };
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        canvas.Cell(FitToWidth(canvas.Gfx, cells[i], bodyFont, widths[i]), xs[i]);
+                    }
+                    canvas.NextRow(12);
+                }
+
+                canvas.Gap(6);
+                canvas.Line("合计：应收 " + rows.Sum(x => x.Amount).ToString("0.00") +
+                            " 元　　已收 " + rows.Sum(x => x.PaidAmount).ToString("0.00") +
+                            " 元　　欠费 " + rows.Sum(x => x.ArrearAmount).ToString("0.00") +
+                            " 元　　记录 " + rows.Count + " 条　　涉及 " + ArrearHouseholdCount(rows) + " 户");
+                document.Save(filePath);
+            }
+        }
+
+        /// <summary>欠费台账「缴费对象」文本（CHG-v1.2.0-27 口径：房产 / 车位 / 业主直缴 / 自定义对象）。</summary>
+        private static string ArrearLedgerObjectText(ArrearDto item)
+        {
+            if (item == null) { return "—"; }
+            if (string.Equals(item.ObjectKind, "owner", StringComparison.OrdinalIgnoreCase)) { return "业主直缴"; }
+            string text = (item.PropertyNo ?? string.Empty).Trim();
+            return text.Length == 0 ? "—" : text;
+        }
+
+        /// <summary>空值统一显示「—」（导出模板通用）。</summary>
+        private static string Text(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "—" : value.Trim();
+        }
+
+        /// <summary>日期文本（导出模板通用）。</summary>
+        private static string Text(DateTime? value)
+        {
+            return value.HasValue ? value.Value.ToString("yyyy-MM-dd") : "—";
+        }
+
+        /// <summary>欠费期间（同年账期压缩显示；与页面「欠费期间」列同口径）。</summary>
+        private static string ArrearPeriodText(ArrearDto item)
+        {
+            string start = (item == null ? null : item.CycleStart ?? string.Empty).Trim();
+            string end = (item == null ? null : item.CycleEnd ?? string.Empty).Trim();
+            if (start.Length == 0 && end.Length == 0) { return "—"; }
+            if (start.Length == 0) { return end; }
+            if (end.Length == 0) { return start; }
+            if (start.Length >= 10 && end.Length >= 10 && start.Substring(0, 4) == end.Substring(0, 4))
+            {
+                return start + "~" + end.Substring(5);
+            }
+            return start + "~" + end;
+        }
+
+        /// <summary>欠费台账状态（逾期 / 部分缴 / 待缴；与页面「状态」列一致）。</summary>
+        private static string ArrearStatusText(ArrearDto item)
+        {
+            if (item == null) { return "—"; }
+            switch (item.Status)
+            {
+                case (int)BillStatus.Overdue: return "逾期";
+                case (int)BillStatus.Partial: return "部分缴";
+                case (int)BillStatus.Paid: return "已缴";
+                default: return "待缴";
+            }
+        }
+
+        /// <summary>涉及户数（按楼栋 + 房号 / 车位去重，与页面卡片同口径）。</summary>
+        private static int ArrearHouseholdCount(IEnumerable<ArrearDto> rows)
+        {
+            return (rows ?? Enumerable.Empty<ArrearDto>())
+                .Select(x => string.IsNullOrEmpty(x.BuildingNo)
+                    ? (x.PropertyNo ?? string.Empty)
+                    : x.BuildingNo + "-" + (x.PropertyNo ?? string.Empty))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Count();
+        }
+
+        // ---------- 通用 PDF 表格画布（CHG-v1.4.0-05：分页 + 末页合计） ----------
+
+        /// <summary>
+        /// 逐行输出的 PDF 表格画布：页满自动换页并重画表头（原导出多为「单页画满即 break」的静默截断）。
+        /// XGraphics 与页绑定，翻页必须整体替换，故用对象持有。
+        /// </summary>
+        private sealed class PdfTableCanvas : IDisposable
+        {
+            private readonly PdfDocument _document;
+            private readonly XFont _titleFont;
+            private readonly XFont _headFont;
+            private readonly XFont _bodyFont;
+            private PdfPage _page;
+
+            public double Y { get; private set; }
+            public XGraphics Gfx { get; private set; }
+
+            private readonly bool _landscape;
+
+            public PdfTableCanvas(PdfDocument document, XFont titleFont, XFont headFont, XFont bodyFont,
+                bool landscape = false)
+            {
+                _document = document;
+                _titleFont = titleFont;
+                _headFont = headFont;
+                _bodyFont = bodyFont;
+                _landscape = landscape;
+                AddPage();
+            }
+
+            private void AddPage()
+            {
+                _page = _document.AddPage();
+                _page.Size = PdfSharp.PageSize.A4;
+                // CHG-v1.4.0-15：宽表（欠费台账 13 列）用横向 A4，避免右侧列被裁到页面之外
+                if (_landscape)
+                {
+                    // 横向 A4（842×595 pt）—— PDFsharp 版本间枚举命名不一致，直接设尺寸最稳
+                    _page.Width = XUnit.FromPoint(842);
+                    _page.Height = XUnit.FromPoint(595);
+                }
+                Gfx = XGraphics.FromPdfPage(_page);
+                Y = 30;
+            }
+
+            public void Title(string text)
+            {
+                Gfx.DrawString(text ?? string.Empty, _titleFont, XBrushes.Black, 30, Y);
+                Y += 20;
+            }
+
+            public void Line(string text)
+            {
+                Gfx.DrawString(text ?? string.Empty, _bodyFont, XBrushes.Black, 30, Y);
+                Y += 16;
+            }
+
+            public void Section(string title, XFont headFont, XFont bodyFont)
+            {
+                Gfx.DrawString(title ?? string.Empty, headFont, XBrushes.Black, 30, Y);
+                Y += 16;
+            }
+
+            public void Head(string[] heads, double[] xs)
+            {
+                DrawRow(_headFont, heads, xs);
+                Y += 13;
+            }
+
+            public void Cell(string text, double x)
+            {
+                Gfx.DrawString(text ?? string.Empty, _bodyFont, XBrushes.Black, x, Y);
+            }
+
+            public void NextRow(double dy)
+            {
+                Y += dy;
+            }
+
+            public void Gap(double dy)
+            {
+                Y += dy;
+            }
+
+            /// <summary>剩余空间不足时翻页，并在新页重画表头。</summary>
+            public void EnsureRow(double need, string[] heads, double[] xs)
+            {
+                if (Y <= _page.Height.Point - need) { return; }
+                Gfx.Dispose();
+                AddPage();
+                DrawRow(_headFont, heads, xs);
+                Y += 13;
+            }
+
+            private void DrawRow(XFont font, string[] cells, double[] xs)
+            {
+                if (cells == null || xs == null) { return; }
+                for (int i = 0; i < cells.Length && i < xs.Length; i++)
+                {
+                    Gfx.DrawString(cells[i] ?? string.Empty, font, XBrushes.Black, xs[i], Y);
+                }
+            }
+
+            public void Dispose()
+            {
+                if (Gfx != null) { Gfx.Dispose(); Gfx = null; }
             }
         }
 

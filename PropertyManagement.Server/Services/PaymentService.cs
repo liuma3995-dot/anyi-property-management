@@ -708,6 +708,57 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        /// <summary>
+        /// 删除退款/减免/调整记录（CHG-v1.4.0-01，负责人 2026-10-08 裁定 A）。
+        ///
+        /// 适用范围：**无关联账单**的补收/冲正记录（`bill_id IS NULL`）—— 这类记录由
+        /// <see cref="ApplyAdjustmentWithoutBill"/> 落下，只登记不动账单，删除不影响任何账单的应收/实缴。
+        /// 有关联账单的记录一律拒绝：其金额已经冲减/调增过账单实缴或应收，删除必须先撤销对账单的影响，
+        /// 属高风险改造（本轮不开放）。
+        ///
+        /// 删除语义：软删留痕（`del_flag = 1`）+ 下游读数过滤 —— 退款列表、财务报表、收支明细流水
+        /// 同步不再显示；留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
+        /// </summary>
+        public RefundAdjustmentDto DeleteRefund(RefundDeleteRequest request,
+            string operatorName = null, string ip = null)
+        {
+            if (request == null || request.Id <= 0)
+            {
+                throw ApiException.BadRequest("请选择要删除的调整记录");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                RefundAdjustmentDto record = _finance.GetRefund(connection, request.Id);
+                if (record == null)
+                {
+                    throw ApiException.NotFound("调整记录不存在或已被删除");
+                }
+                if (record.BillId > 0)
+                {
+                    throw ApiException.ValidationFailed(
+                        "该记录已关联账单（账单主键 " + record.BillId + "），删除会影响账单的应收/实缴金额；" +
+                        "本轮只支持删除「无关联账单」的补收/冲正记录，如需纠正请对该账单登记反向冲减或补收");
+                }
+
+                int affected = _finance.SoftDeleteRefund(connection, transaction, request.Id);
+                if (affected <= 0)
+                {
+                    throw ApiException.NotFound("调整记录不存在或已被删除");
+                }
+                transaction.Commit();
+
+                _audit.Write("REFUND_DELETE", "refund", record.Id.ToString(),
+                    string.Format("删除调整记录 {0} {1:0.00} 元（{2}），原因：{3}；" +
+                                  "财务报表与收支明细流水同步不再显示，留痕可由一键清理回收",
+                        record.RefundType, record.Amount, record.RefNo, record.Reason),
+                    userName: operatorName, ip: ip, result: "成功");
+
+                return record;
+            }
+        }
+
         private static decimal ReadRefundThreshold(IDbConnection connection)
         {
             string value = connection.ExecuteScalar<string>(

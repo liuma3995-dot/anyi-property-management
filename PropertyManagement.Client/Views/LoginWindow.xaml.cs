@@ -185,7 +185,27 @@ namespace PropertyManagement.Client.Views
             var main = new MainWindow();
             Application.Current.MainWindow = main;
             main.Show();
+            _loggedIn = true;
             Close();
+        }
+
+        /// <summary>登录成功跳转主界面属「内部真实关闭」，不拦截；否则按 CHG-v1.4.0-10 隐藏到托盘。</summary>
+        private bool _loggedIn;
+
+        /// <summary>
+        /// CHG-v1.4.0-10：登录页点「关闭」= 隐藏到系统托盘（与主界面同一口径），
+        /// 托盘右键「退出程序」才是真正结束进程。
+        /// </summary>
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!App.IsExiting && !_loggedIn)
+            {
+                e.Cancel = true;
+                Hide();
+                if (App.Tray != null) { App.Tray.Show(); }
+                return;
+            }
+            base.OnClosing(e);
         }
 
         // 无边框窗口：背景区域左键按下拖动窗口（输入框/按钮自身已处理鼠标按下，不会触发拖动）

@@ -103,6 +103,7 @@ Invoke-WebRequest http://127.0.0.1:5210/api/v1/health
 - **测试资产按属性归入 `tmp\测试目录\` 对应子目录**（`临时测试`／`单元测试`／`集成测试`／`系统测试`／`验收测试`／`测试工具`），不得散落在 `tmp\` 根或仓库其它位置；各类口径见 `tmp\测试目录\README.md`；
 - `测试工具\` 只放跨阶段共用的外部可执行文件与配置（如 `nuget.exe`），不放脚本逻辑；非测试资产（`docs\`、`tmp\品牌设计资产\`）不进本目录；
 - 移动测试资产须同步改引用（如 `PropertyManagement.Tests\run-tests.ps1`、`Installer\build-setup.ps1`）并在 `tmp\测试目录\README.md` 引用关系表登记；
+- **脚本路径与编码**：脚本内不写死中文路径（用 `$PSScriptRoot` 派生）；含中文的 `.ps1` 必须存为 **UTF-8 BOM** —— PowerShell 5.1 会把无 BOM 脚本按 ANSI 读，中文路径会被写成乱码目录（如 `G:\鐗╀笟绠＄悊绯荤粺\…`）；临时产物一律落在 `tmp\` 内，收尾即清；
 - 提交前须保证编译通过且测试全绿。
 
 ## Commit & Pull Request Guidelines（提交规范）

@@ -536,7 +536,11 @@ namespace PropertyManagement.Client.ViewModels
                     }
                     case "退款/减免/调整": return new RefundAdjustmentViewModel(_api);
                     case "支出登记": return new ExpenseViewModel(_api);
-                    case "欠费台账": return new ArrearViewModel(_api);
+                    // CHG-v1.4.0-09：欠费台账「收款」→ 跳转收款登记并预置缴费对象（注入导航回调）
+                    // CHG-v1.4.0-22：模块 key 修正为 "finance"（原误传中文模块名导致 NavigateToPage 找不到节点、跳转静默失效）
+                    case "欠费台账":
+                        return new ArrearViewModel(_api,
+                            keyword => NavigateToPageWithKeyword("finance", "收款登记", keyword));
                     // CHG-v1.3.1-06：注入上次的统计口径（本次登录期间跨页面记住），并把变更回传记录
                     case "财务报表":
                         return new FinancialReportViewModel(_api, _financialReportPeriod,
@@ -736,6 +740,10 @@ namespace PropertyManagement.Client.ViewModels
                     break;
                 case DisputeListViewModel dispute:
                     dispute.Keyword = keyword; // setter 内部自动重载
+                    break;
+                // CHG-v1.4.0-09：欠费台账「收款」跳转 → 收款登记预置缴费对象（命中即自动选中并加载应缴明细）
+                case PaymentEntryViewModel payment:
+                    payment.ApplyPreset(keyword);
                     break;
             }
         }

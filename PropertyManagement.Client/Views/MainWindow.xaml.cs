@@ -63,6 +63,22 @@ namespace PropertyManagement.Client.Views
             base.OnClosed(e);
         }
 
+        /// <summary>
+        /// CHG-v1.4.0-10（负责人 2026-10-08 裁定 A）：点「关闭」= 隐藏到系统托盘（不退出进程）；
+        /// 「返回登录页 / 会话失效」等内部真实关闭路径不拦截；托盘右键「退出程序」走 App.ExitApplication。
+        /// </summary>
+        protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+        {
+            if (!App.IsExiting && !_returningToLogin)
+            {
+                e.Cancel = true;
+                Hide();
+                if (App.Tray != null) { App.Tray.Show(); }
+                return;
+            }
+            base.OnClosing(e);
+        }
+
         // 无边框窗口最大化时按显示器工作区约束尺寸（修复 HandyControl 仅在任务栏自动隐藏时才约束的问题）
         private IntPtr WindowProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
         {
@@ -128,6 +144,8 @@ namespace PropertyManagement.Client.Views
         /// <summary>清会话并返回登录页（强制改密未完成 / 会话失效复用）。</summary>
         private void ForceLogout()
         {
+            // CHG-v1.4.0-10：强制登出属「内部真实关闭」——须置位，否则会被「关闭即隐藏到托盘」拦截
+            _returningToLogin = true;
             SessionManager.Instance.Clear();
             var login = new LoginWindow();
             Application.Current.MainWindow = login;
