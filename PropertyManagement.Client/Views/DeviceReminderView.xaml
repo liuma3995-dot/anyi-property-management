@@ -145,7 +145,9 @@
         </StackPanel>
         <!-- 数据表：设备/事项/计划日期/剩余天数/责任班组/状态/处置时间/操作（R6：提醒进度列已下线） -->
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
-            <DataGrid Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True">
+            <!-- CHG-v1.4.1-14：x:Name + SelectedItem 绑定，供「待办跳转定位行」选中并滚动到可视区 -->
+            <DataGrid x:Name="RemindersGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True"
+                      SelectedItem="{Binding SelectedRow, Mode=TwoWay}">
                 <DataGrid.Columns>
                     <!-- 批量删除勾选列（仅多选模式可见） -->
                     <DataGridTemplateColumn Width="44" CanUserSort="False">

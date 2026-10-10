@@ -235,10 +235,33 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             {
                 string kw = query.Keyword.Trim();
                 // v1.3.0：搜索框补齐「楼栋 / 单元」维度 —— 只匹配房号时，输入「1号楼」检索不到该栋任何房产。
-                where += " AND (p.room_no LIKE @kw OR COALESCE(u.unit_no, '') LIKE @kw " +
-                         "OR COALESCE(pb.building_no, b.building_no, '') LIKE @kw " +
-                         "OR EXISTS (SELECT 1 FROM t_owner_property_rel rel JOIN t_owner o ON o.id = rel.owner_id " +
-                         "WHERE rel.property_id = p.id AND rel.del_flag = 0 AND (o.name LIKE @kw OR o.phone LIKE @kw)))";
+                // CHG-v1.4.1-11（负责人 2026-10-10 第 3 轮）：**组合关键词**（`4栋2单元`、`4栋201`、
+                // `4栋2单元602`）逐列比对必然为 0 条 —— 补齐「拼接串」维度，两侧用同一套去分隔符规则。
+                string kwNorm = SqlAddress.NormalizeKeyword(kw);
+                string bldExpr = "COALESCE(pb.building_no, b.building_no, '')";
+                string unitExpr = "COALESCE(u.unit_no, '')";
+                string roomExpr = "COALESCE(p.room_no, '')";
+                var conds = new List<string>
+                {
+                    "p.room_no LIKE @kw",
+                    unitExpr + " LIKE @kw",
+                    bldExpr + " LIKE @kw",
+                    "EXISTS (SELECT 1 FROM t_owner_property_rel rel JOIN t_owner o ON o.id = rel.owner_id " +
+                    "WHERE rel.property_id = p.id AND rel.del_flag = 0 AND (o.name LIKE @kw OR o.phone LIKE @kw))"
+                };
+                if (kwNorm.Length > 0)
+                {
+                    conds.Add(roomExpr + " LIKE @kwn");
+                    conds.Add(unitExpr + " LIKE @kwn");
+                    conds.Add(bldExpr + " LIKE @kwn");
+                    // 楼栋+单元+房号（列表显示口径）/ 单元补「单元」后缀变体 / 楼栋+房号（用户常跳过单元）
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, unitExpr, roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, SqlAddress.UnitSegment("u.unit_no"), roomExpr)
+                              + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, roomExpr) + " LIKE @kwn");
+                    p.Add("kwn", "%" + kwNorm + "%");
+                }
+                where += " AND (" + string.Join(" OR ", conds) + ")";
                 p.Add("kw", "%" + kw + "%");
             }
             if (query.OnlyArrear)
@@ -784,8 +807,37 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             var p = new DynamicParameters();
             if (!string.IsNullOrWhiteSpace(query.Keyword))
             {
-                where += " AND (p.room_no LIKE @kw OR o.name LIKE @kw OR o.phone LIKE @kw)";
-                p.Add("kw", "%" + query.Keyword.Trim() + "%");
+                // CHG-v1.4.1-10（负责人 2026-10-10 第 2 轮「业主-房产关系搜索框缺少楼栋/单元词条」）：
+                // 检索维度对齐房产列表（QueryProperties.Keyword）—— 房号 / 单元号 / 楼栋号 / 业主姓名 / 电话；
+                // 楼栋取「房产自身楼栋优先、无单元房产业落到 p.building_id」的同一表达式（与 RelationSelectSql 一致）。
+                // CHG-v1.4.1-11（第 3 轮）：同房产列表补齐「组合关键词」维度（`4栋2单元`、`4栋201`、
+                // `4栋2单元602`），两侧用同一套去分隔符规则比对拼接串。
+                string kw = query.Keyword.Trim();
+                string kwNorm = SqlAddress.NormalizeKeyword(kw);
+                string bldExpr = "COALESCE((SELECT building_no FROM t_building WHERE id = p.building_id), b.building_no, '')";
+                string unitExpr = "COALESCE(u.unit_no, '')";
+                string roomExpr = "COALESCE(p.room_no, '')";
+                var conds = new List<string>
+                {
+                    "p.room_no LIKE @kw",
+                    "o.name LIKE @kw",
+                    "o.phone LIKE @kw",
+                    unitExpr + " LIKE @kw",
+                    bldExpr + " LIKE @kw"
+                };
+                if (kwNorm.Length > 0)
+                {
+                    conds.Add(roomExpr + " LIKE @kwn");
+                    conds.Add(unitExpr + " LIKE @kwn");
+                    conds.Add(bldExpr + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, unitExpr, roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, SqlAddress.UnitSegment("u.unit_no"), roomExpr)
+                              + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, roomExpr) + " LIKE @kwn");
+                    p.Add("kwn", "%" + kwNorm + "%");
+                }
+                where += " AND (" + string.Join(" OR ", conds) + ")";
+                p.Add("kw", "%" + kw + "%");
             }
             if (!string.IsNullOrWhiteSpace(query.RoomNo))
             {
@@ -878,21 +930,30 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         }
 
         // ===================== 车位 =====================
-        private const string ParkingSelectSql =
+        // CHG-v1.4.1-04（负责人 2026-10-10）：「绑定房产」原实现只取 pr.room_no（界面只显示房号），
+        // 现按 SqlAddress.BuildingUnitRoom 输出「楼栋/单元/房号」（与收支明细流水／欠费台账同口径）。
+        private static readonly string ParkingSelectSql =
             "SELECT p.id, p.space_no AS SpaceNo, COALESCE(p.area,'') AS Area, p.space_type AS SpaceType, " +
             "p.status AS Status, p.property_id AS PropertyId, p.owner_id AS OwnerId, " +
-            "COALESCE(pr.room_no, '') AS BindingProperty, COALESCE(o.name, '') AS OwnerName, " +
+            SqlAddress.BuildingUnitRoom("bld.building_no", "u.unit_no", "pr.room_no") + " AS BindingProperty, " +
+            "COALESCE(o.name, '') AS OwnerName, " +
             "p.monthly_rent AS MonthlyRent, p.rent_mode AS RentMode, p.rent_to AS RentTo, " +
             "CASE p.status WHEN 0 THEN '已售' WHEN 1 THEN '已租' WHEN 2 THEN '空置' ELSE '维修中' END AS StatusText, " +
             "CASE p.space_type WHEN 0 THEN '产权' WHEN 1 THEN '普通' ELSE '临时' END AS SpaceTypeText, " +
             "p.del_flag AS DelFlag, p.created_at AS CreatedAt, p.updated_at AS UpdatedAt";
 
+        /// <summary>车位取数 FROM：绑定房产路径需要单元与楼栋（无单元时回落 p.building_id，与其它模块同口径）。</summary>
+        private const string ParkingFromSql =
+            "FROM t_parking_space p " +
+            "LEFT JOIN t_property pr ON pr.id = p.property_id " +
+            "LEFT JOIN t_unit u ON u.id = pr.unit_id " +
+            "LEFT JOIN t_building bld ON bld.id = COALESCE(u.building_id, pr.building_id) " +
+            "LEFT JOIN t_owner o ON o.id = p.owner_id";
+
         public ParkingSpaceDto GetParking(IDbConnection connection, int id)
         {
             return connection.QueryFirstOrDefault<ParkingSpaceDto>(
-                ParkingSelectSql + " FROM t_parking_space p " +
-                "LEFT JOIN t_property pr ON pr.id = p.property_id " +
-                "LEFT JOIN t_owner o ON o.id = p.owner_id " +
+                ParkingSelectSql + " " + ParkingFromSql + " " +
                 "WHERE p.id = @id AND p.del_flag = 0", new { id });
         }
 
@@ -925,9 +986,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 where += " AND p.status = @spaceStatus";
                 p.Add("spaceStatus", (int)query.SpaceStatus.Value);
             }
-            string from = "FROM t_parking_space p " +
-                "LEFT JOIN t_property pr ON pr.id = p.property_id " +
-                "LEFT JOIN t_owner o ON o.id = p.owner_id";
+            string from = ParkingFromSql;
             total = connection.ExecuteScalar<int>("SELECT COUNT(1) " + from + " " + where, p);
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
             int pageSize = query.PageSize <= 0 ? 20 : query.PageSize;

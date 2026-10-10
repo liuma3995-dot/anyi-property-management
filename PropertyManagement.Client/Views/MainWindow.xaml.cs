@@ -33,7 +33,32 @@ namespace PropertyManagement.Client.Views
             DataContext = _vm;
 
             UserMenuPopup.Closed += (sender, args) => _vm.IsUserMenuOpen = false;
+            // CHG-v1.4.1-01（负责人 2026-10-10 反馈「顶部搜索框遮挡输入法」）：顶部三处浮层统一降出置顶带，
+            // 见 NativeWindowInterop.DemotePopupFromTopmost —— WPF Popup 默认是 WS_EX_TOPMOST 独立顶层窗口。
+            HookPopupTopmost(SearchResultPopup);
+            HookPopupTopmost(TodoCenterPopup);
+            HookPopupTopmost(UserMenuPopup);
             ContentRendered += OnContentRendered;
+        }
+
+        private static void HookPopupTopmost(System.Windows.Controls.Primitives.Popup popup)
+        {
+            if (popup == null) { return; }
+            popup.Opened += (sender, args) =>
+                NativeWindowInterop.DemotePopupFromTopmost(sender as System.Windows.Controls.Primitives.Popup);
+        }
+
+        /// <summary>CHG-v1.4.1-02：全局搜索结果浮层内的滚轮接管（每个刻度 48px）。</summary>
+        private void SearchResultScroll_PreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            var sv = sender as System.Windows.Controls.ScrollViewer;
+            if (sv == null || sv.ScrollableHeight <= 0) { return; }
+
+            double target = sv.VerticalOffset - (e.Delta / 120.0 * 48.0);
+            if (target < 0) { target = 0; }
+            if (target > sv.ScrollableHeight) { target = sv.ScrollableHeight; }
+            sv.ScrollToVerticalOffset(target);
+            e.Handled = true;
         }
 
         /// <summary>

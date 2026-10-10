@@ -290,6 +290,7 @@
     <Compile Include="ViewModels\ChangePasswordViewModel.cs" />
     <Compile Include="ViewModels\DashboardViewModel.cs" />
     <Compile Include="ViewModels\NavNode.cs" />
+    <Compile Include="ViewModels\ListRowFocus.cs" />
     <Compile Include="ViewModels\IconKeyConverter.cs" />
     <Compile Include="Converters\IntEqualsConverter.cs" />
     <Compile Include="Converters\ShiftLegendConverter.cs" />
@@ -315,6 +316,7 @@
     <Compile Include="Views\ExpenseView.xaml.cs">
       <DependentUpon>ExpenseView.xaml</DependentUpon>
     </Compile>
+    <Compile Include="Views\RowFocusAdapter.cs" />
     <Compile Include="Views\ArrearView.xaml.cs">
       <DependentUpon>ArrearView.xaml</DependentUpon>
     </Compile>

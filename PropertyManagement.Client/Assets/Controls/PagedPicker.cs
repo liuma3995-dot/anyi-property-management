@@ -5,6 +5,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using PropertyManagement.Client.Services;
 
 namespace PropertyManagement.Client.Assets.Controls
 {
@@ -73,8 +74,10 @@ namespace PropertyManagement.Client.Assets.Controls
 
         private TextBox _searchBox;
         private ListBox _list;
+        private ScrollViewer _scroll;
         private Popup _popup;
         private ToggleButton _toggle;
+        private UIElement _popupContent;
         private DateTime _lastPopupClose = DateTime.MinValue;
         private bool _syncing;
 
@@ -139,6 +142,7 @@ namespace PropertyManagement.Client.Assets.Controls
 
             _searchBox = GetTemplateChild("PART_SearchBox") as TextBox;
             _list = GetTemplateChild("PART_List") as ListBox;
+            _scroll = GetTemplateChild("PART_Scroll") as ScrollViewer;
             _popup = GetTemplateChild("PART_Popup") as Popup;
             _toggle = GetTemplateChild("PART_Toggle") as ToggleButton;
 
@@ -162,6 +166,15 @@ namespace PropertyManagement.Client.Assets.Controls
             {
                 _popup.Opened += OnPopupOpened;
                 _popup.Closed += OnPopupClosed;
+                // CHG-v1.4.1-02（负责人 2026-10-10：「滚动条只能用鼠标拖动，滚轮无效」）：
+                // 浮层是**独立顶层窗口**（见 NativeWindowInterop.DemotePopupFromTopmost 注释），
+                // 其内的滚动器不保证收到滚轮消息 ── 这里在浮层根上统一接管滚轮并自行滚动，
+                // 行为与根因无关（无论消息是否投递到浮层，落点一致），也避免内外两层滚动器争抢。
+                _popupContent = _popup.Child as UIElement;
+                if (_popupContent != null)
+                {
+                    _popupContent.PreviewMouseWheel += OnPopupPreviewMouseWheel;
+                }
             }
             if (_toggle != null)
             {
@@ -187,6 +200,11 @@ namespace PropertyManagement.Client.Assets.Controls
             {
                 _popup.Opened -= OnPopupOpened;
                 _popup.Closed -= OnPopupClosed;
+                if (_popupContent != null)
+                {
+                    _popupContent.PreviewMouseWheel -= OnPopupPreviewMouseWheel;
+                }
+                _popupContent = null;
             }
             if (_toggle != null)
             {
@@ -241,7 +259,26 @@ namespace PropertyManagement.Client.Assets.Controls
 
         private void OnPopupOpened(object sender, EventArgs e)
         {
+            // CHG-v1.4.1-01：浮层降出置顶带，避免遮挡第三方输入法候选窗（见 NativeWindowInterop 注释）
+            NativeWindowInterop.DemotePopupFromTopmost(_popup);
             SyncListSelection();
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-02：浮层内滚轮接管 —— 每个滚轮刻度滚动 48px（约 1.7 行），滚动到底/顶不吞事件。
+        /// </summary>
+        private void OnPopupPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+        {
+            if (_scroll == null || _scroll.ScrollableHeight <= 0)
+            {
+                return;
+            }
+
+            double target = _scroll.VerticalOffset - (e.Delta / 120.0 * 48.0);
+            if (target < 0) { target = 0; }
+            if (target > _scroll.ScrollableHeight) { target = _scroll.ScrollableHeight; }
+            _scroll.ScrollToVerticalOffset(target);
+            e.Handled = true;
         }
 
         private void OnPopupClosed(object sender, EventArgs e)

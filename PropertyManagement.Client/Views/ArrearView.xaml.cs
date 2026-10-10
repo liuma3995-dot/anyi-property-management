@@ -11,6 +11,8 @@ namespace PropertyManagement.Client.Views
         public ArrearView()
         {
             InitializeComponent();
+            // CHG-v1.4.1-13/-14：VM 的「定位行」请求 → 选中并滚动到可视区（三页共用同一适配器）
+            RowFocusAdapter.Bind(this, ArrearsGrid);
         }
 
         /// <summary>行勾选写回：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，需在点击时显式同步到行对象。</summary>

@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Data;
@@ -624,18 +625,33 @@ namespace PropertyManagement.Client.ViewModels
         private void ApplyBatchFilter()
         {
             // v1.2.0 第 3 轮：单框检索 —— 一个关键字同时匹配 房号/房产编号 与 业主姓名/电话
+            // CHG-v1.4.1-11（负责人 2026-10-10 第 3 轮）：与主列表搜索同一口径 —— 组合关键词
+            // （`4栋2单元`、`4栋201`、`4栋2单元602`）也要命中：按「拼接串 + 去分隔符归一化」比对。
             string q = string.IsNullOrWhiteSpace(_batchSearchText) ? string.Empty : _batchSearchText.Trim();
+            string qNorm = NormalizeAddressKeyword(q);
             BatchRelations.Clear();
             _isBatchSelectAll = false;
             OnPropertyChanged(nameof(IsBatchSelectAll));
             foreach (var dto in _batchSource)
             {
                 string path = string.IsNullOrEmpty(dto.PropertyUnitPath) ? dto.PropertyRoomNo : dto.PropertyUnitPath;
+                string bld = dto.BuildingNo ?? string.Empty;
+                string unit = dto.UnitNo ?? string.Empty;
+                string room = dto.PropertyRoomNo ?? string.Empty;
+                // 单元显示口径：已含「单元」原样，否则补后缀（与 SqlAddress.UnitSegment 一致）
+                string unitSuffix = unit.Length == 0
+                    ? string.Empty
+                    : (unit.EndsWith("单元", StringComparison.Ordinal) ? unit : unit + "单元");
                 bool hit = q.Length == 0
                     || (path ?? string.Empty).Contains(q)
-                    || (dto.PropertyRoomNo ?? string.Empty).Contains(q)
+                    || room.Contains(q)
                     || (dto.OwnerName ?? string.Empty).Contains(q)
-                    || (dto.OwnerPhone ?? string.Empty).Contains(q);
+                    || (dto.OwnerPhone ?? string.Empty).Contains(q)
+                    || (qNorm.Length > 0
+                        && (NormalizeAddressKeyword(path).Contains(qNorm)
+                            || NormalizeAddressKeyword(bld + unit + room).Contains(qNorm)
+                            || NormalizeAddressKeyword(bld + unitSuffix + room).Contains(qNorm)
+                            || NormalizeAddressKeyword(bld + room).Contains(qNorm)));
                 if (hit)
                 {
                     var row = new BatchRelationRow { Dto = dto };
@@ -643,6 +659,26 @@ namespace PropertyManagement.Client.ViewModels
                     BatchRelations.Add(row);
                 }
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-11：组合地址检索归一化 —— 去掉 `/ \ - 空白 、 ·` 等分隔符后比对拼接串，
+        /// 与服务端（SqlAddress.NormalizeKeyword）同一套规则。
+        /// </summary>
+        private static string NormalizeAddressKeyword(string value)
+        {
+            if (string.IsNullOrEmpty(value)) { return string.Empty; }
+            var sb = new StringBuilder(value.Length);
+            foreach (char ch in value)
+            {
+                if (ch == '/' || ch == '\\' || ch == '-' || ch == '－' || ch == '—'
+                    || ch == '、' || ch == '·' || char.IsWhiteSpace(ch))
+                {
+                    continue;
+                }
+                sb.Append(ch);
+            }
+            return sb.ToString();
         }
 
         private async Task ConfirmBatchAsync()

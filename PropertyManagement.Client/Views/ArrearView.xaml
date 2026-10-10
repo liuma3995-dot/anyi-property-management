@@ -138,7 +138,9 @@
                  CHG-v1.4.0-31：上一版把 MinWidth 设成与 Width 相等 → 用户**拖不窄**（看起来像被固定）。
                  最终口径：**Width = 内容需要 + 余量（默认不被裁），MinWidth = 内容需要（拖到最小也不裁）**，
                  这样既恢复手动拖动列宽，又保证默认与最窄状态下内容都完整；列总宽超出视口时由横向滚动承接。 -->
-            <DataGrid ItemsSource="{Binding Items}" IsReadOnly="True"
+            <!-- CHG-v1.4.1-13：x:Name 供「待办跳转定位行」滚动到可视区；SelectedItem 与 VM 双向同步（定位即选中） -->
+            <DataGrid x:Name="ArrearsGrid" ItemsSource="{Binding Items}" IsReadOnly="True"
+                      SelectedItem="{Binding SelectedArrear, Mode=TwoWay}"
                       HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
                       CanUserResizeColumns="True">
                 <DataGrid.Columns>

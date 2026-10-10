@@ -704,6 +704,15 @@ namespace PropertyManagement.Contract.Finance
         public string BuildingPath { get; set; }
 
         /// <summary>
+        /// CHG-v1.4.1-07（负责人 2026-10-10「不同单元的同楼栋同房号被误判为重复」）：
+        /// 户数身份键（服务端按缴费对象身份生成：房产 → 本房产；车位/业主直缴 → 业主主房产；
+        /// 无主房产才按车位/业主/自定义缴款人）。前端「涉及户数」一律按该键去重，
+        /// 与仪表盘、台账导出同源 —— 原实现用「楼栋-房号」展示文本拼接，漏掉单元且会把
+        /// 同楼栋的两位业主直缴并成一户。
+        /// </summary>
+        public string HouseholdKey { get; set; }
+
+        /// <summary>
         /// CHG-v1.2.0-27：缴费对象类型 —— `property`（房产）｜`parking`（车位）｜`owner`（业主直缴）｜
         /// `custom`（自定义缴费对象）。前端据此决定「业主」列留空的文案：
         /// 房产行为「—（空置）」，非业主类缴费对象为「—」（避免把广告商等外部对象误标成空置房产）。

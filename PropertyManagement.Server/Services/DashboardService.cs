@@ -6,6 +6,7 @@ using System.Linq;
 using Dapper;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -62,6 +63,15 @@ namespace PropertyManagement.Server.Services
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             {
+                // CHG-v1.4.1-09（负责人 2026-10-10 第 2 轮）：逾期状态先按欠费台账同一规则落库
+                // （MarkOverdue：到期日之后超过 1 天才算逾期）——否则没人打开台账/账单页时，
+                // 仪表盘的「逾期户数」会滞后于台账，出现两页对不上。
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    _finance.MarkOverdue(connection, transaction, DateTime.Now);
+                    transaction.Commit();
+                }
+
                 var dto = new DashboardDto
                 {
                     RecentReminders = new List<ReminderDto>(),
@@ -80,12 +90,16 @@ namespace PropertyManagement.Server.Services
                 dto.TodoCountByKind = todoCenter.CountByKind;
                 dto.PendingReminders = todoCenter.Total;
 
-                dto.ArrearCount = Count(connection,
-                    "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (0,1,2)");
-
+                // CHG-v1.4.1-07（负责人 2026-10-10 裁定 A）：欠费卡片与欠费台账**同源同口径** ——
+                //   · 取数范围收敛到 ArrearHousehold.ActiveBillScope（未删除、未缴清、状态 0/1/2、且未被移出台账）；
+                //   · 「涉及户数」按缴费对象身份键去重（原实现显示的是账单条数，42 条被读成 42 户）；
+                //   · 金额与条数保持原有语义（金额不变，条数保留给其它用途）。
+                string arrearScope = ArrearHousehold.ActiveBillScope("b");
+                dto.ArrearCount = Count(connection, "SELECT COUNT(1) " + arrearScope);
                 dto.ArrearAmount = Sum(connection,
-                    "SELECT COALESCE(SUM(amount - paid_amount), 0) FROM t_bill " +
-                    "WHERE del_flag = 0 AND amount > paid_amount AND status IN (0,1,2)");
+                    "SELECT COALESCE(SUM(b.amount - b.paid_amount), 0) " + arrearScope);
+                dto.ArrearHouseholdCount = Count(connection,
+                    "SELECT COUNT(DISTINCT " + ArrearHousehold.KeyExpr("b") + ") " + arrearScope);
 
                 dto.HandlingEmergency = Count(connection,
                     "SELECT COUNT(1) FROM t_emergency_event WHERE del_flag = 0 AND status = 1");
@@ -147,13 +161,24 @@ namespace PropertyManagement.Server.Services
                     : 0m;
                 dto.CollectionRateTrend = RateTrend(dto.CollectionRate, previousRate, annual);
 
-                int currentOverdue = Count(connection,
-                    "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
-                    "AND strftime('" + periodFormat + "', due_at) = @period", new { period = periodText });
+                // CHG-v1.4.1-09（负责人 2026-10-10 第 2 轮裁定）：「逾期户数」＝**欠费台账里状态为「逾期」的户数**，
+                // 实时口径、**不按账期/年份过滤**（原实现按所选周期归期 → 往年逾期欠费被漏掉，
+                // 负责人反馈「台账上有多少逾期户，仪表盘就该显示多少」）。
+                string overdueRealtimeScope = "FROM t_bill b WHERE b.del_flag = 0 AND b.amount > b.paid_amount " +
+                    "AND b.status = 2 " +
+                    "AND NOT EXISTS (SELECT 1 FROM t_arrear_dismiss d WHERE d.bill_id = b.id)";
+                dto.OverdueHouseholdCount = Count(connection,
+                    "SELECT COUNT(DISTINCT " + ArrearHousehold.KeyExpr("b") + ") " + overdueRealtimeScope);
+
+                // 环比仍按所选周期比较「该期到期且已逾期」的户数（卡片是实时值，口径差异见卡片 ToolTip）；
                 // BUG 修正：上月逾期户数原样用了本月的 @period（复制粘贴笔误），导致「较上月」恒为 0 户
+                string overdueScope = overdueRealtimeScope + " AND strftime('" + periodFormat + "', b.due_at) = @period";
+                int currentOverdue = Count(connection,
+                    "SELECT COUNT(DISTINCT " + ArrearHousehold.KeyExpr("b") + ") " + overdueScope,
+                    new { period = periodText });
                 int previousOverdue = Count(connection,
-                    "SELECT COUNT(1) FROM t_bill WHERE del_flag = 0 AND amount > paid_amount AND status IN (1,2) " +
-                    "AND strftime('" + periodFormat + "', due_at) = @period", new { period = previousPeriod });
+                    "SELECT COUNT(DISTINCT " + ArrearHousehold.KeyExpr("b") + ") " + overdueScope,
+                    new { period = previousPeriod });
                 int overdueDelta = currentOverdue - previousOverdue;
                 dto.OverdueTrend = (annual ? "较上年 " : "较上月 ") +
                     (overdueDelta >= 0 ? "+" : string.Empty) + overdueDelta + " 户";

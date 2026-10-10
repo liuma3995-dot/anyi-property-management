@@ -38,7 +38,7 @@ namespace PropertyManagement.Client.ViewModels
     }
 
     /// <summary>欠费台账行（PG-FIN-06，UC-FIN-007，账龄>90 天标红；操作按催缴状态派生 T4F-6-1）。</summary>
-    public class ArrearRow : ObservableObject
+    public class ArrearRow : ObservableObject, IFocusableRow
     {
         private bool _isChecked;
         public ArrearDto Dto { get; set; }
@@ -101,6 +101,17 @@ namespace PropertyManagement.Client.ViewModels
         public string EarliestDueText { get { return Dto.DueAt.ToString("yyyy-MM-dd"); } }
 
         public string AgingText { get { return Dto.AgingDays + " 天"; } }
+
+        /// <summary>
+        /// CHG-v1.4.1-13（负责人 2026-10-10 第 4 轮）：从仪表盘待办跳转过来时**定位到的那一行**标记
+        /// —— 由台账页样式渲染高亮（配合 DataGrid 选中与滚动到可视区）。
+        /// </summary>
+        public bool IsHighlighted
+        {
+            get { return _isHighlighted; }
+            set { if (SetProperty(ref _isHighlighted, value)) { } }
+        }
+        private bool _isHighlighted;
 
         /// <summary>账龄 > 90 天标红（D4-5 验收标准）。</summary>
         public bool IsOverdue { get { return Dto.AgingDays > 90; } }
@@ -223,7 +234,7 @@ namespace PropertyManagement.Client.ViewModels
     }
 
     /// <summary>欠费台账页（PG-FIN-06，UC-FIN-007：台账 + 催缴渠道留痕 + 楼栋/账龄/催缴状态筛选）。</summary>
-    public class ArrearViewModel : FinancePageViewModel
+    public class ArrearViewModel : FinancePageViewModel, IFocusTargetHost
     {
         private string _totalText = "¥0";
         private string _totalSubText = "涉及 0 户";
@@ -246,6 +257,14 @@ namespace PropertyManagement.Client.ViewModels
         private List<ArrearRow> _batchRows;
         private bool _isSelectAll;
         private bool _isDismissedVisible;
+        /// <summary>CHG-v1.4.1-13：待定位的欠费账单 id（仪表盘待办跳转进来时设置，定位完成后清零）。</summary>
+        private int _pendingFocusBillId;
+
+        /// <summary>
+        /// CHG-v1.4.1-13：请台账页把指定行滚动到可视区（视图订阅；VM 不直接持有控件）。
+        /// CHG-v1.4.1-14：统一为 <see cref="IFocusTargetHost"/>，与设备到期提醒 / 纠纷列表共用同一适配器。
+        /// </summary>
+        public event Action<object> FocusRowRequested;
 
         private static readonly string[] Channels = { "短信", "电话", "函件", "上门", "微信", "法务", "免催缴" };
 
@@ -313,7 +332,21 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>催缴状态筛选（0=全部 1=待催缴 2=已催缴 3=免催缴，T4F-6-1；变更即刷新）。</summary>
         public int RemindStateFilter { get { return _remindStateFilter; } set { if (SetProperty(ref _remindStateFilter, value)) { _ = LoadAsync(); } } }
 
-        public ArrearRow SelectedArrear { get { return _selectedArrear; } set { SetProperty(ref _selectedArrear, value); } }
+        public ArrearRow SelectedArrear
+        {
+            get { return _selectedArrear; }
+            set
+            {
+                if (!SetProperty(ref _selectedArrear, value)) { return; }
+                // CHG-v1.4.1-14：用户改选其它行 → 清掉「刚定位」的浅黄底，
+                // 该行背景回到主题的选中色（#E7EBF0），不再残留定位标记。
+                // 注意：定位过程中（_pendingFocusBillId>0）不清，避免刚跳过来就丢掉高亮。
+                if (_pendingFocusBillId <= 0 && value != null)
+                {
+                    ListRowFocus.ClearExcept(Items, value);
+                }
+            }
+        }
 
         public int RemindChannel { get { return _remindChannel; } set { SetProperty(ref _remindChannel, value); } }
 
@@ -466,10 +499,89 @@ namespace PropertyManagement.Client.ViewModels
                 var overdue = list.Where(x => x.AgingDays > 90).ToList();
                 Bucket3Text = "¥" + overdue.Sum(x => x.ArrearAmount).ToString("N0");
                 Bucket3SubText = HouseholdCount(overdue) + " 户";
+
+                // CHG-v1.4.1-13：若本次是从仪表盘待办跳转而来，加载完成后自动定位到目标行
+                // （构造时那次加载与本方法可能交错完成，因此在**每次加载后**都重新应用一次）
+                if (_pendingFocusBillId > 0) { ApplyPendingFocus(); }
             }, "欠费台账已加载");
         }
 
-        /// <summary>涉及户数按房产（楼栋+房号/车位）去重，避免同一房产多笔欠费被重复计入（如 401/402 两户却显示 4 户）。</summary>
+        /// <summary>
+        /// CHG-v1.4.1-13（负责人 2026-10-10 第 4 轮「待办点击未定位到指定行」）：
+        /// 从仪表盘待办/待办中心跳转过来时定位到指定欠费记录 ——
+        /// 先清掉可能把目标行筛掉的筛选条件 → 重新加载 → 按 BillId 命中 → 选中 + 高亮 + 滚动到可视区。
+        /// 目标不在当前台账（已缴清 / 已移出台账 / 超出首屏 200 行）时给出可读提示，不静默。
+        /// </summary>
+        public async Task FocusBillAsync(int billId)
+        {
+            if (billId <= 0) { return; }
+            _pendingFocusBillId = billId;
+
+            // 复用页面内筛选时可能把目标行筛掉 → 复位筛选（页面新打开时本就是默认值，无副作用）
+            if (!string.IsNullOrEmpty(_keyword))
+            {
+                _keyword = string.Empty;
+                OnPropertyChanged(nameof(Keyword));
+            }
+            if (_buildingFilter != 0)
+            {
+                _buildingFilter = 0;
+                OnPropertyChanged(nameof(BuildingFilter));
+            }
+            if (_agingFilter != 0)
+            {
+                _agingFilter = 0;
+                OnPropertyChanged(nameof(AgingFilter));
+            }
+            if (_remindStateFilter != 0)
+            {
+                _remindStateFilter = 0;
+                OnPropertyChanged(nameof(RemindStateFilter));
+            }
+
+            await LoadAsync();
+            ArrearRow row = ApplyPendingFocus();
+            if (row == null)
+            {
+                // 构造时那次加载可能后完成并重建了列表 → 等一拍再应用一次
+                await Task.Delay(150);
+                row = ApplyPendingFocus();
+            }
+
+            if (row == null)
+            {
+                _pendingFocusBillId = 0;
+                StatusText = "未在欠费台账中找到该待办对应的记录（可能已缴清、已被移出台账或超出当前台账首屏 200 条）";
+                return;
+            }
+
+            _pendingFocusBillId = 0;   // 定位完成 → 后续刷新不再自动跳转，避免打扰用户
+            StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已定位待办记录：" + row.PropertyNo + " · " +
+                         row.OwnerName + " · " + row.Dto.ChargeItemName + " · 欠费 ¥" +
+                         row.Dto.ArrearAmount.ToString("N2");
+        }
+
+        /// <summary>把当前待定位目标应用到列表（命中则选中 + 高亮 + 通知视图滚动）；返回命中的行。</summary>
+        private ArrearRow ApplyPendingFocus()
+        {
+            if (_pendingFocusBillId <= 0) { return null; }
+            // 命中即高亮；旧高亮由公共逻辑清掉（CHG-v1.4.1-14）
+            ArrearRow row = ListRowFocus.Apply(Items,
+                x => x.Dto != null && x.Dto.BillId == _pendingFocusBillId);
+            if (row == null) { return null; }
+
+            SelectedArrear = row;
+            Action<object> handler = FocusRowRequested;
+            if (handler != null) { handler(row); }
+            return row;
+        }
+
+        /// <summary>
+        /// 涉及户数按**缴费对象身份**去重（避免同一对象多笔欠费被重复计入）。
+        /// CHG-v1.4.1-07（负责人 2026-10-10）：身份键改由服务端下发（<see cref="ArrearDto.HouseholdKey"/>）——
+        /// 原前端拼「楼栋-房号」漏「单元」（同楼栋同房号不同单元被并成一户），
+        /// 且业主直缴账单的房号位是常量「业主直缴」，会把同楼栋的两位业主并成一户。
+        /// </summary>
         private static int HouseholdCount(IEnumerable<ArrearDto> rows)
         {
             return HouseholdCountCore(rows);
@@ -556,11 +668,24 @@ namespace PropertyManagement.Client.ViewModels
 
         private static int HouseholdCountCore(IEnumerable<ArrearDto> rows)
         {
-            return rows
-                .Select(x => string.IsNullOrEmpty(x.BuildingNo) ? (x.PropertyNo ?? string.Empty) : x.BuildingNo + "-" + (x.PropertyNo ?? string.Empty))
+            return (rows ?? Enumerable.Empty<ArrearDto>())
+                .Select(HouseholdKeyOf)
                 .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-07：优先用服务端下发的缴费对象身份键；老服务端未下发时回落原「楼栋-房号」文本
+        /// （显示口径不变，只是少了「单元」这一维，属于降级而非崩溃）。
+        /// </summary>
+        private static string HouseholdKeyOf(ArrearDto row)
+        {
+            if (row == null) { return string.Empty; }
+            if (!string.IsNullOrWhiteSpace(row.HouseholdKey)) { return row.HouseholdKey.Trim(); }
+            return string.IsNullOrEmpty(row.BuildingNo)
+                ? (row.PropertyNo ?? string.Empty)
+                : row.BuildingNo + "-" + (row.PropertyNo ?? string.Empty);
         }
 
         /// <summary>

@@ -8,6 +8,7 @@ using System.Web.Http;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
+using PropertyManagement.Contract.PhoneBook;
 using PropertyManagement.Server.Api.Middleware;
 using PropertyManagement.Server.Services;
 
@@ -93,6 +94,18 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<ReportLogDto> ExportExpenses(ExpenseExportRequest request)
         {
             return ApiResponse<ReportLogDto>.Ok(_reports.ExportExpenses(request));
+        }
+
+        /// <summary>
+        /// 电话条目维护导出（CHG-v1.4.1-08，负责人 2026-10-10）：支持 Excel / PDF，
+        /// 口径 = 页面当前筛选条件（关键字 / 分类 / 来源 / 状态）下的**全部记录**（不分页），列含「备注」；
+        /// 文件写 t_report_log（report_type = phone_entry）后经 /reports/files/{id} 下载。
+        /// </summary>
+        [HttpPost]
+        [Route("phone-entries/export")]
+        public ApiResponse<ReportLogDto> ExportPhoneEntries(PhoneEntryExportRequest request)
+        {
+            return ApiResponse<ReportLogDto>.Ok(_reports.ExportPhoneEntries(request, GetUsername()));
         }
 
         /// <summary>

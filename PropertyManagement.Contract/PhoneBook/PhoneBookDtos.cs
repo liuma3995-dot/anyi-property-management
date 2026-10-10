@@ -119,6 +119,27 @@ namespace PropertyManagement.Contract.PhoneBook
         public bool TopOnly { get; set; }
     }
 
+    /// <summary>
+    /// 电话条目维护「导出」（CHG-v1.4.1-08，负责人 2026-10-10）：
+    /// 支持 PDF / Excel，口径 = **当前筛选条件下的全部记录**（不分页），列含「备注」。
+    /// </summary>
+    public class PhoneEntryExportRequest
+    {
+        public ExportFormat Format { get; set; }
+
+        /// <summary>关键字：命中名称 / 号码（与页面搜索框同一口径）。</summary>
+        public string Keyword { get; set; }
+
+        /// <summary>电话分类 id（null = 全部分类）。</summary>
+        public int? CategoryId { get; set; }
+
+        /// <summary>来源：0 手工 1 员工通讯录（null = 全部）。</summary>
+        public int? Source { get; set; }
+
+        /// <summary>状态（null = 全部；页面默认「启用」）。</summary>
+        public PhoneEntryStatus? Status { get; set; }
+    }
+
     /// <summary>员工通讯录同步请求（UC-TEL-005）。</summary>
     public class EmployeeSyncRequest
     {

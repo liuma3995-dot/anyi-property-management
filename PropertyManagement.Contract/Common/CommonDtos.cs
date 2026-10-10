@@ -123,6 +123,19 @@ namespace PropertyManagement.Contract.Common
         public int PendingReminders { get; set; }
         public decimal ArrearAmount { get; set; }
         public int ArrearCount { get; set; }
+
+        /// <summary>
+        /// CHG-v1.4.1-07（负责人 2026-10-10）：**涉及户数** —— 欠费账单按缴费对象身份去重后的户数
+        /// （口径与欠费台账卡片、台账导出完全同源，见服务端 <c>ArrearHousehold</c>）。
+        /// 原实现直接把 <see cref="ArrearCount"/>（账单条数）当户数显示，导致「42 条」被读成「42 户」。
+        /// </summary>
+        public int ArrearHouseholdCount { get; set; }
+
+        /// <summary>
+        /// CHG-v1.4.1-07：**逾期户数** —— 所选周期内「账单已逾期」的记录按同一身份键去重后的户数
+        /// （实时口径，不随统计周期切换；环比「较上月/较上年」按同口径算差值）。
+        /// </summary>
+        public int OverdueHouseholdCount { get; set; }
         public int HandlingEmergency { get; set; }
         public int PendingReview { get; set; }
         public int HandlingDisputes { get; set; }

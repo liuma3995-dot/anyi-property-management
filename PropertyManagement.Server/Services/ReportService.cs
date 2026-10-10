@@ -10,6 +10,7 @@ using PdfSharp.Pdf;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
+using PropertyManagement.Contract.PhoneBook;
 using PropertyManagement.Server.Domain.Repositories;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
@@ -26,15 +27,17 @@ namespace PropertyManagement.Server.Services
         private readonly IDbConnectionFactory _connectionFactory;
         private readonly IFinanceRepository _finance;
         private readonly IChargeStandardRepository _standards;
+        private readonly IPhoneBookRepository _phoneBook;
         private readonly AuditService _audit;
 
         public ReportService()
-            : this(new SqliteConnectionFactory(), new SqlFinanceRepository(), new SqlChargeStandardRepository(), new AuditService())
+            : this(new SqliteConnectionFactory(), new SqlFinanceRepository(), new SqlChargeStandardRepository(),
+                   new SqlPhoneBookRepository(), new AuditService())
         {
         }
 
         public ReportService(IDbConnectionFactory connectionFactory, IFinanceRepository finance, AuditService audit)
-            : this(connectionFactory, finance, new SqlChargeStandardRepository(), audit)
+            : this(connectionFactory, finance, new SqlChargeStandardRepository(), new SqlPhoneBookRepository(), audit)
         {
         }
 
@@ -45,10 +48,21 @@ namespace PropertyManagement.Server.Services
         /// </summary>
         public ReportService(IDbConnectionFactory connectionFactory, IFinanceRepository finance,
             IChargeStandardRepository standards, AuditService audit)
+            : this(connectionFactory, finance, standards, new SqlPhoneBookRepository(), audit)
+        {
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-08（负责人 2026-10-10「电话条目维护：新增导出 PDF / Excel，模板要有备注」）：
+        /// 追加「电话簿仓储」依赖用于取数；旧的三个构造保留并内部回落默认实现，既有调用不受影响。
+        /// </summary>
+        public ReportService(IDbConnectionFactory connectionFactory, IFinanceRepository finance,
+            IChargeStandardRepository standards, IPhoneBookRepository phoneBook, AuditService audit)
         {
             _connectionFactory = connectionFactory;
             _finance = finance;
             _standards = standards ?? new SqlChargeStandardRepository();
+            _phoneBook = phoneBook ?? new SqlPhoneBookRepository();
             _audit = audit;
         }
 
@@ -523,6 +537,168 @@ namespace PropertyManagement.Server.Services
 
                 ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
                 return saved ?? log;
+            }
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-08（负责人 2026-10-10「电话条目维护：页面工具栏新增导出 PDF 和 Excel，模板要有备注」）：
+        /// 口径 = **当前筛选条件下的全部记录**（不分页，与页面「共 N 条记录」对得上），
+        /// 列 = 分类 / 名称 / 电话 / 来源 / 类型 / 置顶 / 状态 / 备注 / 更新时间；文件写 t_report_log 留痕。
+        /// </summary>
+        public ReportLogDto ExportPhoneEntries(PhoneEntryExportRequest request, string operatorName = null)
+        {
+            request = request ?? new PhoneEntryExportRequest();
+            if (request.Format != ExportFormat.Excel && request.Format != ExportFormat.Pdf)
+            {
+                throw ApiException.BadRequest("导出格式仅支持 Excel / PDF");
+            }
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                var query = new PhoneEntryQueryRequest
+                {
+                    PageIndex = 1,
+                    PageSize = PhoneExportRowLimit,
+                    Keyword = request.Keyword,
+                    CategoryId = request.CategoryId,
+                    Source = request.Source,
+                    Status = request.Status
+                };
+                int total;
+                List<PhoneEntryDto> items =
+                    (_phoneBook.QueryEntries(connection, query, out total).Items ?? new List<PhoneEntryDto>())
+                    .ToList();
+
+                string period = DateTime.Now.ToString("yyyyMMddHHmmss");
+                string fileName = "phone_entries_" + period + (request.Format == ExportFormat.Excel ? ".xlsx" : ".pdf");
+                string filePath = Path.Combine(DbConfig.ExportDirectory, fileName);
+
+                if (request.Format == ExportFormat.Excel) { ExportPhoneEntriesExcel(filePath, items); }
+                else { WritePhoneEntriesPdf(filePath, items, operatorName); }
+
+                var log = new ReportLogDto
+                {
+                    ReportType = "phone_entry",
+                    Period = period,
+                    Format = request.Format,
+                    FilePath = filePath
+                };
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    log.Id = _finance.InsertReportLog(connection, transaction, log);
+                    transaction.Commit();
+                }
+
+                _audit.Write("PHONE_ENTRY_EXPORT", "report_log", log.Id.ToString(),
+                    "电话条目导出：" + items.Count + " 条，" + request.Format + "，文件 " + fileName,
+                    result: "Success");
+
+                ReportLogDto saved = _finance.GetReportLog(connection, log.Id);
+                return saved ?? log;
+            }
+        }
+
+        /// <summary>电话条目导出取数上限（与其它导出同量级；超出截断并在文末注明）。</summary>
+        private const int PhoneExportRowLimit = 5000;
+
+        private static string[] PhoneEntryHeaders()
+        {
+            return new[] { "分类", "名称", "电话", "来源", "类型", "置顶", "状态", "备注", "更新时间" };
+        }
+
+        private static string[] PhoneEntryRowValues(PhoneEntryDto item)
+        {
+            if (item == null) { return new string[PhoneEntryHeaders().Length]; }
+            return new[]
+            {
+                Text(item.CategoryName),
+                Text(item.Name),
+                Text(item.Phone),
+                Text(item.SourceText),
+                Text(string.IsNullOrWhiteSpace(item.TypeName) ? item.EntryTypeText : item.TypeName),
+                item.IsTop ? "是" : "否",
+                Text(item.StatusText),
+                // CHG-v1.4.1-08：备注是负责人点名要的列 —— 空值统一显示「—」，不省略该列
+                Text(item.Note),
+                Text(item.UpdatedAt)
+            };
+        }
+
+        private static void ExportPhoneEntriesExcel(string filePath, List<PhoneEntryDto> items)
+        {
+            using (var workbook = new XLWorkbook())
+            {
+                var sheet = workbook.Worksheets.Add("电话条目");
+                sheet.Cell(1, 1).Value = "安怡物业 · 电话条目";
+                sheet.Cell(2, 1).Value = "导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                                         "，共 " + items.Count + " 条";
+                sheet.Cell(2, 1).Style.Font.FontSize = 10;
+
+                string[] headers = PhoneEntryHeaders();
+                const int start = 4;
+                for (int c = 1; c <= headers.Length; c++)
+                {
+                    sheet.Cell(start, c).Value = headers[c - 1];
+                    sheet.Cell(start, c).Style.Font.Bold = true;
+                }
+
+                int row = start + 1;
+                foreach (PhoneEntryDto item in items)
+                {
+                    string[] cells = PhoneEntryRowValues(item);
+                    for (int c = 1; c <= cells.Length; c++) { sheet.Cell(row, c).Value = cells[c - 1]; }
+                    row++;
+                }
+                // 合计口径行（与 PDF 一致）：记录数 + 启用/停用拆分
+                sheet.Cell(row, 1).Value = "合计";
+                sheet.Cell(row, 1).Style.Font.Bold = true;
+                sheet.Cell(row, 2).Value = "共 " + items.Count + " 条记录（启用 " +
+                    items.Count(x => x.Status == PhoneEntryStatus.Enabled) + " / 停用 " +
+                    items.Count(x => x.Status == PhoneEntryStatus.Disabled) + "）";
+                for (int c = 1; c <= headers.Length; c++) sheet.Column(c).Width = c == 8 ? 32 : 16;
+                workbook.SaveAs(filePath);
+            }
+        }
+
+        private static void WritePhoneEntriesPdf(string filePath, List<PhoneEntryDto> items, string operatorName)
+        {
+            PdfFontSupport.Ensure();
+
+            var titleFont = new XFont("SimHei", 15, XFontStyleEx.Bold);
+            var headerFont = new XFont("SimHei", 8, XFontStyleEx.Bold);
+            var bodyFont = new XFont("SimHei", 7, XFontStyleEx.Regular);
+
+            string[] headers = PhoneEntryHeaders();
+            // CHG-v1.4.1-08：9 列（含备注）走横向 A4（842×595），备注列给足宽度、其余列不互相压字
+            double[] xs = { 30, 96, 186, 276, 356, 426, 476, 536, 700 };
+            double[] widths = { 60, 84, 84, 74, 64, 44, 54, 158, 100 };
+
+            using (var document = new PdfDocument())
+            using (var canvas = new PdfTableCanvas(document, titleFont, headerFont, bodyFont, landscape: true))
+            {
+                canvas.Title("安怡物业 · 电话条目");
+                canvas.Line("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
+                            "　记录：" + items.Count + " 条" +
+                            (string.IsNullOrWhiteSpace(operatorName) ? string.Empty : "　操作人：" + operatorName));
+                canvas.Gap(2);
+                canvas.Head(headers, xs);
+
+                foreach (PhoneEntryDto item in items)
+                {
+                    canvas.EnsureRow(13, headers, xs);
+                    string[] cells = PhoneEntryRowValues(item);
+                    for (int i = 0; i < cells.Length; i++)
+                    {
+                        canvas.Cell(FitToWidth(canvas.Gfx, cells[i], bodyFont, widths[i]), xs[i]);
+                    }
+                    canvas.NextRow(12);
+                }
+
+                canvas.Gap(6);
+                canvas.Line("合计：共 " + items.Count + " 条记录（启用 " +
+                            items.Count(x => x.Status == PhoneEntryStatus.Enabled) + " / 停用 " +
+                            items.Count(x => x.Status == PhoneEntryStatus.Disabled) + "）");
+                document.Save(filePath);
             }
         }
 
@@ -2319,13 +2495,20 @@ namespace PropertyManagement.Server.Services
             }
         }
 
-        /// <summary>涉及户数（按楼栋 + 房号 / 车位去重，与页面卡片同口径）。</summary>
+        /// <summary>
+        /// 涉及户数（按缴费对象身份键 <see cref="ArrearDto.HouseholdKey"/> 去重，与台账页卡片同口径）。
+        /// CHG-v1.4.1-07：原实现把「楼栋-房号」文本拼接又抄了一遍（漏单元、业主直缴会误并），
+        /// 与前端两处分叉 —— 现统一用服务端下发的身份键（身份键口径见 <c>ArrearHousehold</c>）。
+        /// </summary>
         private static int ArrearHouseholdCount(IEnumerable<ArrearDto> rows)
         {
             return (rows ?? Enumerable.Empty<ArrearDto>())
-                .Select(x => string.IsNullOrEmpty(x.BuildingNo)
-                    ? (x.PropertyNo ?? string.Empty)
-                    : x.BuildingNo + "-" + (x.PropertyNo ?? string.Empty))
+                .Select(x => !string.IsNullOrWhiteSpace(x.HouseholdKey)
+                    ? x.HouseholdKey.Trim()
+                    : (string.IsNullOrEmpty(x.BuildingNo)
+                        ? (x.PropertyNo ?? string.Empty)
+                        : x.BuildingNo + "-" + (x.PropertyNo ?? string.Empty)))
+                .Where(x => !string.IsNullOrWhiteSpace(x))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .Count();
         }

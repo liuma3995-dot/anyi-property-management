@@ -438,6 +438,12 @@ namespace PropertyManagement.Client.Services
             return PostAsync<ExpenseExportRequest, ReportLogDto>("reports/expenses/export", request);
         }
 
+        /// <summary>CHG-v1.4.1-08：电话条目维护导出（Excel/PDF，含备注，按页面当前筛选条件）。</summary>
+        public Task<ReportLogDto> ExportPhoneEntriesAsync(PhoneEntryExportRequest request)
+        {
+            return PostAsync<PhoneEntryExportRequest, ReportLogDto>("reports/phone-entries/export", request);
+        }
+
         /// <summary>CHG-v1.1.0-14：导出收据打印模板。</summary>
         public Task<ReportLogDto> ExportReceiptTemplateAsync(ReceiptTemplateRequest request)
         {

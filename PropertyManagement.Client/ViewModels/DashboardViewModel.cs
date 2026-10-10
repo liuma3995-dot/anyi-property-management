@@ -125,7 +125,11 @@ namespace PropertyManagement.Client.ViewModels
         private int _pickerYear;
         private bool _isAnnualPeriod;
         private readonly Action<string> _navigate;
-        private readonly Action<string, string, string> _openPage;
+        /// <summary>
+        /// CHG-v1.4.1-13：跳转回调补上**目标业务记录 id**（module, page, keyword, targetId）——
+        /// 仪表盘待办点击后要精准定位到欠费台账的指定行，而不是只跳页。
+        /// </summary>
+        private readonly Action<string, string, string, int> _openPage;
         private readonly Action _openTodoCenter;
         private readonly Func<string> _userNameProvider;
         /// <summary>CHG-v1.2.0-28：统计口径变化回调（由 ShellViewModel 持有，用于跨页面记住所选月/年）。</summary>
@@ -404,7 +408,7 @@ namespace PropertyManagement.Client.ViewModels
         /// </param>
         /// <param name="periodChanged">口径变化回调（ShellViewModel 记录，供下次进入仪表盘复用）。</param>
         public DashboardViewModel(IApiClient api, Action<string> navigate,
-            Action<string, string, string> openPage = null, Action openTodoCenter = null,
+            Action<string, string, string, int> openPage = null, Action openTodoCenter = null,
             Func<string> userNameProvider = null, string initialPeriod = null,
             Action<string> periodChanged = null)
         {
@@ -593,7 +597,8 @@ namespace PropertyManagement.Client.ViewModels
             int bar = raw.IndexOf('|');
             if (bar > 0 && bar < raw.Length - 1 && _openPage != null)
             {
-                _openPage(raw.Substring(0, bar).Trim(), raw.Substring(bar + 1).Trim(), null);
+                // 快捷入口是「模块|页面」形式（无目标记录）→ targetId = 0（仅跳页）
+                _openPage(raw.Substring(0, bar).Trim(), raw.Substring(bar + 1).Trim(), null, 0);
                 return;
             }
 
@@ -654,7 +659,8 @@ namespace PropertyManagement.Client.ViewModels
             }
             if (_openPage != null)
             {
-                _openPage(item.Source.TargetModule, item.Source.TargetPage, null);
+                // CHG-v1.4.1-13：带上目标记录 id（欠费待办 = 账单 id）→ 台账页定位到该行
+                _openPage(item.Source.TargetModule, item.Source.TargetPage, null, item.Source.TargetId);
             }
         }
 
@@ -707,8 +713,11 @@ namespace PropertyManagement.Client.ViewModels
                 MonthReceivedText = "¥ " + dto.MonthReceived.ToString("N2");
                 ReceivedTrend = dto.ReceivedTrend ?? "收缴率 " + dto.CollectionRate.ToString("0.0") + "%";
                 ArrearAmountText = "¥ " + dto.ArrearAmount.ToString("N2");
-                ArrearTrend = "涉及 " + dto.ArrearCount + " 户";
-                OverdueCountText = dto.ArrearCount + " 户";
+                // CHG-v1.4.1-07（负责人 2026-10-10 裁定 A）：三处一律用「户数」而非账单条数 ——
+                // 涉及户数 / 逾期户数均由服务端按缴费对象身份键去重（与欠费台账卡片同源），
+                // 原实现直接显示 dto.ArrearCount（账单条数），42 条被读成 42 户。
+                ArrearTrend = "涉及 " + dto.ArrearHouseholdCount + " 户";
+                OverdueCountText = dto.OverdueHouseholdCount + " 户";
                 OverdueTrend = dto.OverdueTrend ?? (annual ? "较上年 0 户" : "较上月 0 户");
 
                 PendingReminders = dto.PendingReminders;
@@ -746,8 +755,8 @@ namespace PropertyManagement.Client.ViewModels
                     CollectionGapText = "目标收缴率 " + target + "%，还差 " +
                         (CollectionTargetRate - dto.CollectionRate).ToString("0.0") + " 个百分点";
                 }
-                CollectionHintText = dto.ArrearCount > 0
-                    ? "建议优先跟进 " + dto.ArrearCount + " 户逾期业主"
+                CollectionHintText = dto.OverdueHouseholdCount > 0
+                    ? "建议优先跟进 " + dto.OverdueHouseholdCount + " 户逾期业主"
                     : periodWord + "无逾期业主，保持常规跟进";
 
                 Reminders.Clear();

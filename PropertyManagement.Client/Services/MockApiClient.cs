@@ -184,6 +184,9 @@ namespace PropertyManagement.Client.Services
                 PendingReminders = 6,
                 ArrearAmount = 25000.00m,
                 ArrearCount = 8,
+                // CHG-v1.4.1-07：演示数据同步给出「户数」口径（账单条数≠户数，界面显示用这两个）
+                ArrearHouseholdCount = 6,
+                OverdueHouseholdCount = 4,
                 HandlingEmergency = 1,
                 PendingReview = 2,
                 HandlingDisputes = 3,
@@ -1087,6 +1090,20 @@ namespace PropertyManagement.Client.Services
                 Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
                 Format = request == null ? ExportFormat.Pdf : request.Format,
                 FilePath = "C:\\ProgramData\\PropertyManagement\\exports\\expenses-demo.pdf",
+                CreatedAt = DateTime.Now
+            });
+        }
+
+        /// <summary>CHG-v1.4.1-08：电话条目导出（演示客户端只返回导出留痕，不落真实文件）。</summary>
+        public Task<ReportLogDto> ExportPhoneEntriesAsync(PhoneEntryExportRequest request)
+        {
+            return Task.FromResult(new ReportLogDto
+            {
+                Id = 1,
+                ReportType = "phone_entry",
+                Period = DateTime.Now.ToString("yyyyMMddHHmmss"),
+                Format = request == null ? ExportFormat.Excel : request.Format,
+                FilePath = "C:\\ProgramData\\PropertyManagement\\exports\\phone-entries-demo.xlsx",
                 CreatedAt = DateTime.Now
             });
         }

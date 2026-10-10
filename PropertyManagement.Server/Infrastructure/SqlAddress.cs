@@ -1,3 +1,5 @@
+using System.Text;
+
 namespace PropertyManagement.Server.Infrastructure
 {
     /// <summary>
@@ -29,6 +31,43 @@ namespace PropertyManagement.Server.Infrastructure
             return "COALESCE(" + buildingColumn + ", '') || " +
                    UnitSegment(unitColumn) + " || " +
                    "CASE WHEN COALESCE(" + roomColumn + ", '') <> '' THEN '/' || " + roomColumn + " ELSE '' END";
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-11：组合关键词归一化 —— 去掉常见分隔符与空白（`/`、`\`、`-`、全角横线、
+        /// 各种空格、`、`、`·`）。用户在搜索框里常按「楼栋+单元（+房号）」连着输入
+        /// （`4栋2单元`、`4栋201`），而库里是分列存储；把两侧都归一化后再比对即可命中。
+        /// </summary>
+        public static string NormalizeKeyword(string keyword)
+        {
+            if (string.IsNullOrEmpty(keyword)) { return string.Empty; }
+
+            var sb = new StringBuilder(keyword.Length);
+            foreach (char ch in keyword)
+            {
+                if (ch == '/' || ch == '\\' || ch == '-' || ch == '－' || ch == '—' || ch == '－'
+                    || ch == '、' || ch == '·' || ch == '・' || char.IsWhiteSpace(ch))
+                {
+                    continue;
+                }
+                sb.Append(ch);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// 把若干列拼接成「无分隔符」串（与 <see cref="NormalizeKeyword"/> 同一套规则），
+        /// 供组合关键词 LIKE 使用：`REPLACE(...)` 去掉 `/ - 空白 全角空格 、`。
+        /// </summary>
+        public static string NormalizedConcat(params string[] columns)
+        {
+            var sb = new StringBuilder();
+            for (int i = 0; i < columns.Length; i++)
+            {
+                if (i > 0) { sb.Append(" || "); }
+                sb.Append("COALESCE(").Append(columns[i]).Append(", '')");
+            }
+            return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(" + sb + ", '/', ''), '-', ''), ' ', ''), '　', ''), '、', '')";
         }
     }
 }

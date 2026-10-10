@@ -103,6 +103,10 @@
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter TargetName="RowBg" Property="Background" Value="#E7EBF0" />
                                     </Trigger>
+                                    <!-- CHG-v1.4.1-14：跳转定位行高亮（同 Theme.xaml 的行模板口径） -->
+                                    <DataTrigger Binding="{Binding IsHighlighted}" Value="True">
+                                        <Setter TargetName="RowBg" Property="Background" Value="{StaticResource WarningSoftBrush}" />
+                                    </DataTrigger>
                                 </ControlTemplate.Triggers>
                             </ControlTemplate>
                         </Setter.Value>

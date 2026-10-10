@@ -154,7 +154,13 @@ namespace PropertyManagement.Client.Services
         /// CHG-v1.2.0-25：支出登记明细导出（PDF）。
         /// 请求体带页面当前筛选条件（关键字 / 类别 / 状态），返回导出留痕后经 DownloadReportFileAsync 下载。
         /// </summary>
-        Task<ReportLogDto> ExportExpensesAsync(ExpenseExportRequest request);
+    Task<ReportLogDto> ExportExpensesAsync(ExpenseExportRequest request);
+
+    /// <summary>
+    /// CHG-v1.4.1-08（负责人 2026-10-10）：电话条目维护导出（Excel / PDF，含备注）。
+    /// 口径 = 页面当前筛选条件下的全部记录；返回导出留痕后按 Id 调 DownloadExportFileAsync 另存。
+    /// </summary>
+    Task<ReportLogDto> ExportPhoneEntriesAsync(PhoneEntryExportRequest request);
 
         Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request);
         Task<ReportLogDto> ExportReportAsync(ReportExportRequest request);

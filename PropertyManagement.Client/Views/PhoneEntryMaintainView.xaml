@@ -89,6 +89,11 @@
                 <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认停用" Command="{Binding BatchDisableCommand}" IsEnabled="{Binding HasChecked}" Margin="8,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
                 <Button Style="{StaticResource ButtonPrimary}" Content="新增条目" Command="{Binding NewCommand}" Margin="10,0,0,0" />
                 <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="同步员工通讯录" Command="{Binding SyncCommand}" Margin="10,0,0,0" />
+                <!-- CHG-v1.4.1-08（负责人 2026-10-10）：新增导出（口径 = 当前筛选下的全部记录，模板含「备注」列） -->
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出 Excel" Command="{Binding ExportExcelCommand}" Margin="10,0,0,0"
+                        ToolTip="导出当前筛选条件下的全部电话条目（Excel，含备注列）" />
+                <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出 PDF" Command="{Binding ExportPdfCommand}" Margin="10,0,0,0"
+                        ToolTip="导出当前筛选条件下的全部电话条目（PDF，含备注列）" />
             </StackPanel>
         </Grid>
 

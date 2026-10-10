@@ -106,6 +106,7 @@
         <!-- 数据表（状态列含超期红标；操作列已结案=查看 / 未结案=处理） -->
         <Border Grid.Row="4" Style="{StaticResource CardBorder}" Padding="0">
             <DataGrid x:Name="CasesGrid" Style="{StaticResource GridStyle}" ItemsSource="{Binding Items}" IsReadOnly="True"
+                      SelectedItem="{Binding SelectedRow, Mode=TwoWay}"
                       MouseDoubleClick="CasesGrid_MouseDoubleClick">
                 <DataGrid.Columns>
                     <DataGridTemplateColumn Width="40">

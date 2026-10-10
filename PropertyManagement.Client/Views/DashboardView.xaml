@@ -175,7 +175,9 @@
                     </StackPanel>
                 </Button>
 
-                <Popup IsOpen="{Binding IsMonthPickerOpen, Mode=TwoWay}" PlacementTarget="{Binding ElementName=MonthPickerButton}"
+                <!-- CHG-v1.4.1-01：x:Name 供代码后置挂「浮层去置顶」（WPF Popup 默认 WS_EX_TOPMOST，会压住第三方输入法候选窗） -->
+                <Popup x:Name="MonthPickerPopup"
+                       IsOpen="{Binding IsMonthPickerOpen, Mode=TwoWay}" PlacementTarget="{Binding ElementName=MonthPickerButton}"
                        Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
                     <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
                             BorderThickness="1" CornerRadius="8" Padding="10" Margin="0,6,0,0">
@@ -335,8 +337,8 @@
                               Stroke="{StaticResource WarningBrush}" Width="20" Height="20" />
                     </Border>
                     <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
-                        <TextBlock Text="逾期户数" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
-                                   ToolTip="逾期户数为实时口径，不随统计周期（月 / 年）切换（环比按所选周期计算）" />
+                    <TextBlock Text="逾期户数" FontSize="10" Foreground="{StaticResource TextSecondaryBrush}"
+                               ToolTip="逾期户数 = 欠费台账中状态为「逾期」的户数（实时口径，不随统计周期切换）；环比按所选周期计算" />
                         <TextBlock Text="{Binding OverdueCountText}" FontSize="20" FontWeight="Bold"
                                    Foreground="{StaticResource TextPrimaryBrush}" Margin="0,3,0,0" />
                         <TextBlock Text="{Binding OverdueTrend}" FontSize="9"

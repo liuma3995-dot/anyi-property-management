@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.Enums;
+using PropertyManagement.Contract.Finance;
 using PropertyManagement.Contract.PhoneBook;
 
 namespace PropertyManagement.Client.ViewModels
@@ -143,6 +144,9 @@ namespace PropertyManagement.Client.ViewModels
             PrevPageCommand = new RelayCommand(PrevPage);
             NextPageCommand = new RelayCommand(NextPage);
             GotoPageCommand = new RelayCommand<object>(GotoPage);
+            // CHG-v1.4.1-08（负责人 2026-10-10）：页面工具栏新增「导出 Excel / 导出 PDF」（模板含备注）
+            ExportExcelCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Excel));
+            ExportPdfCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Pdf));
             _ = LoadAsync();
         }
 
@@ -252,6 +256,9 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand PrevPageCommand { get; }
         public IRelayCommand NextPageCommand { get; }
         public IRelayCommand<object> GotoPageCommand { get; }
+        /// <summary>CHG-v1.4.1-08：电话条目导出（当前筛选条件下的全部记录）。</summary>
+        public IAsyncRelayCommand ExportExcelCommand { get; }
+        public IAsyncRelayCommand ExportPdfCommand { get; }
 
         public async Task LoadAsync()
         {
@@ -598,6 +605,59 @@ namespace PropertyManagement.Client.ViewModels
             }
             catch (ApiClientException ex) { ErrorText = ex.Message; }
             catch (Exception ex) { ErrorText = "操作失败：" + ex.Message; }
+            finally { IsBusy = false; }
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-08（负责人 2026-10-10「电话条目维护：页面工具栏新增导出 PDF 和 Excel，
+        /// 导出的模板要有备注的信息」）：口径 = **当前筛选条件下的全部记录**（关键字/分类/来源/状态，
+        /// 不受分页影响），列含「备注」；服务端渲染并写导出留痕后，由客户端另存到本机。
+        /// </summary>
+        private async Task ExportAsync(ExportFormat format)
+        {
+            IsBusy = true;
+            ErrorText = string.Empty;
+            try
+            {
+                string label = format == ExportFormat.Excel ? "Excel" : "PDF";
+                var request = new PhoneEntryExportRequest
+                {
+                    Format = format,
+                    Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim(),
+                    CategoryId = _categoryFilter == 0 ? (int?)null : _categoryFilter,
+                    Source = _sourceFilter == 0 ? (int?)null : (int?)(_sourceFilter - 1),
+                    Status = _statusFilter == 0
+                        ? (PhoneEntryStatus?)null
+                        : (_statusFilter == 1 ? PhoneEntryStatus.Enabled : PhoneEntryStatus.Disabled)
+                };
+
+                ReportLogDto log = await Api.ExportPhoneEntriesAsync(request);
+                if (log == null || log.Id <= 0)
+                {
+                    throw new InvalidOperationException(label + " 导出失败：服务端未生成导出记录");
+                }
+
+                var dialog = new Microsoft.Win32.SaveFileDialog
+                {
+                    Title = "保存电话条目（" + label + "）",
+                    Filter = format == ExportFormat.Excel ? "Excel 文件|*.xlsx" : "PDF 文件|*.pdf",
+                    FileName = "电话条目_" + DateTime.Now.ToString("yyyyMMddHHmm") +
+                               (format == ExportFormat.Excel ? ".xlsx" : ".pdf")
+                };
+                if (dialog.ShowDialog() != true)
+                {
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + label + " 已在服务端生成（导出日志 " + log.Id +
+                                 "），未另存到本机";
+                    return;
+                }
+
+                await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "电话条目已导出：" + dialog.FileName;
+                System.Windows.MessageBox.Show("电话条目已导出到：\n" + dialog.FileName, "导出完成",
+                    System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Information);
+            }
+            catch (ApiClientException ex) { ErrorText = ex.Message; }
+            catch (Exception ex) { ErrorText = "导出失败：" + ex.Message; }
             finally { IsBusy = false; }
         }
     }

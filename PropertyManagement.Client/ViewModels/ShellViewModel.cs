@@ -709,9 +709,29 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         /// <summary>跳转模块页并带关键词过滤（R17：搜索结果 / 待办跳转复用；无关键词时仅跳页）。</summary>
-        public void NavigateToPageWithKeyword(string moduleKey, string pageTitle, string keyword)
+        /// <param name="targetId">
+        /// CHG-v1.4.1-13（负责人 2026-10-10 第 4 轮「待办点击未定位到指定行」）：
+        /// 目标业务记录 id（欠费待办 = 账单 id）。&gt; 0 时跳到目标页后**定位到该行**（欠费台账当前已接入）。
+        /// </param>
+        public void NavigateToPageWithKeyword(string moduleKey, string pageTitle, string keyword, int targetId = 0)
         {
             NavigateToPage(moduleKey, pageTitle);
+            if (targetId > 0)
+            {
+                switch (CurrentViewModel)
+                {
+                    case ArrearViewModel arrear:
+                        _ = arrear.FocusBillAsync(targetId);
+                        break;
+                    // CHG-v1.4.1-14（第 5 轮）：同一套机制接上「到期提醒」与「纠纷列表」
+                    case DeviceReminderViewModel reminder:
+                        _ = reminder.FocusReminderAsync(targetId);
+                        break;
+                    case DisputeListViewModel disputeList:
+                        _ = disputeList.FocusCaseAsync(targetId);
+                        break;
+                }
+            }
             if (string.IsNullOrWhiteSpace(keyword) || CurrentViewModel == null)
             {
                 return;
@@ -806,7 +826,8 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
             IsTodoCenterOpen = false;
-            NavigateToPage(todo.TargetModule, todo.TargetPage);
+            // CHG-v1.4.1-13：带目标记录 id → 目标页定位到该行（欠费台账已接入）
+            NavigateToPageWithKeyword(todo.TargetModule, todo.TargetPage, null, todo.TargetId);
         }
 
         private Task OpenProfileAsync()

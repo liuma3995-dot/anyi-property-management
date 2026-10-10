@@ -14,12 +14,15 @@ using PropertyManagement.Contract.Org;
 namespace PropertyManagement.Client.ViewModels
 {
     /// <summary>设备提醒行（PG-EQP-04；R6 起含已处理记录，支持批量删除勾选）。</summary>
-    public class ReminderRow : ObservableObject
+    public class ReminderRow : ObservableObject, IFocusableRow
     {
         public EquipmentReminderDto Dto { get; set; }
         private bool _isChecked;
+        private bool _isHighlighted;
         /// <summary>批量删除勾选（R6；仅多选模式可见）。</summary>
         public bool IsChecked { get { return _isChecked; } set { SetProperty(ref _isChecked, value); } }
+        /// <summary>CHG-v1.4.1-14：从仪表盘「到期提醒」待办跳转过来时定位到的那一行（主题行模板渲染浅黄底）。</summary>
+        public bool IsHighlighted { get { return _isHighlighted; } set { SetProperty(ref _isHighlighted, value); } }
         public string DeviceText
         {
             get
@@ -142,7 +145,7 @@ namespace PropertyManagement.Client.ViewModels
     }
 
     /// <summary>到期提醒（PG-EQP-04，UC-EQP-006，BR-EQP-02，T6-5-7）。</summary>
-    public class DeviceReminderViewModel : BaseInfoPageViewModel
+    public class DeviceReminderViewModel : BaseInfoPageViewModel, IFocusTargetHost
     {
         /// <summary>范围页签 → t_reminder.type（仓储 QueryReminders 过滤值，EquipmentService.NormalizeReminderType 直通）。</summary>
         private static readonly string[] ScopeTypes = { null, "maint_due", "inspect_due", "warranty_due", "contract_due" };
@@ -160,6 +163,23 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isBlockedVisible;
         private string _batchConfirmText = string.Empty;
         private string _blockedText = string.Empty;
+        /// <summary>CHG-v1.4.1-14：待定位的到期提醒 id（仪表盘待办跳转进来时设置，定位完成后清零）。</summary>
+        private int _pendingFocusReminderId;
+        private ReminderRow _selectedRow;
+
+        /// <summary>CHG-v1.4.1-14：请页面把指定行滚动到可视区（视图经 RowFocusAdapter 订阅）。</summary>
+        public event Action<object> FocusRowRequested;
+
+        /// <summary>当前选中行（DataGrid 双向绑定；用户改选其它行时清掉「定位」高亮）。</summary>
+        public ReminderRow SelectedRow
+        {
+            get { return _selectedRow; }
+            set
+            {
+                if (!SetProperty(ref _selectedRow, value)) { return; }
+                if (_pendingFocusReminderId <= 0 && value != null) { ListRowFocus.ClearExcept(Items, value); }
+            }
+        }
 
         public DeviceReminderViewModel(IApiClient api) : base(api)
         {
@@ -280,6 +300,65 @@ namespace PropertyManagement.Client.ViewModels
             await RunAsync(LoadCoreAsync, "提醒已加载");
         }
 
+        /// <summary>
+        /// CHG-v1.4.1-14（负责人 2026-10-10 第 5 轮）：仪表盘「到期提醒」待办点击后定位到指定行 ——
+        /// 复位范围/状态页签（避免目标被筛掉）→ 重新加载 → 按 ReminderId 命中 → 选中 + 高亮 + 滚动到可视区。
+        /// </summary>
+        public async Task FocusReminderAsync(int reminderId)
+        {
+            if (reminderId <= 0) { return; }
+            _pendingFocusReminderId = reminderId;
+
+            if (_scopeIndex != 0)
+            {
+                _scopeIndex = 0;
+                OnPropertyChanged(nameof(ScopeIndex));
+                OnPropertyChanged(nameof(IsScopeAll));
+                OnPropertyChanged(nameof(IsScopeMaintenance));
+                OnPropertyChanged(nameof(IsScopeInspection));
+                OnPropertyChanged(nameof(IsScopeWarranty));
+                OnPropertyChanged(nameof(IsScopeContract));
+            }
+            if (_statusIndex != 0)
+            {
+                _statusIndex = 0;
+                OnPropertyChanged(nameof(StatusIndex));
+                OnPropertyChanged(nameof(IsStatusAll));
+                OnPropertyChanged(nameof(IsStatusPending));
+                OnPropertyChanged(nameof(IsStatusHandled));
+            }
+
+            await LoadAsync();
+            ReminderRow row = ApplyPendingFocus();
+            if (row == null)
+            {
+                await Task.Delay(150);   // 构造时那次加载可能后完成并重建列表
+                row = ApplyPendingFocus();
+            }
+            if (row == null)
+            {
+                _pendingFocusReminderId = 0;
+                StatusText = "未在「到期提醒」中找到该待办对应的记录（可能已处理、已删除或超出当前列表）";
+                return;
+            }
+            _pendingFocusReminderId = 0;
+            StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已定位待办记录：" + row.DeviceText + " · " + row.ItemText +
+                         " · " + row.DueText + "（" + row.RemainingText + "）";
+        }
+
+        /// <summary>把当前待定位目标应用到列表（命中则选中 + 高亮 + 通知视图滚动）；返回命中的行。</summary>
+        private ReminderRow ApplyPendingFocus()
+        {
+            if (_pendingFocusReminderId <= 0) { return null; }
+            ReminderRow row = ListRowFocus.Apply(Items,
+                x => x.Dto != null && x.Dto.ReminderId == _pendingFocusReminderId);
+            if (row == null) { return null; }
+            SelectedRow = row;
+            Action<object> handler = FocusRowRequested;
+            if (handler != null) { handler(row); }
+            return row;
+        }
+
         private async Task LoadCoreAsync()
         {
             // 统计卡走后端 summary 分桶（修复"本月已处理"硬编码 0 与 30 天/逾期重复计数）
@@ -314,6 +393,9 @@ namespace PropertyManagement.Client.ViewModels
                 .Select(x => x.TypeName).Where(n => !string.IsNullOrEmpty(n)).Distinct().Count();
             Within30Sub = typeCount > 0 ? typeCount + " 类设备" : "—";
             await LoadTeamOptionsAsync();
+
+            // CHG-v1.4.1-14：本次若是从仪表盘待办跳转而来，加载完成后自动定位到目标行
+            if (_pendingFocusReminderId > 0) { ApplyPendingFocus(); }
         }
 
         /// <summary>责任班组候选：部门字典（人员组织）+ 默认班组（物业办/工程部），首次加载一次。</summary>

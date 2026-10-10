@@ -399,7 +399,8 @@ namespace PropertyManagement.Tests.Services
         [InlineData(ImportModule.Property, "", 6)]
         [InlineData(ImportModule.Owner, "", 9)]
         // v1.1.2：车位模板下线「租金 / 租期至」两列（停车费统一由价目表定价）→ 9 列变 7 列
-        [InlineData(ImportModule.Parking, "", 7)]
+        // v1.4.1（CHG-v1.4.1-06）：车位模板新增「绑定业主 / 业主电话」两列（车位以业主为准）→ 7 列变 9 列
+        [InlineData(ImportModule.Parking, "", 9)]
         [InlineData(ImportModule.OwnerRelation, "", 11)]
         public void BuildTemplate_示例行_每张模板都有(ImportModule module, string _, int columns)
         {

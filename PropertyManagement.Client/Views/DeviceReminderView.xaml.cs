@@ -11,6 +11,8 @@ namespace PropertyManagement.Client.Views
         public DeviceReminderView()
         {
             InitializeComponent();
+            // CHG-v1.4.1-14：仪表盘「到期提醒」待办 → 定位到指定行（选中 + 滚动到可视区）
+            RowFocusAdapter.Bind(this, RemindersGrid);
         }
     }
 

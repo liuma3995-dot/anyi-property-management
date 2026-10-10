@@ -12,10 +12,13 @@ using PropertyManagement.Contract.Enums;
 namespace PropertyManagement.Client.ViewModels
 {
     /// <summary>纠纷行（PG-DIS-01）：超期红标（IsOverdue）与操作列（已结案=查看，未结案=处理）。</summary>
-    public class DisputeRow : ObservableObject
+    public class DisputeRow : ObservableObject, IFocusableRow
     {
         private bool _isChecked;
         public DisputeCaseDto Dto { get; set; }
+        private bool _isHighlighted;
+        /// <summary>CHG-v1.4.1-14：从仪表盘「纠纷处理」待办跳转过来时定位到的那一行（主题行模板渲染浅黄底）。</summary>
+        public bool IsHighlighted { get { return _isHighlighted; } set { SetProperty(ref _isHighlighted, value); } }
         public int CaseId { get { return Dto.Id; } }
         public string CaseNo { get { return Dto.CaseNo ?? ("JF-" + Dto.Id.ToString("D4")); } }
         public string TypeName { get { return Dto.TypeName ?? string.Empty; } }
@@ -48,9 +51,26 @@ namespace PropertyManagement.Client.ViewModels
     /// <summary>纠纷列表页（PG-DIS-01，UC-DIS-006）：
     /// 统计卡改后端口径（本月新增/环比、调解中/含超期、本月结案、近12个月成功率），
     /// 类型筛选绑 Types（全部=null）、状态筛选含待调解，超期红标，分页条，登记入口，回车搜索防抖。</summary>
-    public class DisputeListViewModel : BaseInfoPageViewModel
+    public class DisputeListViewModel : BaseInfoPageViewModel, IFocusTargetHost
     {
         private const int PageSize = 20;
+        /// <summary>CHG-v1.4.1-14：待定位的纠纷案件 id（仪表盘待办跳转进来时设置，定位完成后清零）。</summary>
+        private int _pendingFocusCaseId;
+        private DisputeRow _selectedRow;
+
+        /// <summary>CHG-v1.4.1-14：请页面把指定行滚动到可视区（视图经 RowFocusAdapter 订阅）。</summary>
+        public event Action<object> FocusRowRequested;
+
+        /// <summary>当前选中行（DataGrid 双向绑定；用户改选其它行时清掉「定位」高亮）。</summary>
+        public DisputeRow SelectedRow
+        {
+            get { return _selectedRow; }
+            set
+            {
+                if (!SetProperty(ref _selectedRow, value)) { return; }
+                if (_pendingFocusCaseId <= 0 && value != null) { ListRowFocus.ClearExcept(Items, value); }
+            }
+        }
 
         private string _keyword = string.Empty;
         private DisputeTypeOption _selectedType;
@@ -213,7 +233,75 @@ namespace PropertyManagement.Client.ViewModels
                 MonthClosed = stat.MonthClosed;
                 SuccessRateText = Math.Round(stat.SuccessRate) + "%";
                 SuccessRateNote = string.IsNullOrEmpty(stat.SuccessRateNote) ? "近12个月" : stat.SuccessRateNote;
+
+                // CHG-v1.4.1-14：本次若是从仪表盘待办跳转而来，加载完成后自动定位到目标行
+                if (_pendingFocusCaseId > 0) { ApplyPendingFocus(); }
             }, null);
+        }
+
+        /// <summary>
+        /// CHG-v1.4.1-14（负责人 2026-10-10 第 5 轮）：仪表盘「纠纷处理」待办点击后定位到指定案件 ——
+        /// 复位筛选（关键字/类型/状态）→ 从第 1 页起**逐页回查**目标案件（列表是分页的）→
+        /// 命中后停在该页并选中 + 高亮 + 滚动到可视区。
+        /// </summary>
+        public async Task FocusCaseAsync(int caseId)
+        {
+            if (caseId <= 0) { return; }
+            _pendingFocusCaseId = caseId;
+
+            if (!string.IsNullOrEmpty(_keyword))
+            {
+                _keyword = string.Empty;
+                OnPropertyChanged(nameof(Keyword));
+            }
+            if (_selectedType != null && _selectedType.Id.HasValue && TypeOptions.Count > 0)
+            {
+                _selectedType = TypeOptions[0];
+                OnPropertyChanged(nameof(SelectedType));
+            }
+            if (_selectedStatus != null && _selectedStatus.Value.HasValue)
+            {
+                _selectedStatus = StatusOptions[0];
+                OnPropertyChanged(nameof(SelectedStatus));
+            }
+            _pageIndex = 1;
+
+            await LoadAsync();
+            DisputeRow row = ApplyPendingFocus();
+            if (row == null)
+            {
+                int pages = _total <= 0 ? 1 : (int)Math.Ceiling(_total / (double)PageSize);
+                int limit = Math.Min(pages, 50);          // 回查上限，避免异常数据下无限翻页
+                for (int p = 1; p <= limit && row == null; p++)
+                {
+                    if (p == _pageIndex) { continue; }
+                    _pageIndex = p;
+                    await LoadAsync();
+                    row = ApplyPendingFocus();
+                }
+            }
+
+            if (row == null)
+            {
+                _pendingFocusCaseId = 0;
+                StatusText = "未在「纠纷列表」中找到该待办对应的案件（可能已删除或已被筛选条件排除）";
+                return;
+            }
+            _pendingFocusCaseId = 0;
+            StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已定位待办案件：" + row.CaseNo + " · " + row.TypeName +
+                         " · " + row.PartySummary + " · " + row.StatusText;
+        }
+
+        /// <summary>把当前待定位目标应用到列表（命中则选中 + 高亮 + 通知视图滚动）；返回命中的行。</summary>
+        private DisputeRow ApplyPendingFocus()
+        {
+            if (_pendingFocusCaseId <= 0) { return null; }
+            DisputeRow row = ListRowFocus.Apply(Items, x => x.Dto != null && x.Dto.Id == _pendingFocusCaseId);
+            if (row == null) { return null; }
+            SelectedRow = row;
+            Action<object> handler = FocusRowRequested;
+            if (handler != null) { handler(row); }
+            return row;
         }
 
         private DisputeRow WrapRow(DisputeCaseDto dto)

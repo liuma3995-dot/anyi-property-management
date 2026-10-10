@@ -829,10 +829,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
             // CHG-v1.2.0-27：归属业主口径补齐第三档 —— 房产账单→该房产当前业主；车位账单→车位绑定业主；
             // **业主直缴账单→账单上的 owner_id**（原实现漏了这一档，导致「缴费对象 = 业主」的行业主名为空）。
-            const string ownerIdExpr =
-                "COALESCE(" +
-                "  (SELECT owner_id FROM t_owner_property_rel rel WHERE rel.property_id = b.property_id AND rel.del_flag = 0 ORDER BY rel.id DESC LIMIT 1), " +
-                "  ps.owner_id, b.owner_id)";
+            // CHG-v1.4.1-07：表达式收敛到 ArrearHousehold（车位业主改用子查询，与仪表盘户数口径同源）。
+            string ownerIdExpr = ArrearHousehold.OwnerIdExpr("b");
 
             // 「楼栋/房号」格式与「收支明细流水」的「楼栋/房号/单元」列同一口径：1号楼/1单元/101（无单元则 1号楼/101）
             // CHG-v1.2.0-39：单元段口径收敛到 SqlAddress —— 单元为空整段省略、已含「单元」不重复补后缀
@@ -880,6 +878,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "    LEFT JOIN t_building bld6 ON bld6.id = COALESCE(u6.building_id, p6.building_id) " +
                 "   WHERE r6.owner_id = " + ownerIdExpr + " AND r6.del_flag = 0 " +
                 "   ORDER BY r6.id DESC LIMIT 1), '') AS BuildingPath, " +
+                // CHG-v1.4.1-07（负责人 2026-10-10）：户数身份键 —— 前端「涉及户数」按它去重、
+                // 仪表盘按 COUNT(DISTINCT 同表达式) 计数，两处不再各写一套文本拼接（原实现漏单元）。
+                ArrearHousehold.KeyExpr("b") + " AS HouseholdKey, " +
                 // 楼栋筛选口径同步：车位 / 业主直缴账单也能按业主主房产的楼栋筛出来
                 "COALESCE(bld.building_no, " +
                 "  (SELECT bld7.building_no FROM t_owner_property_rel r7 " +

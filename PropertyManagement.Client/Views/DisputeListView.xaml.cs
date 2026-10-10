@@ -10,6 +10,8 @@ namespace PropertyManagement.Client.Views
         public DisputeListView()
         {
             InitializeComponent();
+            // CHG-v1.4.1-14：仪表盘「纠纷处理」待办 → 定位到指定案件行（选中 + 滚动到可视区）
+            RowFocusAdapter.Bind(this, CasesGrid);
         }
 
         /// <summary>双击行 → 跳转【处理与结案】（原型交互：点击行跳转）。</summary>

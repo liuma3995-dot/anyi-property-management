@@ -947,6 +947,10 @@ namespace PropertyManagement.Server.Services
                         F("区域", false, "B1 层", "选填。车位所在区域/楼层"),
                         F("类型", false, "产权", "选填。产权 / 普通 / 临时，留空按「产权」"),
                         F("状态", false, "空置", "选填。已售 / 已租 / 空置 / 维修中，留空按「空置」"),
+                        // CHG-v1.4.1-06（负责人 2026-10-10）：新增「绑定业主 / 业主电话」——
+                        // 车位以业主为准（房产权属按该业主名下有效房产自动引用），与页面保存口径一致。
+                        F("绑定业主", false, "张伟", "选填。填写后按该业主名下有效房产自动引用房产权属；同名业主请同时填写「业主电话」"),
+                        F("业主电话", false, "13800000001", "选填。同名业主必填其一：与档案一致 → 同一人；不一致 → 按本行信息新建业主档案"),
                         F("绑定楼栋号", false, "1号楼", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」（单元号可留空）"),
                         F("绑定单元号", false, "", "选填。与绑定楼栋号/绑定房号配套使用"),
                         F("绑定房号", false, "101", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」"),
@@ -1512,6 +1516,116 @@ namespace PropertyManagement.Server.Services
             return count;
         }
 
+        /// <summary>
+        /// CHG-v1.4.1-06（负责人 2026-10-10「车位导入模板缺绑定业主」）：车位行的绑定解析，
+        /// 与页面 <c>SaveParking</c> 同一优先级 —— **绑定业主为准，房产按其名下有效房产自动引用**；
+        /// 只填「绑定房产」时保持旧口径（按房产反查业主）；两类绑定列都留空 → 保留库内既有绑定。
+        ///
+        /// 同名业主判定与「业主-房产关系」模板共用 <see cref="MatchOwnerForImport"/>：
+        /// 与档案一致 → 同一人；与档案不一致 → 按本行信息建档；档案缺该项 → 用本行值回填。
+        /// </summary>
+        private void ResolveParkingBinding(IDbConnection c, IDbTransaction tx, int rowNo,
+            string bindOwnerName, string bindOwnerPhone,
+            string bindBuildingNo, string bindUnitNo, string bindRoomNo,
+            int? keepPropertyId, int? keepOwnerId,
+            List<ImportErrorItemDto> rowErrors,
+            out int? propertyId, out int? ownerId, out List<string> notes)
+        {
+            propertyId = keepPropertyId;
+            ownerId = keepOwnerId;
+            notes = new List<string>();
+
+            bool hasOwnerColumn = !string.IsNullOrWhiteSpace(bindOwnerName);
+            bool hasPropColumns = !string.IsNullOrWhiteSpace(bindBuildingNo)
+                || !string.IsNullOrWhiteSpace(bindUnitNo) || !string.IsNullOrWhiteSpace(bindRoomNo);
+            if (!hasOwnerColumn && !hasPropColumns) { return; }
+
+            string bindLabel = (bindBuildingNo ?? string.Empty).Trim()
+                + (string.IsNullOrWhiteSpace(bindUnitNo) ? string.Empty : bindUnitNo.Trim())
+                + (bindRoomNo ?? string.Empty).Trim();
+
+            int? rowPropertyId = null;
+            if (hasPropColumns)
+            {
+                // v1.1.0 F-06：绑定房产只需「楼栋号 + 房号」，单元号可留空（老旧小区无单元）
+                if (string.IsNullOrWhiteSpace(bindBuildingNo) || string.IsNullOrWhiteSpace(bindRoomNo))
+                {
+                    rowErrors.Add(Err(rowNo, "绑定房产", bindBuildingNo + "-" + bindRoomNo,
+                        "绑定房产需同时填写「绑定楼栋号 + 绑定房号」", "补填楼栋号与房号（单元号可留空）"));
+                    return;
+                }
+                rowPropertyId = ResolvePropertyByKeyLoose(c, tx, bindBuildingNo.Trim(), bindUnitNo, bindRoomNo.Trim());
+                if (!rowPropertyId.HasValue)
+                {
+                    rowErrors.Add(Err(rowNo, "绑定房产", bindLabel, "找不到唯一对应的房产",
+                        "核对该房产是否存在；若同楼栋存在多个同名房号，请补填单元号"));
+                    return;
+                }
+            }
+
+            if (!hasOwnerColumn)
+            {
+                // 旧模板口径：只按房产绑定 → 业主取该房产的活跃业主
+                propertyId = rowPropertyId;
+                ownerId = rowPropertyId.HasValue ? ResolveOwnerIdByProperty(c, tx, rowPropertyId.Value) : null;
+                return;
+            }
+
+            OwnerMatch match = MatchOwnerForImport(c, tx, bindOwnerName, null, bindOwnerPhone,
+                rowPropertyId, bindBuildingNo, bindUnitNo, bindRoomNo, OwnerRelType.Owner);
+            int? matchedOwnerId = match.OwnerId;
+            if (!matchedOwnerId.HasValue && match.NewOwnerFromRow)
+            {
+                // 同名但补充信息与档案不一致 → 判定为不同业主：按本行信息建档（与业主-房产关系模板同一裁定）
+                int newOwnerId = _repo.InsertOwner(c, tx, new OwnerDto
+                {
+                    Name = bindOwnerName.Trim(),
+                    IdCardType = OwnerIdCardType.IdCard,
+                    Phone = string.IsNullOrWhiteSpace(bindOwnerPhone) ? null : bindOwnerPhone.Trim(),
+                    Status = OwnerStatus.Living
+                });
+                WriteChangeLog(c, tx, BaseChangeObjectType.Owner, newOwnerId, "档案来源",
+                    string.Empty, "车位模板导入（同名信息与档案不一致）", "批量导入");
+                matchedOwnerId = newOwnerId;
+                notes.Add("绑定业主：同名信息与档案不一致 → 已按本行信息新建档案 #" + newOwnerId);
+            }
+            else if (matchedOwnerId.HasValue && match.BackfillPhone && !string.IsNullOrWhiteSpace(bindOwnerPhone))
+            {
+                c.Execute(
+                    "UPDATE t_owner SET phone = @phone, updated_at = datetime('now','localtime') " +
+                    "WHERE id = @id AND del_flag = 0 AND COALESCE(TRIM(phone), '') = ''",
+                    new { phone = bindOwnerPhone.Trim(), id = matchedOwnerId.Value }, tx);
+                notes.Add("绑定业主：档案电话为空 → 已按本行值补齐业主 #" + matchedOwnerId.Value);
+            }
+            if (!matchedOwnerId.HasValue)
+            {
+                rowErrors.Add(Err(rowNo, "绑定业主", bindOwnerName,
+                    match.Reason ?? "找不到该业主",
+                    match.Suggestion ?? "请先维护业主，或在本行补填「业主电话」"));
+                return;
+            }
+            ownerId = matchedOwnerId;
+
+            List<int> ownerProperties = _repo.ListActivePropertyIdsByOwner(c, ownerId.Value);
+            if (rowPropertyId.HasValue)
+            {
+                // 本行同时填了房产 → 该房产必须属于这位业主（否则以业主为准，不引用房产）
+                if (!ownerProperties.Contains(rowPropertyId.Value))
+                {
+                    rowErrors.Add(Err(rowNo, "绑定房产", bindLabel, "该房产不属于本行填写的业主",
+                        "核对「绑定业主」与「绑定楼栋号/房号」；房产归属可在「业主-房产关系」维护"));
+                    return;
+                }
+                propertyId = rowPropertyId;
+                return;
+            }
+
+            // 只填业主 → 房产按该业主名下有效房产自动引用（编辑时原绑定仍属该业主则保留原绑定）
+            if (ownerProperties.Count == 0) { propertyId = null; }
+            else if (keepPropertyId.HasValue && ownerProperties.Contains(keepPropertyId.Value)) { propertyId = keepPropertyId; }
+            else { propertyId = ownerProperties[0]; }
+        }
+
         private ImportCount ImportParkings(IDbConnection c, IDbTransaction tx, IXLWorksheet sheet, List<ImportErrorItemDto> errors)
         {
             Dictionary<string, int> map = BuildColumnMap(sheet);
@@ -1523,6 +1637,10 @@ namespace PropertyManagement.Server.Services
             int colBindBuilding = ColIndex(map, "绑定楼栋号", "楼栋号");
             int colBindUnit = ColIndex(map, "绑定单元号", "单元号");
             int colBindRoom = ColIndex(map, "绑定房号", "房号");
+            // CHG-v1.4.1-06（负责人 2026-10-10）：模板新增「绑定业主 / 业主电话」——车位以业主为准
+            // （房产权属由业主名下有效房产自动引用），与页面 SaveParking 口径一致。
+            int colBindOwner = ColIndex(map, "绑定业主", "业主姓名", "业主");
+            int colBindOwnerPhone = ColIndex(map, "业主电话", "业主手机号", "绑定业主电话");
 
             var count = new ImportCount();
             int row = 2;
@@ -1537,8 +1655,11 @@ namespace PropertyManagement.Server.Services
                 string bindBuildingNo = CellAt(sheet, row, colBindBuilding);
                 string bindUnitNo = CellAt(sheet, row, colBindUnit);
                 string bindRoomNo = CellAt(sheet, row, colBindRoom);
+                string bindOwnerName = CellAt(sheet, row, colBindOwner);
+                string bindOwnerPhone = CellAt(sheet, row, colBindOwnerPhone);
                 // v1.2.0（CHG-v1.2.0-04）：模板预留空白行跳过
-                if (IsBlankRow(spaceNo, area, typeText, statusText, bindBuildingNo, bindUnitNo, bindRoomNo))
+                if (IsBlankRow(spaceNo, area, typeText, statusText, bindBuildingNo, bindUnitNo, bindRoomNo,
+                        bindOwnerName, bindOwnerPhone))
                 { row++; continue; }
                 string spaceKey = string.IsNullOrWhiteSpace(spaceNo) ? "（未填写车位编号）" : spaceNo.Trim();
 
@@ -1568,33 +1689,22 @@ namespace PropertyManagement.Server.Services
                     {
                         ParkingSpaceType newType = hasTypeText ? spaceType : before.SpaceType;
                         ParkingSpaceStatus newStatus = hasStatusText ? status : before.Status;
-                        int? propertyId = null;
-                        bool hasBind = !string.IsNullOrWhiteSpace(bindBuildingNo) || !string.IsNullOrWhiteSpace(bindUnitNo) || !string.IsNullOrWhiteSpace(bindRoomNo);
-                        if (hasBind)
-                        {
-                            // v1.1.0 F-06：绑定房产只需「楼栋号 + 房号」，单元号可留空（老旧小区无单元）
-                            if (string.IsNullOrWhiteSpace(bindBuildingNo) || string.IsNullOrWhiteSpace(bindRoomNo))
-                                rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindRoomNo, "绑定房产需同时填写「绑定楼栋号 + 绑定房号」", "补填楼栋号与房号（单元号可留空）"));
-                            else
-                            {
-                                string bindLabel = bindBuildingNo.Trim() + (string.IsNullOrWhiteSpace(bindUnitNo) ? string.Empty : bindUnitNo.Trim()) + bindRoomNo.Trim();
-                                propertyId = ResolvePropertyByKeyLoose(c, tx, bindBuildingNo.Trim(), bindUnitNo, bindRoomNo.Trim());
-                                if (!propertyId.HasValue)
-                                    rowErrors.Add(Err(row, "绑定房产", bindLabel, "找不到唯一对应的房产", "核对该房产是否存在；若同楼栋存在多个同名房号，请补填单元号"));
-                            }
-                        }
+                        // CHG-v1.4.1-06：绑定解析（业主为准 / 仅房产按旧口径反查业主 / 未填则保留库内既有绑定）
+                        int? propertyId;
+                        int? effOwnerId;
+                        List<string> bindNotes;
+                        ResolveParkingBinding(c, tx, row, bindOwnerName, bindOwnerPhone,
+                            bindBuildingNo, bindUnitNo, bindRoomNo, before.PropertyId, before.OwnerId,
+                            rowErrors, out propertyId, out effOwnerId, out bindNotes);
                         if (rowErrors.Count == 0)
                         {
-                            int? effPropertyId = hasBind ? propertyId : before.PropertyId;
-                            int? effOwnerId = hasBind
-                                ? (effPropertyId.HasValue ? ResolveOwnerIdByProperty(c, tx, effPropertyId.Value) : null)
-                                : before.OwnerId;
+                            int? effPropertyId = propertyId;
                             if (newType == ParkingSpaceType.PropertyRight && effPropertyId.HasValue &&
                                 _repo.CountParkingsBoundToProperty(c, tx, effPropertyId.Value, before.Id, (int)ParkingSpaceType.PropertyRight) > 0)
                             rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位", "更换房产"));
                             if (rowErrors.Count == 0)
                             {
-                                var changes = new List<string>();
+                                var changes = new List<string>(bindNotes);
                                 _repo.UpdateParking(c, tx, new ParkingSpaceDto
                                 {
                                     Id = before.Id,
@@ -1639,36 +1749,22 @@ namespace PropertyManagement.Server.Services
                     }
                     else
                     {
-                        int? propertyId = null;
-                        int? ownerId = null;
-                        bool hasBind = !string.IsNullOrWhiteSpace(bindBuildingNo) || !string.IsNullOrWhiteSpace(bindUnitNo) || !string.IsNullOrWhiteSpace(bindRoomNo);
-                        if (hasBind)
-                        {
-                            // v1.1.0 F-06：绑定房产只需「楼栋号 + 房号」，单元号可留空（老旧小区无单元）
-                            if (string.IsNullOrWhiteSpace(bindBuildingNo) || string.IsNullOrWhiteSpace(bindRoomNo))
-                                rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindRoomNo, "绑定房产需同时填写「绑定楼栋号 + 绑定房号」", "补填楼栋号与房号（单元号可留空）"));
-                            else
-                            {
-                                string bindLabel = bindBuildingNo.Trim() + (string.IsNullOrWhiteSpace(bindUnitNo) ? string.Empty : bindUnitNo.Trim()) + bindRoomNo.Trim();
-                                propertyId = ResolvePropertyByKeyLoose(c, tx, bindBuildingNo.Trim(), bindUnitNo, bindRoomNo.Trim());
-                                if (!propertyId.HasValue)
-                                    rowErrors.Add(Err(row, "绑定房产", bindLabel, "找不到唯一对应的房产", "核对该房产是否存在；若同楼栋存在多个同名房号，请补填单元号"));
-                            }
-                        }
+                        // CHG-v1.4.1-06：绑定解析（业主为准 / 仅房产按旧口径反查业主）
+                        int? propertyId;
+                        int? ownerId;
+                        List<string> bindNotes;
+                        ResolveParkingBinding(c, tx, row, bindOwnerName, bindOwnerPhone,
+                            bindBuildingNo, bindUnitNo, bindRoomNo, null, null,
+                            rowErrors, out propertyId, out ownerId, out bindNotes);
                         if (rowErrors.Count == 0)
                         {
                             if (spaceType == ParkingSpaceType.PropertyRight && propertyId.HasValue &&
                                 _repo.CountParkingsBoundToProperty(c, tx, propertyId.Value, 0, (int)ParkingSpaceType.PropertyRight) > 0)
                             rowErrors.Add(Err(row, "绑定房产", bindBuildingNo + "-" + bindUnitNo + "-" + bindRoomNo, "该房产已绑定一个产权车位", "更换房产"));
                         }
-                        if (rowErrors.Count == 0 && propertyId.HasValue)
-                        {
-                            // 回填业主：取绑定房产的活跃业主（业主类型关系），避免车位业主为空
-                            ownerId = ResolveOwnerIdByProperty(c, tx, propertyId.Value);
-                        }
                         if (rowErrors.Count == 0)
                         {
-                            _repo.InsertParking(c, tx, new ParkingSpaceDto
+                            int newParkingId = _repo.InsertParking(c, tx, new ParkingSpaceDto
                             {
                                 SpaceNo = key,
                                 Area = area,
@@ -1679,7 +1775,10 @@ namespace PropertyManagement.Server.Services
                                 MonthlyRent = null,
                                 RentTo = null
                             });
-                            count.AddInserted(row, spaceKey);
+                            string insertedLabel = spaceKey + "（车位 #" + newParkingId + "）";
+                            count.AddInserted(row, bindNotes.Count == 0
+                                ? insertedLabel
+                                : (insertedLabel + "，" + string.Join("；", bindNotes)));
                         }
                     }
                 }
@@ -2387,7 +2486,9 @@ namespace PropertyManagement.Server.Services
         {
             var data = QueryParkings(filter ?? new BaseInfoQueryRequest { PageIndex = 1, PageSize = 100000 });
             var sheet = workbook.Worksheets.Add("车位");
-            string[] headers = { "车位编号", "区域", "类型", "状态", "绑定房产", "租金", "租期至" };
+            // CHG-v1.4.1-03（负责人 2026-10-10）：租金/租期至自 v1.1.0-12 已从界面下线（定价统一归收费项目），
+            // 导出却仍在导这两列 —— 本轮回退对齐：移除「租金 / 租期至」，新增「绑定业主」。
+            string[] headers = { "车位编号", "区域", "类型", "状态", "绑定房产", "绑定业主" };
             for (int i = 0; i < headers.Length; i++) sheet.Cell(1, i + 1).Value = headers[i];
             int r = 2;
             foreach (var p in data.Items)
@@ -2397,8 +2498,7 @@ namespace PropertyManagement.Server.Services
                 sheet.Cell(r, 3).Value = p.SpaceTypeText ?? string.Empty;
                 sheet.Cell(r, 4).Value = p.StatusText ?? string.Empty;
                 sheet.Cell(r, 5).Value = p.BindingProperty ?? string.Empty;
-                sheet.Cell(r, 6).Value = (double?)(p.MonthlyRent ?? 0);
-                sheet.Cell(r, 7).Value = p.RentTo.HasValue ? p.RentTo.Value.ToString("yyyy-MM-dd") : string.Empty;
+                sheet.Cell(r, 6).Value = p.OwnerName ?? string.Empty;
                 r++;
             }
             for (int c = 1; c <= headers.Length; c++) sheet.Column(c).Width = 16;

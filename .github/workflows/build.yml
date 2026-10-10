@@ -29,7 +29,8 @@ jobs:
 
       # v1.1.1 版本元数据同源治理：打印程序集版本便于构建记录可追溯（不阻断构建）
       - name: Print assembly version (traceability)
-        shell: powershell
+        # 用 pwsh：Windows PowerShell 5.1 会把无 BOM 的步骤脚本按 ANSI 读，中文行会解析报错
+        shell: pwsh
         continue-on-error: true
         run: |
           $exe = 'PropertyManagement.Client\bin\Release\PropertyManagement.Client.exe'
