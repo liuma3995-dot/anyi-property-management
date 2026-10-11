@@ -77,14 +77,25 @@ namespace PropertyManagement.Server.Api
         }
 
         /// <summary>
-        /// 删除退款/减免/调整记录（CHG-v1.4.0-01）：只允许删除「无关联账单」的补收/冲正记录；
-        /// 软删留痕 + 下游（退款列表 / 财务报表 / 收支明细流水）同步不再显示。
+        /// 删除退款/减免/调整记录（CHG-v1.4.0-01 初版；CHG-v1.5.0-01 放开为全部记录可删）。
+        /// 软删留痕；调整（冲正/补收）删除 → 报表/流水移除金额并同步回退关联账单实缴；退款/减免只删记录。
         /// </summary>
         [HttpPost]
         [Route("refunds/delete")]
         public ApiResponse<RefundAdjustmentDto> DeleteRefund(RefundDeleteRequest request)
         {
             return ApiResponse<RefundAdjustmentDto>.Ok(_payments.DeleteRefund(request, GetUsername(), GetIp()));
+        }
+
+        /// <summary>
+        /// 批量删除退款/减免/调整记录（CHG-v1.5.0-01，负责人 2026-10-11 裁定）：
+        /// 支持勾选/全选后一次删除；口径与单条一致（调整回退账单，退款/减免只删记录）。
+        /// </summary>
+        [HttpPost]
+        [Route("refunds/delete-batch")]
+        public ApiResponse<RefundBatchDeleteResultDto> DeleteRefundBatch(RefundDeleteBatchRequest request)
+        {
+            return ApiResponse<RefundBatchDeleteResultDto>.Ok(_payments.DeleteRefundBatch(request, GetUsername(), GetIp()));
         }
 
         [HttpGet]

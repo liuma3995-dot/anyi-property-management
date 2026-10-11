@@ -215,10 +215,16 @@ namespace PropertyManagement.Client.Services
         Task<ReportLogDto> ExportArrearDetailsPdfAsync(ArrearDetailExportRequest request);
 
         /// <summary>
-        /// CHG-v1.4.0-01：删除退款/减免/调整记录 —— 只允许删除「无关联账单」的补收/冲正记录；
-        /// 删除 = 软删留痕，退款列表 / 财务报表 / 收支明细流水同步不再显示。
+        /// CHG-v1.4.0-01 初版；CHG-v1.5.0-01 放开为全部记录可删 —— 软删留痕；
+        /// 调整（冲正/补收）删除同步回退关联账单实缴，退款/减免只删记录、账面金额不变。
         /// </summary>
         Task<RefundAdjustmentDto> DeleteRefundAsync(RefundDeleteRequest request);
+
+        /// <summary>
+        /// CHG-v1.5.0-01：批量删除退款/减免/调整记录（勾选 / 全选后一次删除），
+        /// 口径与单条一致；返回逐条跳过原因。
+        /// </summary>
+        Task<RefundBatchDeleteResultDto> DeleteRefundBatchAsync(RefundDeleteBatchRequest request);
 
         /// <summary>
         /// CHG-v1.4.0-03：账单工作台「导出PDF」—— 当前筛选下的批次清单 + 每批次缴费对象明细。

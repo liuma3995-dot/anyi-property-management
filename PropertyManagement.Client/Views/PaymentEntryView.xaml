@@ -207,6 +207,27 @@
                         </TextBlock.Style>
                     </TextBlock>
 
+                    <!-- CHG-v1.5.0-04：抹零金额（直接冲减该账单应收；红色与收款金额输入框区分） -->
+                    <TextBlock Text="抹零金额（元）" FontSize="10" Foreground="{StaticResource DangerBrush}" Margin="0,10,0,6" />
+                    <Border Height="40" Background="#FDECEC" CornerRadius="8"
+                            IsEnabled="{Binding CanRoundOff}">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="¥" FontSize="17" FontWeight="Bold"
+                                       Foreground="{StaticResource DangerBrush}" Margin="14,0,0,0"
+                                       VerticalAlignment="Center" />
+                            <controls:DecimalTextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                                     FontSize="17" FontWeight="Bold" Foreground="#D64545"
+                                     Value="{Binding RoundingAmount, UpdateSourceTrigger=PropertyChanged}"
+                                     Margin="6,0,14,0" />
+                        </Grid>
+                    </Border>
+                    <TextBlock Text="抹零金额由用户手动填写（不填即不抹零）：填写后本次收款自动调整为「未收 − 抹零」，直接冲减该账单应收；收据不显示抹零金额。统一收款不适用。"
+                               FontSize="10" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="2,4,0,0" />
+
                     <!-- 收款方式（CHG-v1.1.0-15：收据号字段前后端下线，本行只保留收款方式） -->
                     <Grid Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>

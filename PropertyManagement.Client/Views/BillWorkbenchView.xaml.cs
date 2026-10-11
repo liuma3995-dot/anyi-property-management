@@ -11,6 +11,16 @@ namespace PropertyManagement.Client.Views
         public BillWorkbenchView()
         {
             InitializeComponent();
+            // CHG-v1.5.0-07：弹窗打开瞬间按「页面实际可用宽高」重算尺寸 ——
+            // 打开弹窗时页面尺寸并未变化，SizeChanged 不会触发，若不重算会沿用旧值（可能仍大于页面）。
+            GenerateOverlay.IsVisibleChanged += (s, e) =>
+            {
+                if (GenerateOverlay.IsVisible)
+                {
+                    Dispatcher.BeginInvoke(new Action(ApplyGenerateDialogHeight),
+                        System.Windows.Threading.DispatcherPriority.Loaded);
+                }
+            };
         }
 
         /// <summary>行勾选写回：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，需在点击时显式同步到行对象。</summary>
@@ -29,6 +39,19 @@ namespace PropertyManagement.Client.Views
         /// （150 − 表头 48 = 102 → 32px 行高只能放 3 行），与本机窗口尺寸无关。
         /// 现表格上限放宽到 8 行（304 = 8×32 + 表头 48），滚动区上限随窗口增长，
         /// 1366×768 下仍保证底部按钮与滚动条不被遮挡。
+        ///
+        /// CHG-v1.5.0-02（负责人 2026-10-11 反馈「1366×768 下数据表格最后一列『缴费人』看不到」）：
+        /// 宽度同样改为随窗口自适应 —— 弹窗原为**固定 Width=1000**，而表格列宽合计 1024px
+        /// （勾选 48 + 缴费对象 170 + 规格 212 + 单价 130 + 计量 196 + 预估金额 100 + 状态 88 + 缴费人 80），
+        /// 内容区可用 ≈ 946px，末列被整列挤出可视区（与窗口大小无关，因弹窗宽度写死）。
+        /// 现口径：宽度 = Clamp(宿主宽度 − 48, 980, 1240)，最大化时放宽到上限，1366×768 下也能完整显示末列。
+        ///
+        /// CHG-v1.5.0-06（负责人 2026-10-11 反馈「窗口未最大化时生成账单页仍被遮挡」）：
+        /// 上一轮只按「最大化」场景收口：高度下限写死 620、宽度下限写死 980 —— 窗口未最大化（宿主更小）时
+        /// 弹窗反而比宿主还大，上下/左右都被切掉。现改为**真自适应**：
+        /// 高度 = Clamp(宿主高度 − 96, 300, 900)（内部滚动，绝不高过宿主），
+        /// 宽度 = Clamp(宿主宽度 − 24, 520, 1240)；表格列改用「星宽 + 最小宽」自动收放，
+        /// 窄窗口下末列「缴费人」同样完整可见。
         /// </summary>
         private void PageGrid_SizeChanged(object sender, SizeChangedEventArgs e)
         {
@@ -38,10 +61,27 @@ namespace PropertyManagement.Client.Views
         private void ApplyGenerateDialogHeight()
         {
             if (GenerateDialogScroll == null) { return; }
-            Window host = Window.GetWindow(this);
-            double hostHeight = host == null || host.ActualHeight <= 0 ? 768d : host.ActualHeight;
-            double available = hostHeight - 140d;
-            GenerateDialogScroll.MaxHeight = Math.Max(620d, Math.Min(900d, available));
+            // CHG-v1.5.0-07（负责人 2026-10-11 反馈「非最大化下弹窗仍被左右切掉」）：
+            // 根因是**参考宽度取错了对象** —— 上一版用「宿主窗口宽度 − 24」（窗口 ≈1366 → 弹窗 1240），
+            // 但弹窗实际居中在「页面可用区」（窗口扣掉左侧导航与页面外边距后仅约 1000～1100），
+            // 于是弹窗比可用区更宽、左右各被切掉一截（现场表现为标题「生成账单（草稿）」只剩「单（草稿）」）。
+            // 现口径：一律以**弹窗所在页面（PageGrid）的实际宽高**为准，弹窗绝不超出页面可用区。
+            double availWidth = PageGrid != null && PageGrid.ActualWidth > 0 ? PageGrid.ActualWidth : ActualWidth;
+            double availHeight = PageGrid != null && PageGrid.ActualHeight > 0 ? PageGrid.ActualHeight : ActualHeight;
+            if (availWidth <= 0 || availHeight <= 0)
+            {
+                Window host = Window.GetWindow(this);
+                availWidth = host == null || host.ActualWidth <= 0 ? 1366d : host.ActualWidth;
+                availHeight = host == null || host.ActualHeight <= 0 ? 768d : host.ActualHeight;
+            }
+
+            if (GenerateDialog != null)
+            {
+                // 高宽都按页面可用区自适应（各留 12），弹窗整体始终在页面内；
+                // 正文超出时由内部 ScrollViewer 承载，「生成草稿 / 取消」页脚固定在弹窗底部。
+                GenerateDialog.MaxHeight = Math.Min(900d, Math.Max(320d, availHeight - 24d));
+                GenerateDialog.Width = Math.Max(520d, Math.Min(1240d, availWidth - 24d));
+            }
         }
 
         /// <summary>CHG-v1.1.0-10：缴费对象勾选写回（生成账单弹窗内只读 DataGrid）。</summary>

@@ -216,6 +216,10 @@ namespace PropertyManagement.Client.ViewModels
         private string _deleteConfirmText = string.Empty;
         private string _deleteConfirmTitle = "确认删除批次";
         private BillBatchRow _pendingDelete;
+        // ---- CHG-v1.5.0-03：生成草稿前确认（含抹零子功能） ----
+        private bool _isGenerateConfirmVisible;
+        private string _generateConfirmText = string.Empty;
+        private bool _generateRoundOff;
         /// <summary>CHG-v1.1.0-17：待删除的计费周期（与批次删除复用同一确认弹窗）。</summary>
         private BillingCycleDto _pendingCycleDelete;
         private List<BillBatchRow> _batchDeleteRows;
@@ -247,6 +251,9 @@ namespace PropertyManagement.Client.ViewModels
             GenerateCommand = new AsyncRelayCommand(GenerateAsync);
             OpenGenerateCommand = new AsyncRelayCommand(OpenGenerateAsync);
             CloseGenerateCommand = new RelayCommand(() => IsGenerateVisible = false);
+            // CHG-v1.5.0-03：生成草稿确认弹层（含抹零子功能）
+            ConfirmGenerateCommand = new AsyncRelayCommand(ConfirmGenerateAsync);
+            CancelGenerateCommand = new RelayCommand(() => IsGenerateConfirmVisible = false);
             PublishCommand = new RelayCommand<BillBatchRow>(RequestPublish);
             ConfirmPublishCommand = new AsyncRelayCommand(ConfirmPublishAsync);
             CancelPublishCommand = new RelayCommand(() => IsPublishConfirmVisible = false);
@@ -529,6 +536,12 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand GenerateCommand { get; }
         public IAsyncRelayCommand OpenGenerateCommand { get; }
         public IRelayCommand CloseGenerateCommand { get; }
+        /// <summary>CHG-v1.5.0-03：生成草稿确认弹层可见性 / 文案 / 抹零开关。</summary>
+        public bool IsGenerateConfirmVisible { get { return _isGenerateConfirmVisible; } private set { SetProperty(ref _isGenerateConfirmVisible, value); } }
+        public string GenerateConfirmText { get { return _generateConfirmText; } private set { SetProperty(ref _generateConfirmText, value); } }
+        public bool GenerateRoundOff { get { return _generateRoundOff; } set { SetProperty(ref _generateRoundOff, value); } }
+        public IAsyncRelayCommand ConfirmGenerateCommand { get; }
+        public IRelayCommand CancelGenerateCommand { get; }
         public IRelayCommand<BillBatchRow> PublishCommand { get; }
         public IAsyncRelayCommand ConfirmPublishCommand { get; }
         public IRelayCommand CancelPublishCommand { get; }
@@ -1105,6 +1118,33 @@ namespace PropertyManagement.Client.ViewModels
                     return;
                 }
             }
+            // CHG-v1.5.0-03（负责人 2026-10-11 裁定）：校验通过后先弹「生成草稿确认」（含抹零子功能），
+            // 确认后再提交生成；取消则留在本弹窗继续调整。
+            int targetCount = IsCustomChargeObject ? customPayerNames.Count : selectedObjectIds.Count;
+            GenerateConfirmText =
+                "收费项目：" + SelectedItem.Name + "\n" +
+                "计费周期：" + DescribeCycle(SelectedCycle) + "\n" +
+                "缴费对象：" + targetCount + " 个（" + (IsCustomChargeObject ? "自定义缴费对象" : ObjectKindLabel()) + "）";
+            GenerateRoundOff = false;
+            ErrorText = string.Empty;
+            IsGenerateConfirmVisible = true;
+            await Task.CompletedTask;
+        }
+
+        /// <summary>CHG-v1.5.0-03：确认生成草稿（按用户在确认弹层里是否勾选抹零提交）。</summary>
+        private async Task ConfirmGenerateAsync()
+        {
+            bool roundOff = GenerateRoundOff;
+            IsGenerateConfirmVisible = false;
+            await ExecuteGenerateAsync(roundOff);
+        }
+
+        /// <summary>CHG-v1.5.0-03：真正执行生成草稿（roundOff = 是否对所有账单去尾抹零到整元）。</summary>
+        private async Task ExecuteGenerateAsync(bool roundOff)
+        {
+            List<string> customPayerNames = IsCustomChargeObject ? CustomPayerNames() : new List<string>();
+            List<int> selectedObjectIds = IsCustomChargeObject ? new List<int>() : SelectedObjectIds();
+
             BillGenerateLogDto log = null;
             await RunAsync(async () =>
             {
@@ -1135,7 +1175,9 @@ namespace PropertyManagement.Client.ViewModels
                     // CHG-v1.1.2-26：自定义缴费对象的规格手选与计量参数一并提交（服务端按此计价并落快照）
                     CustomPayers = IsCustomChargeObject ? BuildCustomPayerRequests() : null,
                     // CHG-v1.1.2-34：档案对象（房产/车位/业主）的行内手填计量参数一并提交
-                    ObjectMeasures = IsCustomChargeObject ? null : BuildObjectMeasures()
+                    ObjectMeasures = IsCustomChargeObject ? null : BuildObjectMeasures(),
+                    // CHG-v1.5.0-03：本次是否抹零（去尾到整元）
+                    RoundOff = roundOff
                 });
                 await RefreshBatchesAsync();
                 await RefreshSummaryAsync();
@@ -1146,15 +1188,29 @@ namespace PropertyManagement.Client.ViewModels
             // 故生成结果提示必须在 RunAsync 返回之后再写入（否则提示被清掉、界面无反馈）。
             if (log != null)
             {
+                string roundText = roundOff ? "（已抹零）" : string.Empty;
                 if (log.Fail > 0)
                 {
-                    ErrorText = "生成完成：成功 " + log.Success + " 户，失败 " + log.Fail + " 户（见失败清单）";
+                    ErrorText = "生成完成：成功 " + log.Success + " 户，失败 " + log.Fail + " 户（见失败清单）" + roundText;
                 }
                 else
                 {
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "生成草稿 " + log.Success + " 户，等待发布";
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "生成草稿 " + log.Success + " 户" + roundText + "，等待发布";
                 }
             }
+        }
+
+        /// <summary>计费周期描述（确认弹层用）。</summary>
+        private static string DescribeCycle(BillingCycleDto cycle)
+        {
+            if (cycle == null) { return "—"; }
+            return cycle.StartDate.ToString("yyyy-MM-dd") + " ~ " + cycle.EndDate.ToString("yyyy-MM-dd");
+        }
+
+        /// <summary>当前缴费对象类型标签。</summary>
+        private string ObjectKindLabel()
+        {
+            return ObjectKindIndex == 1 ? "车位" : (ObjectKindIndex == 2 ? "业主" : "房产");
         }
 
         /// <summary>新增自定义计费周期（T4F-3-1 补充：生成账单周期不固定，可选任意起止日期）。</summary>

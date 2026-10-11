@@ -285,6 +285,11 @@ namespace PropertyManagement.Contract.Finance
         public decimal? UnitPriceSnapshot { get; set; }
         /// <summary>CHG-v1.1.2-26：出账时使用的公式快照。</summary>
         public string FormulaSnapshot { get; set; }
+        /// <summary>
+        /// CHG-v1.5.0-03：该账单累计被抹掉的尾差（元）—— 出账抹零（去尾到整元）+ 收款抹零累加；
+        /// 应收（Amount）已按抹零后的金额落库，本字段仅用于追溯与统计。
+        /// </summary>
+        public decimal RoundingAmount { get; set; }
     }
 
     /// <summary>缴费记录（t_payment，UC-FIN-003，BR-FIN-02）。</summary>
@@ -351,6 +356,24 @@ namespace PropertyManagement.Contract.Finance
         public int ArchiveReleasedCount { get; set; }
     }
 
+    /// <summary>
+    /// 批量删除退款/减免/调整记录的结果（CHG-v1.5.0-01）。
+    /// 返回实际删除的条数与逐条跳过原因（不存在 / 已删除）。
+    /// </summary>
+    public class RefundBatchDeleteResultDto
+    {
+        /// <summary>实际删除（软删）的记录主键。</summary>
+        public List<int> DeletedIds { get; set; }
+        /// <summary>成功删除条数。</summary>
+        public int Deleted { get; set; }
+        /// <summary>未删除条数。</summary>
+        public int Skipped { get; set; }
+        /// <summary>未删除原因明细（逐条，直接展示给用户）。</summary>
+        public List<string> SkippedItems { get; set; }
+        /// <summary>删除中同步回退账单实缴/应收的账单数。</summary>
+        public int BillReverted { get; set; }
+    }
+
     /// <summary>收据（t_receipt，UC-FIN-011，BR-FIN-08 收据号唯一）。</summary>
     public class ReceiptDto
     {
@@ -382,6 +405,10 @@ namespace PropertyManagement.Contract.Finance
         public string AttachmentName { get; set; }
         public string AttachmentPath { get; set; }
         public string PropertyNo { get; set; }
+        /// <summary>CHG-v1.5.0-08：关联房产楼栋（记录表「关联房产」列显示「楼栋/单元/房号」）。</summary>
+        public string BuildingNo { get; set; }
+        /// <summary>CHG-v1.5.0-08：关联房产单元。</summary>
+        public string UnitNo { get; set; }
 
         /// <summary>
         /// CHG-v1.2.0-35：本次退款/调整冲减后该账单**重新变为未结清**，其「已结清归档」标记被自动解除

@@ -417,15 +417,22 @@
         </StackPanel>
 
         <!-- ============ 生成账单浮层 ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateVisible, Converter={StaticResource BoolToVis}}">
+        <Grid x:Name="GenerateOverlay" Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <!-- CHG-v1.4.0-08（负责人 2026-10-08 反馈「最大化后缴费对象数据表格只显示 3 行」）：
                  浮层高度改为随窗口自适应（尺寸由代码后置按窗口高度回写），并放宽内部滚动上限，
                  使缴费对象表格在最大化下显示 8 行（见下方 DataGrid MaxHeight）。 -->
             <Border x:Name="GenerateDialog" Width="1000" HorizontalAlignment="Center" VerticalAlignment="Center"
                     Style="{StaticResource CardBorder}" Padding="26,22">
-                <ScrollViewer x:Name="GenerateDialogScroll" VerticalScrollBarVisibility="Auto" MaxHeight="700">
-                <StackPanel>
+                <!-- CHG-v1.5.0-06：改为「可滚动正文 + 固定页脚」两行布局 —— 小窗口下正文内部滚动，
+                     「生成草稿 / 取消」始终贴在弹窗底部，不会被挤出可视区 -->
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <ScrollViewer Grid.Row="0" x:Name="GenerateDialogScroll" VerticalScrollBarVisibility="Auto">
+                        <StackPanel>
                     <TextBlock Text="生成账单（草稿）" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <TextBlock Text="依次选择收费项目、计费周期与缴费对象，生成草稿账单；校验不通过的对象进入失败清单"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,16" />
@@ -528,7 +535,7 @@
                             <DataGrid.Columns>
                                 <!-- CHG-v1.1.2-35 / -36：勾选列用「GridCheckCell + GridCheckBox」专用样式（去单元格 12px 内边距），
                                      否则默认单元格内边距会把 24px 宽的勾选框裁掉一半（全仓其它模块同口径） -->
-                                <DataGridTemplateColumn Width="48" MinWidth="48" CellStyle="{StaticResource GridCheckCell}">
+                                <DataGridTemplateColumn Width="44" MinWidth="44" CellStyle="{StaticResource GridCheckCell}">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" Click="ObjectCheckBox_Click"
@@ -537,15 +544,17 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <!-- CHG-v1.1.2-35：列宽按「对话框 1000 − 内边距」重排，表头文字与状态标识不再被裁切 -->
-                                <DataGridTextColumn Header="缴费对象" Width="170" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="缴费对象" Width="*" MinWidth="132" Binding="{Binding No}" ElementStyle="{StaticResource GridCellText}" />
                                 <!-- CHG-v1.2.0-12 / -15：规格列＝表头批选（默认） + 行内手选（覆盖）——
                                      表头选定后本批全部对象按该规格与其计算规则出账，无需逐条单选；
                                      不选＝自动匹配（按适用条件）。 -->
-                                <DataGridTemplateColumn Width="212" MinWidth="212">
+                                <!-- CHG-v1.5.0-02 / -06：列宽改「星宽 + 最小宽」自动收放 ——
+                                     宽窗口按比例铺满，窄窗口压缩到最小宽（合计 814）仍不裁末列「缴费人」 -->
+                                <DataGridTemplateColumn Width="1.35*" MinWidth="168">
                                     <DataGridTemplateColumn.Header>
                                         <StackPanel>
                                             <TextBlock Text="规格（默认/可手选）" FontSize="11" />
-                                            <ComboBox Height="24" FontSize="10" Margin="0,3,0,0" MaxWidth="196"
+                                            <ComboBox Height="24" FontSize="10" Margin="0,3,0,0" MaxWidth="192"
                                                       VerticalAlignment="Center"
                                                       ItemsSource="{Binding DataContext.BatchSpecOptions, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                                       DisplayMemberPath="ShortDisplayText"
@@ -559,7 +568,7 @@
                                                 <TextBlock Text="{Binding SpecText}" FontSize="11" VerticalAlignment="Center"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            Visibility="{Binding CanPickSpec, Converter={StaticResource InverseBoolToVis}}" />
-                                                <ComboBox Height="26" FontSize="11" MinWidth="150" MaxWidth="188"
+                                                <ComboBox Height="26" FontSize="11" MinWidth="150" MaxWidth="184"
                                                           VerticalAlignment="Center"
                                                           ItemsSource="{Binding SpecOptions}"
                                                           DisplayMemberPath="DisplayText"
@@ -573,7 +582,7 @@
                                 </DataGridTemplateColumn>
                                 <!-- CHG-v1.1.2-50：单价列 —— 收费项目开启「出账时可改价」时按行改价（留空＝价目表单价）；
                                      未开启时保持只读展示，与价目表口径一致。 -->
-                                <DataGridTemplateColumn Header="单价" Width="130">
+                                <DataGridTemplateColumn Header="单价" Width="*" MinWidth="96">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid VerticalAlignment="Center">
@@ -597,7 +606,7 @@
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
                                 <!-- CHG-v1.1.2-34：价目表「手填」变量 → 出账行内输入框（其余来源只读展示计量结果） -->
-                                <DataGridTemplateColumn Header="计量" Width="196">
+                                <DataGridTemplateColumn Header="计量" Width="1.15*" MinWidth="124">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Grid VerticalAlignment="Center">
@@ -631,8 +640,8 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="预估金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
-                                <DataGridTemplateColumn Header="状态" Width="88">
+                                <DataGridTextColumn Header="预估金额" Width="*" MinWidth="88" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTemplateColumn Header="状态" Width="76" MinWidth="76">
                                     <DataGridTemplateColumn.CellTemplate>
                                         <DataTemplate>
                                             <Border Background="{Binding PreviewBg}" CornerRadius="10" Padding="6,2" HorizontalAlignment="Left"
@@ -643,7 +652,7 @@
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
-                                <DataGridTextColumn Header="缴费人" Width="80" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="缴费人" Width="*" MinWidth="86" Binding="{Binding OwnerText}" ElementStyle="{StaticResource GridCellText}" />
                             </DataGrid.Columns>
                         </DataGrid>
                     </Border>
@@ -825,20 +834,53 @@
                     <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}"
                                TextWrapping="Wrap" Margin="0,8,0,0" />
 
-                    <Grid>
+                        </StackPanel>
+                    </ScrollViewer>
+                    <!-- CHG-v1.5.0-06：固定页脚（不随正文滚动） -->
+                    <Grid Grid.Row="1" Margin="0,14,0,0">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="生成草稿" Margin="0,14,0,0"
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="生成草稿"
                                 Command="{Binding GenerateCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource LinkButton}" Content="取消" FontSize="13"
-                                HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0,14,0,0"
+                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Command="{Binding CloseGenerateCommand}" />
                     </Grid>
+                </Grid>
+            </Border>
+        </Grid>
+
+        <!-- ============ 生成草稿确认弹层（CHG-v1.5.0-03：含抹零子功能） ============ -->
+        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsGenerateConfirmVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border Width="460" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+                <StackPanel>
+                    <TextBlock Text="确认生成草稿" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding GenerateConfirmText}" FontSize="13" TextWrapping="Wrap"
+                               Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,12" />
+                    <Border Background="{StaticResource SurfaceAltBrush}" BorderBrush="{StaticResource BorderBrushColor}"
+                            BorderThickness="1" CornerRadius="6" Padding="12,10">
+                        <StackPanel>
+                            <CheckBox Content="对本次生成的账单抹零（去掉角分，保留到整元）" FontSize="12"
+                                      Foreground="{StaticResource TextPrimaryBrush}"
+                                      IsChecked="{Binding GenerateRoundOff, Mode=TwoWay}" />
+                            <TextBlock Text="勾选后每条账单金额去尾到整元（如 123.45 → 123.00），尾差记入账单抹零金额；不勾选按原金额生成。"
+                                       FontSize="10" Foreground="{StaticResource TextMutedBrush}" TextWrapping="Wrap" Margin="22,4,0,0" />
+                        </StackPanel>
+                    </Border>
+                    <Grid Margin="0,18,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="确认生成" Command="{Binding ConfirmGenerateCommand}" />
+                        <Button Grid.Column="2" Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelGenerateCommand}" />
+                    </Grid>
                 </StackPanel>
-                </ScrollViewer>
             </Border>
         </Grid>
 

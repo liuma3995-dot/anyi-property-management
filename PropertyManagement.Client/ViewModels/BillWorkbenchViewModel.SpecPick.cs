@@ -84,12 +84,17 @@ namespace PropertyManagement.Client.ViewModels
                     // 显式置位（ObservableCollection 变化不会触发 CanPickSpec 的 PropertyChanged，
                     // 否则绑定只在首次求值 → 下拉框永远显示不出来，现场表现为「规格列还是只读文本」）
                     row.CanPickSpec = row.SpecOptions.Count > 1;
+                    // CHG-v1.5.0-05（负责人 2026-10-11 反馈「重开弹窗后规格列全部空白」）：
+                    // 候选集合「Clear + Add」会把 ComboBox 的 SelectedItem 在**目标侧**重置为 null，
+                    // 而 `SelectedItem` 是 OneWay 绑定 —— 源值未变时不会回推，于是单元格永远空白。
+                    // 处置：候选重建后**强制通知** SelectedSpec 变化，让 ComboBox 按当前源值重新选中。
                     if (row.Dto == null) { continue; }
                     int specId;
                     int? wanted = _objectSpecs.TryGetValue(ObjectKey(row.Dto.Id), out specId) ? specId : _defaultSpecId;
                     row.SelectedSpec = wanted.HasValue
                         ? (row.SpecOptions.FirstOrDefault(x => x.SpecId == wanted.Value) ?? row.SpecOptions.FirstOrDefault())
                         : row.SpecOptions.FirstOrDefault();
+                    row.NotifySelectedSpecChanged();
                 }
             }
             finally
@@ -123,6 +128,7 @@ namespace PropertyManagement.Client.ViewModels
                 foreach (BillObjectRow row in BillObjects)
                 {
                     row.SelectedSpec = row.SpecOptions.FirstOrDefault();
+                    row.NotifySelectedSpecChanged();
                 }
             }
             finally
@@ -173,6 +179,16 @@ namespace PropertyManagement.Client.ViewModels
         {
             get { return _selectedSpec; }
             set { SetProperty(ref _selectedSpec, value); }
+        }
+
+        /// <summary>
+        /// CHG-v1.5.0-05：强制通知选中项变化。
+        /// 候选集合重建（Clear + Add）会把 ComboBox 的 SelectedItem 在目标侧重置为 null，
+        /// 而 OneWay 绑定在源值未变时不会回推 → 单元格空白；重建后调用本方法让 ComboBox 重新选中。
+        /// </summary>
+        public void NotifySelectedSpecChanged()
+        {
+            OnPropertyChanged(nameof(SelectedSpec));
         }
 
         private bool _canPickSpec;

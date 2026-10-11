@@ -15,6 +15,18 @@ namespace PropertyManagement.Client.Views
             InitializeComponent();
         }
 
+        /// <summary>
+        /// CHG-v1.5.0-01：记录表勾选写回 —— 只读 DataGrid 中模板 CheckBox 的绑定不会写回源，
+        /// 需在点击时显式同步到行对象（与收款登记应缴明细同口径）。
+        /// </summary>
+        private void RecordCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is RefundRow row)
+            {
+                row.IsChecked = cb.IsChecked == true;
+            }
+        }
+
         /// <summary>记录表列头高度（与 Theme.xaml 的 DataGridColumnHeader.Height 一致）。</summary>
         private const double RecordsHeaderHeight = 36;
 

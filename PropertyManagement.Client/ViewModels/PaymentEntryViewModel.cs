@@ -226,6 +226,10 @@ namespace PropertyManagement.Client.ViewModels
         private PropertyPaymentOption _selectedProperty;
         private PaymentBillRow _selectedBill;
         private decimal _payAmount;
+        /// <summary>CHG-v1.5.0-04：收款抹零金额（直接冲减账单应收；上限 = 未收金额）。</summary>
+        private decimal _roundingAmount;
+        /// <summary>「本次收款金额 ↔ 抹零金额」联动重入保护。</summary>
+        private bool _syncingAmounts;
         private int _payMethod;
         private DateTime _payDate;
         private bool _printReceipt = true;
@@ -506,11 +510,13 @@ namespace PropertyManagement.Client.ViewModels
             OnPropertyChanged(nameof(CheckedBillsText));
             OnPropertyChanged(nameof(IsBatchPayment));
             OnPropertyChanged(nameof(PayAmountHintText));
+            OnPropertyChanged(nameof(CanRoundOff));
             // CHG-v1.2.0-31：应缴明细记录管理（已结清条数 / 按钮可用态）
             OnPropertyChanged(nameof(SettledBillCount));
             OnPropertyChanged(nameof(CanArchiveSettled));
             if (IsBatchPayment)
             {
+                ResetRoundingAmount();             // CHG-v1.5.0-04：统一收款不适用抹零
                 PayAmount = CheckedUnpaidAmount;   // 统一收款：按勾选账单欠费合计锁定
             }
             else if (CheckedBillCount == 1)
@@ -555,10 +561,55 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _payAmount, value))
                 {
+                    // CHG-v1.5.0-06（负责人 2026-10-11 反馈「应收 2410 / 收款 2200 被自动抹零 210」）：
+                    // 收款金额**不再反推抹零** —— 抹零必须由用户手动填写；没有抹零需求时保持 0，
+                    // 少收的差额按「部分缴」留在账单上，不会被强制抹掉。
                     UpdateAmountWarn();
                     UpdateReceiptPreview();
                 }
             }
+        }
+
+        /// <summary>
+        /// CHG-v1.5.0-04（负责人 2026-10-11 裁定）：收款抹零金额（元）——
+        /// **直接冲减该账单应收**，使「应收 = 实收」结清；上限 = 未收金额（允许整单减免）；
+        /// CHG-v1.5.0-06：**仅手动输入**（收款金额不再反推抹零）；用户填写抹零后，
+        /// 「本次收款金额」自动调整为「未收 − 抹零」；统一收款（勾选 ≥2 张）不适用。
+        /// </summary>
+        public decimal RoundingAmount
+        {
+            get { return _roundingAmount; }
+            set
+            {
+                if (!SetProperty(ref _roundingAmount, value)) { return; }
+                if (!_syncingAmounts && !IsBatchPayment && _selectedBill != null)
+                {
+                    _syncingAmounts = true;
+                    try
+                    {
+                        decimal target = _selectedBill.UnpaidAmount - value;
+                        if (target < 0m) { target = 0m; }
+                        if (_payAmount != target) { SetProperty(ref _payAmount, target, nameof(PayAmount)); }
+                    }
+                    finally { _syncingAmounts = false; }
+                }
+                UpdateAmountWarn();
+                UpdateReceiptPreview();
+            }
+        }
+
+        /// <summary>CHG-v1.5.0-04：抹零是否可用（统一收款 / 未选账单时不可用）。</summary>
+        public bool CanRoundOff { get { return !IsBatchPayment && _selectedBill != null; } }
+
+        /// <summary>CHG-v1.5.0-04：重置抹零（切换账单 / 重新加载时，避免带上一次的值）。</summary>
+        private void ResetRoundingAmount()
+        {
+            _syncingAmounts = true;
+            try
+            {
+                if (_roundingAmount != 0m) { SetProperty(ref _roundingAmount, 0m, nameof(RoundingAmount)); }
+            }
+            finally { _syncingAmounts = false; }
         }
 
         public int PayMethod
@@ -891,6 +942,7 @@ namespace PropertyManagement.Client.ViewModels
                 UnpaidTotalText = "¥" + Bills.Sum(x => x.UnpaidAmount).ToString("N2");
                 // CHG-v1.1.0-12：改由勾选驱动（单选/多选/全选统一收款），不再自动选中最早账单
                 SelectedBill = null;
+                ResetRoundingAmount();   // CHG-v1.5.0-04：重新加载应缴明细时抹零归零
                 PayAmount = 0m;
                 AmountWarnText = string.Empty;
                 NotifyBillSelectionChanged();
@@ -909,10 +961,14 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (_selectedBill == null)
             {
+                ResetRoundingAmount();   // CHG-v1.5.0-04：无选中账单时抹零归零
                 PayAmount = 0m;
+                OnPropertyChanged(nameof(CanRoundOff));
                 return;
             }
+            ResetRoundingAmount();
             PayAmount = _selectedBill.UnpaidAmount;
+            OnPropertyChanged(nameof(CanRoundOff));
         }
 
         /// <summary>
@@ -932,16 +988,21 @@ namespace PropertyManagement.Client.ViewModels
                 AmountWarnText = string.Empty;
                 return;
             }
-            if (PayAmount > _selectedBill.UnpaidAmount)
+            decimal unpaid = _selectedBill.UnpaidAmount;
+            // CHG-v1.5.0-04：抹零上限 = 未收金额（允许整单减免）；收款 + 抹零合计不得超过未收
+            if (_roundingAmount > unpaid)
             {
-                var excess = PayAmount - _selectedBill.UnpaidAmount;
-                AmountWarnText = "收款金额超出应缴 ¥" + excess.ToString("0.00") +
-                                 "，请调整为不超过该账单未收金额 ¥" + _selectedBill.UnpaidAmount.ToString("0.00");
+                AmountWarnText = "抹零金额不能超过该账单未收金额 ¥" + unpaid.ToString("0.00");
+                return;
             }
-            else
+            if (PayAmount + _roundingAmount > unpaid)
             {
-                AmountWarnText = string.Empty;
+                var excess = PayAmount + _roundingAmount - unpaid;
+                AmountWarnText = "收款金额 + 抹零金额超出应缴 ¥" + excess.ToString("0.00") +
+                                 "，请调整为合计不超过该账单未收金额 ¥" + unpaid.ToString("0.00");
+                return;
             }
+            AmountWarnText = string.Empty;
         }
 
         private void UpdateReceiptPreview()
@@ -995,13 +1056,22 @@ namespace PropertyManagement.Client.ViewModels
                     return;
                 }
                 // CHG-v1.1.2-51：下线「多缴转预存」后，收款金额不得超过该账单未收金额
-                if (PayAmount > _selectedBill.UnpaidAmount)
+                // CHG-v1.5.0-04：抹零上限 = 未收金额；收款 + 抹零合计不得超过未收
+                if (_roundingAmount > _selectedBill.UnpaidAmount)
+                {
+                    ErrorText = "抹零金额不能超过该账单未收金额 ¥" +
+                                _selectedBill.UnpaidAmount.ToString("0.00");
+                    return;
+                }
+                if (PayAmount + _roundingAmount > _selectedBill.UnpaidAmount)
                 {
                     ErrorText = "收款金额不能超过该账单未收金额 ¥" +
                                 _selectedBill.UnpaidAmount.ToString("0.00") + "，请调整后重新收款";
                     return;
                 }
-                ConfirmText = "金额 ¥" + PayAmount.ToString("0.00") + "，方式：" + PayMethodText + "，确认入账？";
+                ConfirmText = "金额 ¥" + PayAmount.ToString("0.00") +
+                              (_roundingAmount > 0m ? "，抹零 ¥" + _roundingAmount.ToString("0.00") : string.Empty) +
+                              "，方式：" + PayMethodText + "，确认入账？";
             }
             else
             {
@@ -1017,6 +1087,7 @@ namespace PropertyManagement.Client.ViewModels
         {
             PaymentBillRow bill = _selectedBill;
             decimal amount = PayAmount;
+            decimal rounding = _roundingAmount;   // CHG-v1.5.0-04：收款前捕获抹零额（统一收款恒为 0）
             bool print = PrintReceipt;
             IsConfirmVisible = false;
             var checkedRows = Bills.Where(x => x.IsChecked && x.UnpaidAmount > 0).ToList();
@@ -1060,7 +1131,9 @@ namespace PropertyManagement.Client.ViewModels
                         Amount = amount,
                         PayMethod = (PayMethod)PayMethod,
                         PrintReceipt = print,
-                        Remark = (Remark ?? string.Empty).Trim()
+                        Remark = (Remark ?? string.Empty).Trim(),
+                        // CHG-v1.5.0-04：收款抹零（直接冲减该账单应收，使应收 = 实收结清）
+                        RoundingAmount = rounding
                     });
                 }
 

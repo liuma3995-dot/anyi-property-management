@@ -11,6 +11,8 @@ using PropertyManagement.Client.Services;
 using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
+// 页面 VM 自身有 RefundType 属性（当前页签），会遮蔽同名枚举 —— 这里用别名指向契约枚举
+using RefundTypeEnum = PropertyManagement.Contract.Enums.RefundType;
 
 namespace PropertyManagement.Client.ViewModels
 {
@@ -23,22 +25,36 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand ExportCommand { get; set; }
 
         /// <summary>
-        /// CHG-v1.4.0-01：删除本条调整记录（仅「无关联账单」的补收/冲正可删），由页面 VM 注入。
-        /// 有关联账单的记录不可删（删除需回退账单应收/实缴，本轮不开放）。
+        /// CHG-v1.4.0-01 初版；CHG-v1.5.0-01 放开为全部记录可删，由页面 VM 注入。
         /// </summary>
         public IAsyncRelayCommand DeleteCommand { get; set; }
 
-        /// <summary>记录是否可删除（无关联账单的调整记录）。</summary>
-        public bool CanDelete { get { return Dto.BillId <= 0; } }
+        private bool _isChecked;
 
-        /// <summary>删除入口悬停说明（不可删时给出原因）。</summary>
+        /// <summary>CHG-v1.5.0-01：批量删除勾选（记录表只读 DataGrid，勾选由点击显式写回）。</summary>
+        public bool IsChecked
+        {
+            get { return _isChecked; }
+            set { SetProperty(ref _isChecked, value); }
+        }
+
+        /// <summary>CHG-v1.5.0-01：全部记录可删除。</summary>
+        public bool CanDelete { get { return true; } }
+
+        /// <summary>删除入口悬停说明（按记录类型说明是否影响账面金额）。</summary>
         public string DeleteTipText
         {
             get
             {
-                return CanDelete
-                    ? "删除这条无关联账单的调整记录：财务报表与收支明细流水同步不再显示（软删留痕，可一键清理回收）"
-                    : "该记录已关联账单，删除会影响账单的应收/实缴金额；本轮只支持删除「无关联账单」的补收/冲正记录";
+                switch (Dto.RefundType)
+                {
+                    case RefundType.Adjustment:
+                        return "删除这条调整记录：财务报表与收支明细流水同步移除该金额，并回退关联账单的实缴（软删留痕，可一键清理回收）";
+                    case RefundType.Refund:
+                        return "删除这条退款记录：仅从本列表移除，财务报表与收支明细流水的金额数字不受影响（软删留痕，可一键清理回收）";
+                    default:
+                        return "删除这条减免记录：仅从本列表移除，账面金额不受影响（软删留痕，可一键清理回收）";
+                }
             }
         }
 
@@ -106,13 +122,24 @@ namespace PropertyManagement.Client.ViewModels
 
         public string AmountText { get { return SignText + Dto.Amount.ToString("N2"); } }
 
-        /// <summary>CHG-v1.1.2-04：无关联账单的冲正/补收记录（bill_id = 0）明确标注，避免与「数据缺失」混淆。</summary>
+        /// <summary>
+        /// CHG-v1.1.2-04：无关联账单的冲正/补收记录（bill_id = 0）明确标注，避免与「数据缺失」混淆。
+        /// CHG-v1.5.0-08：连带楼栋 / 单元一起显示（「楼栋/单元/房号」），不必导出 PDF 才能核对。
+        /// </summary>
         public string PropertyNoText
         {
             get
             {
                 if (Dto.BillId <= 0) { return "无关联账单"; }
-                return string.IsNullOrEmpty(Dto.PropertyNo) ? "—" : Dto.PropertyNo;
+                var parts = new System.Collections.Generic.List<string>();
+                if (!string.IsNullOrWhiteSpace(Dto.BuildingNo)) { parts.Add(Dto.BuildingNo.Trim()); }
+                if (!string.IsNullOrWhiteSpace(Dto.UnitNo))
+                {
+                    string unit = Dto.UnitNo.Trim();
+                    parts.Add(unit.EndsWith("单元", StringComparison.Ordinal) ? unit : unit + "单元");
+                }
+                if (!string.IsNullOrWhiteSpace(Dto.PropertyNo)) { parts.Add(Dto.PropertyNo.Trim()); }
+                return parts.Count == 0 ? "—" : string.Join("/", parts);
             }
         }
 
@@ -268,6 +295,8 @@ namespace PropertyManagement.Client.ViewModels
         private System.Collections.Generic.List<int> _pendingBillIds;
         /// <summary>CHG-v1.4.0-01：待确认删除的调整记录（动作 = 3）。</summary>
         private RefundAdjustmentDto _pendingRefundRecord;
+        /// <summary>CHG-v1.5.0-01：待确认批量删除的记录主键（动作 = 4）。</summary>
+        private System.Collections.Generic.List<int> _pendingRecordIds;
 
         public RefundAdjustmentViewModel(IApiClient api) : base(api)
         {
@@ -277,6 +306,8 @@ namespace PropertyManagement.Client.ViewModels
             RequestDeleteBillsCommand = new RelayCommand(RequestDeleteBills);
             ConfirmActionCommand = new AsyncRelayCommand(ConfirmActionAsync);
             CancelActionCommand = new RelayCommand(CancelAction);
+            // CHG-v1.5.0-01：最近申请记录「批量删除」入口
+            BatchDeleteRecordsCommand = new AsyncRelayCommand(RequestBatchDeleteRecordsAsync);
             UpdateMethodOptions();
             _ = LoadAsync();
         }
@@ -335,6 +366,46 @@ namespace PropertyManagement.Client.ViewModels
         public ObservableCollection<RefundRow> Records { get; } = new ObservableCollection<RefundRow>();
 
         public ObservableCollection<string> MethodOptions { get; } = new ObservableCollection<string>();
+
+        // ---------- CHG-v1.5.0-01：最近申请记录「勾选 + 全选 + 批量删除」 ----------
+
+        /// <summary>批量删除命令（页面工具栏入口）。</summary>
+        public IAsyncRelayCommand BatchDeleteRecordsCommand { get; }
+
+        /// <summary>勾选的记录数文案（记录卡标题右侧）。</summary>
+        public string SelectedRecordCountText
+        {
+            get
+            {
+                int n = Records.Count(x => x.IsChecked);
+                return n == 0 ? "未勾选" : ("已勾选 " + n + " 条");
+            }
+        }
+
+        /// <summary>全选（作用域 = 当前「最近申请记录」列表）。</summary>
+        public bool IsAllRecordsChecked
+        {
+            get { return Records.Count > 0 && Records.All(x => x.IsChecked); }
+            set
+            {
+                foreach (RefundRow row in Records) { row.IsChecked = value; }
+                NotifyRecordSelectionChanged();
+            }
+        }
+
+        private void OnRecordRowChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName == nameof(RefundRow.IsChecked))
+            {
+                NotifyRecordSelectionChanged();
+            }
+        }
+
+        private void NotifyRecordSelectionChanged()
+        {
+            OnPropertyChanged(nameof(SelectedRecordCountText));
+            OnPropertyChanged(nameof(IsAllRecordsChecked));
+        }
 
         public RefundPropertyOption SelectedProperty
         {
@@ -777,19 +848,23 @@ namespace PropertyManagement.Client.ViewModels
                 SelectedProperty = Properties.FirstOrDefault();
                 RefreshLargeHint();
 
+                foreach (RefundRow row in Records) { row.PropertyChanged -= OnRecordRowChanged; }
                 Records.Clear();
                 var rec = await Api.QueryRefundsAsync(new PageRequest { PageIndex = 1, PageSize = 20 });
                 foreach (var dto in rec.Items)
                 {
                     // CHG-v1.1.2-41：每行绑定「导出PDF」命令（按单据主键导出，服务端回查金额与账单口径）
-                    Records.Add(new RefundRow
+                    var row = new RefundRow
                     {
                         Dto = dto,
                         ExportCommand = new AsyncRelayCommand(() => ExportRecordPdfAsync(dto)),
-                        // CHG-v1.4.0-01：无关联账单的调整记录可删除（软删留痕）
+                        // CHG-v1.5.0-01：全部记录可删除（软删留痕；调整同步回退账单实缴）
                         DeleteCommand = new AsyncRelayCommand(() => RequestDeleteRecordAsync(dto))
-                    });
+                    };
+                    row.PropertyChanged += OnRecordRowChanged;
+                    Records.Add(row);
                 }
+                NotifyRecordSelectionChanged();
             }, "退款记录已加载");
         }
 
@@ -1091,10 +1166,12 @@ namespace PropertyManagement.Client.ViewModels
             int action = _pendingAction;
             var ids = _pendingBillIds;
             RefundAdjustmentDto pendingRecord = _pendingRefundRecord;
+            var pendingRecordIds = _pendingRecordIds;
             IsConfirmVisible = false;
             _pendingAction = 0;
             _pendingBillIds = null;
             _pendingRefundRecord = null;
+            _pendingRecordIds = null;
 
             if (action == 1)
             {
@@ -1104,6 +1181,11 @@ namespace PropertyManagement.Client.ViewModels
             if (action == 3)
             {
                 await ExecuteDeleteRecordAsync(pendingRecord);
+                return;
+            }
+            if (action == 4)
+            {
+                await ExecuteDeleteRecordsAsync(pendingRecordIds);
                 return;
             }
             if (action != 2 || ids == null || ids.Count == 0) { return; }
@@ -1137,12 +1219,13 @@ namespace PropertyManagement.Client.ViewModels
             _pendingAction = 0;
             _pendingBillIds = null;
             _pendingRefundRecord = null;
+            _pendingRecordIds = null;
         }
 
         /// <summary>
-        /// CHG-v1.4.0-01（负责人 2026-10-08 裁定 A）：请求删除一条**无关联账单**的补收/冲正记录。
-        /// 有关联账单的记录直接拦截并说明原因（删除需回退账单应收/实缴，本轮不开放）；
-        /// 通过校验后走「确认弹层」（说明删除 = 软删留痕 + 下游同步不再显示），确认后调服务端删除。
+        /// CHG-v1.4.0-01 初版；CHG-v1.5.0-01（负责人 2026-10-11 裁定）放开为**全部记录可删**。
+        /// 走「确认弹层」按记录类型说明影响：调整 → 报表/流水移除金额并回退账单实缴；
+        /// 退款 / 减免 → 仅移除记录、账面金额不变。确认后调服务端删除。
         /// </summary>
         private Task RequestDeleteRecordAsync(RefundAdjustmentDto dto)
         {
@@ -1151,30 +1234,79 @@ namespace PropertyManagement.Client.ViewModels
                 ErrorText = "请选择要删除的记录";
                 return Task.CompletedTask;
             }
-            if (dto.BillId > 0)
-            {
-                ErrorText = "该记录已关联账单（账单主键 " + dto.BillId + "），删除会影响账单的应收/实缴金额；" +
-                            "本轮只支持删除「无关联账单」的补收/冲正记录";
-                return Task.CompletedTask;
-            }
 
-            string noText = string.IsNullOrEmpty(dto.RefNo) ? "REF-" + dto.Id.ToString("D4") : dto.RefNo;
-            string sign = dto.AdjustDir == 2 ? "-¥" : "+¥";
             _pendingAction = 3;
             _pendingRefundRecord = dto;
-            ConfirmTitle = "删除调整记录";
+            ConfirmTitle = "删除记录";
             ConfirmOkText = "确认删除";
-            ConfirmMessage =
-                "将删除这条无关联账单的调整记录：\n" + noText + "　" + sign + dto.Amount.ToString("N2") +
-                " 元　原因：" + (string.IsNullOrWhiteSpace(dto.Reason) ? "—" : dto.Reason.Trim()) +
-                "\n\n说明：删除 = 软删留痕 —— 该笔同时从「退款/减免/调整」列表、财务报表与收支明细流水不再显示；" +
-                "留痕记录可由「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。";
+            ConfirmMessage = "将删除" + DescribeRecord(dto) + "\n\n说明：" + DescribeDeleteImpact(dto.RefundType);
             ErrorText = string.Empty;
             IsConfirmVisible = true;
             return Task.CompletedTask;
         }
 
-        /// <summary>CHG-v1.4.0-01：确认后执行删除（服务端软删 + 三处读数同步过滤）。</summary>
+        /// <summary>CHG-v1.5.0-01：请求批量删除勾选的记录（勾选 / 全选后一次删除）。</summary>
+        private Task RequestBatchDeleteRecordsAsync()
+        {
+            var checkedRows = Records.Where(x => x.IsChecked && x.Dto != null && x.Dto.Id > 0).ToList();
+            if (checkedRows.Count == 0)
+            {
+                ErrorText = "请先勾选要删除的记录（支持全选）";
+                return Task.CompletedTask;
+            }
+
+            int adjustments = checkedRows.Count(x => x.Dto.RefundType == RefundTypeEnum.Adjustment && x.Dto.BillId > 0);
+            int refunds = checkedRows.Count(x => x.Dto.RefundType == RefundTypeEnum.Refund);
+            int discounts = checkedRows.Count(x => x.Dto.RefundType == RefundTypeEnum.Discount);
+            var parts = new System.Collections.Generic.List<string>();
+            if (adjustments > 0) { parts.Add("调整 " + adjustments + " 条（报表/流水移除金额并回退账单实缴）"); }
+            if (refunds > 0) { parts.Add("退款 " + refunds + " 条（仅删记录，金额不变）"); }
+            if (discounts > 0) { parts.Add("减免 " + discounts + " 条（仅删记录，金额不变）"); }
+
+            _pendingAction = 4;
+            _pendingRecordIds = checkedRows.Select(x => x.Dto.Id).ToList();
+            ConfirmTitle = "批量删除记录";
+            ConfirmOkText = "确认删除";
+            ConfirmMessage =
+                "将删除 " + checkedRows.Count + " 条记录：" + string.Join("；", parts) + "。\n\n" +
+                "说明：删除 = 软删留痕，留痕记录可由「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。";
+            ErrorText = string.Empty;
+            IsConfirmVisible = true;
+            return Task.CompletedTask;
+        }
+
+        /// <summary>记录行摘要（确认弹层用）。</summary>
+        private static string DescribeRecord(RefundAdjustmentDto dto)
+        {
+            string noText = string.IsNullOrEmpty(dto.RefNo) ? "REF-" + dto.Id.ToString("D4") : dto.RefNo;
+            string typeText = dto.RefundType == RefundTypeEnum.Refund ? "退款"
+                : (dto.RefundType == RefundTypeEnum.Discount ? "减免" : "调整");
+            string sign;
+            switch (dto.RefundType)
+            {
+                case RefundTypeEnum.Discount: sign = "¥"; break;
+                case RefundTypeEnum.Refund: sign = "-¥"; break;
+                default: sign = dto.AdjustDir == 2 ? "-¥" : "+¥"; break;
+            }
+            return " " + typeText + "记录 " + noText + "　" + sign + dto.Amount.ToString("N2") +
+                   " 元　原因：" + (string.IsNullOrWhiteSpace(dto.Reason) ? "—" : dto.Reason.Trim());
+        }
+
+        /// <summary>删除影响说明（按记录类型）。</summary>
+        private static string DescribeDeleteImpact(RefundTypeEnum type)
+        {
+            switch (type)
+            {
+                case RefundTypeEnum.Adjustment:
+                    return "财务报表与收支明细流水同步移除该金额，并回退关联账单的实缴；软删留痕，可由一键清理回收。";
+                case RefundTypeEnum.Refund:
+                    return "仅从「最近申请记录」列表移除，财务报表与收支明细流水的金额数字不受影响；软删留痕，可由一键清理回收。";
+                default:
+                    return "仅从「最近申请记录」列表移除，账面金额不受影响；软删留痕，可由一键清理回收。";
+            }
+        }
+
+        /// <summary>CHG-v1.4.0-01 / v1.5.0-01：确认后执行单条删除（服务端软删 + 按类型影响下游）。</summary>
         private async Task ExecuteDeleteRecordAsync(RefundAdjustmentDto dto)
         {
             if (dto == null || dto.Id <= 0) { return; }
@@ -1186,7 +1318,37 @@ namespace PropertyManagement.Client.ViewModels
                 string noText = deleted == null || string.IsNullOrEmpty(deleted.RefNo)
                     ? "REF-" + dto.Id.ToString("D4")
                     : deleted.RefNo;
-                message = "已删除调整记录 " + noText + "（财务报表与收支明细流水同步不再显示；留痕可由一键清理回收）";
+                message = "已删除记录 " + noText;
+            }, null);
+            if (!string.IsNullOrEmpty(message))
+            {
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + message;
+            }
+        }
+
+        /// <summary>CHG-v1.5.0-01：确认后执行批量删除（服务端软删 + 按类型影响下游）。</summary>
+        private async Task ExecuteDeleteRecordsAsync(System.Collections.Generic.List<int> ids)
+        {
+            if (ids == null || ids.Count == 0) { return; }
+            string message = string.Empty;
+            await RunAsync(async () =>
+            {
+                RefundBatchDeleteResultDto result = await Api.DeleteRefundBatchAsync(
+                    new RefundDeleteBatchRequest { Ids = new System.Collections.Generic.List<int>(ids) });
+                await LoadAsync();
+                int deleted = result == null ? 0 : result.Deleted;
+                int skipped = result == null ? 0 : result.Skipped;
+                message = "已删除 " + deleted + " 条记录";
+                if (result != null && result.BillReverted > 0)
+                {
+                    message += "（含调整记录：回退账单实缴 " + result.BillReverted + " 张）";
+                }
+                if (skipped > 0)
+                {
+                    message += "；跳过 " + skipped + " 条" +
+                        (result != null && result.SkippedItems != null && result.SkippedItems.Count > 0
+                            ? "：" + string.Join("；", result.SkippedItems) : string.Empty);
+                }
             }, null);
             if (!string.IsNullOrEmpty(message))
             {

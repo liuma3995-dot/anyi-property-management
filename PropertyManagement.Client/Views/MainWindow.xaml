@@ -174,7 +174,10 @@
         </DataTemplate>
     </hc:Window.Resources>
 
-    <Grid>
+    <!-- CHG-v1.5.0-09（负责人 2026-10-11 反馈「WIN7 下顶部搜索浮层遮挡第三方输入法」）：
+         全局搜索浮层由**顶层 Popup** 改为**窗口内浮层**（见文件末尾 SearchOverlay / SearchResultPanel）——
+         WPF Popup 是独立顶层窗口，Win7 上第三方输入法候选窗会被它压住；窗口内元素永远压不住输入法独立窗口。 -->
+    <Grid x:Name="ShellRoot" PreviewMouseDown="ShellRoot_PreviewMouseDown" SizeChanged="ShellRoot_SizeChanged">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="218" />
             <ColumnDefinition Width="*" />
@@ -422,58 +425,6 @@
                         </Grid>
                     </Border>
                         <!-- R17：全局搜索结果下拉（跨模块分组，点击跳转并带关键词过滤） -->
-                         <Popup x:Name="SearchResultPopup" IsOpen="{Binding IsSearchOpen, Mode=TwoWay}"
-                                PlacementTarget="{Binding ElementName=SearchArea}" Placement="Bottom"
-                                StaysOpen="False" AllowsTransparency="True">
-                             <Border Background="White" BorderBrush="{StaticResource BorderBrushColor}"
-                                     BorderThickness="1" CornerRadius="8" Padding="8" Margin="0,6,0,0"
-                                     Width="360" MaxHeight="420">
-                                 <StackPanel>
-                                     <TextBlock Text="{Binding SearchSummary}" FontSize="10"
-                                                Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,6" />
-                                     <!-- CHG-v1.4.1-02：浮层内滚轮由代码接管（浮层是独立顶层窗口，滚轮消息不保证投递到它） -->
-                                     <ScrollViewer x:Name="SearchResultScroll" MaxHeight="360" VerticalScrollBarVisibility="Auto"
-                                                   PreviewMouseWheel="SearchResultScroll_PreviewMouseWheel">
-                                         <ItemsControl ItemsSource="{Binding SearchGroups}">
-                                             <ItemsControl.ItemTemplate>
-                                                 <DataTemplate>
-                                                     <StackPanel Margin="0,0,0,6">
-                                                         <TextBlock Text="{Binding ModuleName}" FontSize="10" FontWeight="SemiBold"
-                                                                    Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,4" />
-                                                         <ItemsControl ItemsSource="{Binding Items}">
-                                                             <ItemsControl.ItemTemplate>
-                                                                 <DataTemplate>
-                                                                     <Button Click="SearchItem_Click" Tag="{Binding}"
-                                                                             AutomationProperties.Name="{Binding Title}"
-                                                                             HorizontalContentAlignment="Stretch" Cursor="Hand"
-                                                                             Padding="6,5">
-                                                                         <Button.Template>
-                                                                             <ControlTemplate TargetType="Button">
-                                                                                 <Border Background="Transparent" Padding="{TemplateBinding Padding}"
-                                                                                         CornerRadius="6">
-                                                                                     <ContentPresenter HorizontalAlignment="Stretch" />
-                                                                                 </Border>
-                                                                             </ControlTemplate>
-                                                                         </Button.Template>
-                                                                         <StackPanel>
-                                                                             <TextBlock Text="{Binding Title}" FontSize="11"
-                                                                                        Foreground="{StaticResource TextPrimaryBrush}" />
-                                                                             <TextBlock Text="{Binding Subtitle}" FontSize="9"
-                                                                                        Foreground="{StaticResource TextMutedBrush}"
-                                                                                        Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
-                                                                         </StackPanel>
-                                                                     </Button>
-                                                                 </DataTemplate>
-                                                             </ItemsControl.ItemTemplate>
-                                                         </ItemsControl>
-                                                     </StackPanel>
-                                                 </DataTemplate>
-                                             </ItemsControl.ItemTemplate>
-                                         </ItemsControl>
-                                     </ScrollViewer>
-                                 </StackPanel>
-                             </Border>
-                       </Popup>
                    </Grid>
 
                     <!-- 通知按钮 36x36（R17：待办中心，红点=待处理总数） -->
@@ -691,6 +642,62 @@
                     <TextBlock DockPanel.Dock="Right" Text="{Binding VersionText}" FontSize="8"
                                Foreground="{StaticResource TextMutedBrush}" VerticalAlignment="Center" />
                 </DockPanel>
+            </Border>
+        </Grid>
+
+        <!-- ===================== 全局搜索结果浮层（CHG-v1.5.0-09：窗口内浮层，非顶层 Popup） =====================
+             位置与最大高度由代码后置按「搜索框在窗口中的实际位置」实时计算（UpdateSearchOverlayPlacement）。
+             为什么不用 Popup：Popup 是独立顶层窗口，WIN7 下会把第三方输入法候选窗压住；
+             窗口内元素不可能盖住输入法窗口，因此从根上解决遮挡。 -->
+        <Grid x:Name="SearchOverlay" Grid.Column="0" Grid.ColumnSpan="2" Panel.ZIndex="300"
+              HorizontalAlignment="Left" VerticalAlignment="Top"
+              Visibility="{Binding IsSearchOpen, Converter={StaticResource BoolToVis}}">
+            <Border x:Name="SearchResultPanel"
+                    Background="White" BorderBrush="{StaticResource BorderBrushColor}"
+                    BorderThickness="1" CornerRadius="8" Padding="8" Width="360">
+                <StackPanel>
+                    <TextBlock Text="{Binding SearchSummary}" FontSize="10"
+                               Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,6" />
+                    <ScrollViewer x:Name="SearchResultScroll" MaxHeight="360" VerticalScrollBarVisibility="Auto"
+                                  PreviewMouseWheel="SearchResultScroll_PreviewMouseWheel">
+                        <ItemsControl ItemsSource="{Binding SearchGroups}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Margin="0,0,0,6">
+                                        <TextBlock Text="{Binding ModuleName}" FontSize="10" FontWeight="SemiBold"
+                                                   Foreground="{StaticResource TextMutedBrush}" Margin="2,0,0,4" />
+                                        <ItemsControl ItemsSource="{Binding Items}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Button Click="SearchItem_Click" Tag="{Binding}"
+                                                            AutomationProperties.Name="{Binding Title}"
+                                                            HorizontalContentAlignment="Stretch" Cursor="Hand"
+                                                            Padding="6,5">
+                                                        <Button.Template>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border Background="Transparent" Padding="{TemplateBinding Padding}"
+                                                                        CornerRadius="6">
+                                                                    <ContentPresenter HorizontalAlignment="Stretch" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Button.Template>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding Title}" FontSize="11"
+                                                                       Foreground="{StaticResource TextPrimaryBrush}" />
+                                                            <TextBlock Text="{Binding Subtitle}" FontSize="9"
+                                                                       Foreground="{StaticResource TextMutedBrush}"
+                                                                       Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </ScrollViewer>
+                </StackPanel>
             </Border>
         </Grid>
     </Grid>

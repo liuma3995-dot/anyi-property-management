@@ -600,6 +600,16 @@ namespace PropertyManagement.Server.Services
                         continue;
                     }
 
+                    // CHG-v1.5.0-03（负责人 2026-10-11 裁定）：本次出账抹零 —— 去尾到整元（123.45 → 123.00），
+                    // 被抹掉的尾差记入 t_bill.rounding_amount，供追溯与统计；应收按抹零后金额落库。
+                    decimal rounding = 0m;
+                    if (request.RoundOff && amount > 0m)
+                    {
+                        decimal rounded = Math.Floor(amount);
+                        rounding = amount - rounded;
+                        amount = rounded;
+                    }
+
                     _finance.InsertBill(connection, transaction, new BillDto
                     {
                         ChargeItemId = request.ChargeItemId,
@@ -616,7 +626,8 @@ namespace PropertyManagement.Server.Services
                         ChargeSpecId = specId,
                         MeasureSnapshot = measureSnapshot,
                         UnitPriceSnapshot = unitPriceSnapshot,
-                        FormulaSnapshot = formulaSnapshot
+                        FormulaSnapshot = formulaSnapshot,
+                        RoundingAmount = rounding
                     });
                     success++;
                 }

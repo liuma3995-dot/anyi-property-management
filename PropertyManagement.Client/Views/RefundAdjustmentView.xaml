@@ -259,8 +259,24 @@
                     <RowDefinition Height="32" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
-                <TextBlock Grid.Row="0" Text="最近申请记录" FontSize="13" FontWeight="Bold"
-                           Foreground="{StaticResource TextPrimaryBrush}" Margin="16,0,0,0" VerticalAlignment="Center" />
+                <!-- CHG-v1.5.0-01：记录卡标题行新增「勾选计数 + 批量删除」入口（支持全选） -->
+                <Grid Grid.Row="0" Margin="16,0,12,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="最近申请记录" FontSize="13" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding SelectedRecordCountText}" FontSize="11"
+                               VerticalAlignment="Center" Margin="0,0,10,0"
+                               Foreground="{StaticResource TextSecondaryBrush}" />
+                    <Button Grid.Column="3" Content="批量删除" FontSize="11" Padding="10,2"
+                            Style="{StaticResource LinkButton}" Foreground="{StaticResource DangerBrush}"
+                            ToolTip="勾选 / 全选后一次删除；调整记录删除会同步移除报表与流水的金额并回退账单实缴，退款/减免只删记录"
+                            Command="{Binding BatchDeleteRecordsCommand}" />
+                </Grid>
                 <!-- CHG-v1.1.2-44/-45：记录表高度按可用高度**自动排整行**（代码后置 PageGrid_SizeChanged 计算），
                      口径：表头 36 + N × 行高 44，N = 可用高度能放下的完整行数，下限 2 行（1366×768 下即 2 行）。
                      保证 ① 小分辨率下至少 2 整行完整可见；② 窗口最大化时把可用高度用满、能放几行就展示几行；
@@ -268,6 +284,22 @@
                 <DataGrid x:Name="RecordsGrid" Grid.Row="1" ItemsSource="{Binding Records}" IsReadOnly="True" AutoGenerateColumns="False"
                           VerticalAlignment="Top">
                     <DataGrid.Columns>
+                        <!-- CHG-v1.5.0-01：勾选列（表头全选）；只读 DataGrid 的模板勾选框不参与数据网格编辑，
+                             勾选由点击事件显式写回行对象 -->
+                        <DataGridTemplateColumn Width="40" MinWidth="40" CellStyle="{StaticResource GridCheckCell}">
+                            <DataGridTemplateColumn.Header>
+                                <CheckBox Style="{StaticResource GridCheckBox}"
+                                          ToolTip="全选（当前「最近申请记录」列表）"
+                                          IsChecked="{Binding DataContext.IsAllRecordsChecked, RelativeSource={RelativeSource AncestorType={x:Type DataGrid}}, Mode=TwoWay}" />
+                            </DataGridTemplateColumn.Header>
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <CheckBox Style="{StaticResource GridCheckBox}"
+                                              IsChecked="{Binding IsChecked, Mode=OneWay}"
+                                              Click="RecordCheckBox_Click" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                         <!-- CHG-v1.1.2-43：申请编号完整展示（形如 RF-20260920145402758-35，共 23 字符）——
                              原宽 130px 会被省略号截断，单据编号是导出 PDF / 审计反查的凭据，不得裁切；
                              宽度从「原因」列（自适应 *）让出，不影响其它列。 -->
@@ -282,7 +314,14 @@
                                 </DataTemplate>
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
-                        <DataGridTextColumn Header="关联房产" Width="100" Binding="{Binding PropertyNoText}" ElementStyle="{StaticResource GridCellText}" />
+                        <!-- CHG-v1.5.0-08：关联房产显示「楼栋/单元/房号」（原只有房号，核对需导出 PDF） -->
+                        <DataGridTextColumn Header="关联房产" Width="132" Binding="{Binding PropertyNoText}">
+                            <DataGridTextColumn.ElementStyle>
+                                <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                    <Setter Property="ToolTip" Value="{Binding PropertyNoText}" />
+                                </Style>
+                            </DataGridTextColumn.ElementStyle>
+                        </DataGridTextColumn>
                         <DataGridTextColumn Header="金额" Width="100" Binding="{Binding AmountText}" ElementStyle="{StaticResource GridCellText}" />
                         <DataGridTextColumn Header="原因" Width="*" Binding="{Binding Reason}" ElementStyle="{StaticResource GridCellText}" />
                         <!-- CHG-v1.1.2-41：经办人随单据落库（导出 PDF 的必备要素，旧数据为 —） -->
@@ -298,7 +337,7 @@
                             </DataGridTemplateColumn.CellTemplate>
                         </DataGridTemplateColumn>
                         <!-- CHG-v1.1.2-12：原「当前节点」为开发期 mock 列，改为展示已落库的「方式」 -->
-                        <DataGridTextColumn Header="方式" Width="120" Binding="{Binding MethodText}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTextColumn Header="方式" Width="108" Binding="{Binding MethodText}" ElementStyle="{StaticResource GridCellText}" />
                         <!-- CHG-v1.1.2-41：提交后可导出单据 PDF（退款申请/费用减免/财务调整详情），用于留档与审计追溯 -->
                         <!-- CHG-v1.4.0-01：新增「删除」——只对无关联账单的补收/冲正记录可用（有关联账单的记录禁用并给出悬停说明） -->
                         <DataGridTemplateColumn Header="操作" Width="168">

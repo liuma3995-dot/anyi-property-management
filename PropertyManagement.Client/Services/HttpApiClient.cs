@@ -506,6 +506,12 @@ namespace PropertyManagement.Client.Services
             return PostAsync<RefundDeleteRequest, RefundAdjustmentDto>("payments/refunds/delete", request);
         }
 
+        /// <summary>CHG-v1.5.0-01：批量删除退款/减免/调整记录。</summary>
+        public Task<RefundBatchDeleteResultDto> DeleteRefundBatchAsync(RefundDeleteBatchRequest request)
+        {
+            return PostAsync<RefundDeleteBatchRequest, RefundBatchDeleteResultDto>("payments/refunds/delete-batch", request);
+        }
+
         /// <summary>CHG-v1.4.0-03：账单工作台「导出PDF」（批次 + 缴费对象明细）。</summary>
         public Task<ReportLogDto> ExportBillBatchPdfAsync(BillBatchExportRequest request)
         {

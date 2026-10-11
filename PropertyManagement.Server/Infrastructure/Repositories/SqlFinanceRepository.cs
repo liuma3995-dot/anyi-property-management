@@ -399,11 +399,12 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             return connection.ExecuteScalar<int>(
                 "INSERT INTO t_bill (charge_item_id, property_id, parking_id, owner_id, payer_name, cycle_id, amount, paid_amount, " +
-                "status, due_at, generate_batch_id, del_flag, charge_spec_id, measure_snapshot, unit_price_snapshot, formula_snapshot) " +
+                "status, due_at, generate_batch_id, del_flag, charge_spec_id, measure_snapshot, unit_price_snapshot, formula_snapshot, " +
+                "rounding_amount) " +
                 "VALUES (@ChargeItemId, @PropertyId, @ParkingId, @OwnerId, @PayerName, @CycleId, @Amount, 0, @Status, @DueAt, @GenerateBatchId, @DelFlag, " +
-                "@ChargeSpecId, @MeasureSnapshot, @UnitPriceSnapshot, @FormulaSnapshot); " +
+                "@ChargeSpecId, @MeasureSnapshot, @UnitPriceSnapshot, @FormulaSnapshot, @RoundingAmount); " +
                 "SELECT last_insert_rowid();",
-                new { bill.ChargeItemId, bill.PropertyId, bill.ParkingId, bill.OwnerId, bill.PayerName, bill.CycleId, bill.Amount, bill.Status, bill.DueAt, bill.GenerateBatchId, bill.DelFlag, bill.ChargeSpecId, bill.MeasureSnapshot, bill.UnitPriceSnapshot, bill.FormulaSnapshot },
+                new { bill.ChargeItemId, bill.PropertyId, bill.ParkingId, bill.OwnerId, bill.PayerName, bill.CycleId, bill.Amount, bill.Status, bill.DueAt, bill.GenerateBatchId, bill.DelFlag, bill.ChargeSpecId, bill.MeasureSnapshot, bill.UnitPriceSnapshot, bill.FormulaSnapshot, bill.RoundingAmount },
                 transaction);
         }
 
@@ -415,8 +416,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         {
             connection.Execute(
                 "UPDATE t_bill SET amount = @Amount, paid_amount = @PaidAmount, status = @Status, " +
+                "rounding_amount = @RoundingAmount, " +
                 "updated_at = datetime('now','localtime') WHERE id = @Id",
-                new { bill.Id, bill.Amount, bill.PaidAmount, bill.Status }, transaction);
+                new { bill.Id, bill.Amount, bill.PaidAmount, bill.Status, bill.RoundingAmount }, transaction);
         }
 
         /// <summary>
@@ -479,7 +481,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             return connection.QueryFirstOrDefault<BillDto>(
                 "SELECT id, charge_item_id AS ChargeItemId, property_id AS PropertyId, parking_id AS ParkingId, " +
                 "owner_id AS OwnerId, payer_name AS PayerName, cycle_id AS CycleId, amount, paid_amount AS PaidAmount, status, due_at AS DueAt, " +
-                "generate_batch_id AS GenerateBatchId, del_flag AS DelFlag " +
+                "generate_batch_id AS GenerateBatchId, del_flag AS DelFlag, rounding_amount AS RoundingAmount " +
                 "FROM t_bill WHERE id = @id AND del_flag = 0", new { id });
         }
 
@@ -1145,13 +1147,21 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "pr.ref_no AS RefNo, pr.created_at AS CreatedAt, pr.attachment_name AS AttachmentName, " +
                 "pr.attachment_path AS AttachmentPath, pr.method AS Method, pr.adjust_dir AS AdjustDir, " +
                 "COALESCE(pr.operator_name, '') AS OperatorName, " +
-                "COALESCE(p.room_no, ps.space_no, '') AS PropertyNo " +
+                // CHG-v1.5.0-08（负责人 2026-10-11 反馈）：记录表「关联房产」列只显示房号不便核对，
+                // 一并带出楼栋 / 单元，客户端按「楼栋/单元/房号」展示（与欠费台账/房产列表同口径）。
+                "COALESCE(p.room_no, ps.space_no, '') AS PropertyNo, " +
+                "COALESCE(bld.building_no, '') AS BuildingNo, " +
+                "COALESCE(u.unit_no, '') AS UnitNo " +
                 "FROM t_payment_refund pr " +
                 "LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
                 "LEFT JOIN t_bill b ON b.id = pr.bill_id " +
                 "LEFT JOIN t_property p ON p.id = b.property_id " +
                 "LEFT JOIN t_unit u ON u.id = p.unit_id " +
-                "LEFT JOIN t_building bld ON bld.id = u.building_id " +
+                // CHG-v1.5.0-08b（负责人 2026-10-11 反馈「记录表仍未显示楼栋」）：
+                // 根因是这里经 unit 关联楼栋 —— 而**无单元房产**（t_property.unit_id 为空、只有 building_id）
+                // 拿不到楼栋（真实库 349 套房产中 325 套无单元）。改为与欠费台账/收支流水同一口径：
+                // 楼栋优先取房产自身 building_id，其次才经单元。无单元时只省略单元段，楼栋照常显示。
+                "LEFT JOIN t_building bld ON bld.id = COALESCE(u.building_id, p.building_id) " +
                 "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
                 "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) " +
                 "ORDER BY pr.id DESC LIMIT @limit OFFSET @offset",
@@ -1234,7 +1244,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             if (billId <= 0) { return 0m; }
             return connection.ExecuteScalar<decimal?>(
                 "SELECT CAST(COALESCE(SUM(amount), 0) AS REAL) FROM t_payment_refund " +
-                "WHERE bill_id = @billId AND refund_type <> 1 AND NOT (refund_type = 2 AND adjust_dir = 1)",
+                // CHG-v1.5.0-01：调整记录删除后会同步回退账单实缴 → 不再计入已冲减合计；
+                // 退款删除不改变账面，仍计入（保证「累计不超实缴」校验口径与账面一致）
+                "WHERE bill_id = @billId AND refund_type <> 1 AND NOT (refund_type = 2 AND adjust_dir = 1) " +
+                "AND (del_flag = 0 OR refund_type = 0)",
                 new { billId }, transaction) ?? 0m;
         }
 
@@ -1482,7 +1495,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment_refund pr LEFT JOIN t_bill b ON b.id = pr.bill_id " +
                 // CHG-v1.4.0-01：已删除（软删留痕）的调整记录不再计入流水
-                "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
+                // CHG-v1.5.0-01：退款（refund_type = 0）删除后金额数字不变 —— 不再按 del_flag 过滤；调整（2）仍按软删过滤
+                "WHERE (pr.del_flag = 0 OR pr.refund_type = 0) AND (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
                 "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
@@ -1605,7 +1619,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                     "COALESCE(pr.ref_no, '') AS Note " +
                     "FROM t_payment_refund pr LEFT JOIN t_bill rb ON rb.id = pr.bill_id " +
                     // CHG-v1.4.0-01：已删除（软删留痕）的调整记录不再计入财务报表
-                    "WHERE pr.del_flag = 0 AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) AND pr.refund_type <> 1 " +
+                    // CHG-v1.5.0-01：退款（refund_type = 0）删除后金额数字不变 —— 不再按 del_flag 过滤；调整（2）仍按软删过滤
+                    "WHERE (pr.del_flag = 0 OR pr.refund_type = 0) AND (pr.bill_id IS NULL OR (rb.id IS NOT NULL AND rb.del_flag = 0)) AND pr.refund_type <> 1 " +
                     "AND date(pr.created_at) >= date(@from) AND date(pr.created_at) <= date(@to)" +
                     (chargeItemId.HasValue ? " AND rb.charge_item_id = @cid" : string.Empty));
             }

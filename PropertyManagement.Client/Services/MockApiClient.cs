@@ -1238,24 +1238,54 @@ namespace PropertyManagement.Client.Services
             });
         }
 
-        /// <summary>CHG-v1.4.0-01：演示实现——删除无关联账单的调整记录。</summary>
+        /// <summary>CHG-v1.4.0-01 初版；CHG-v1.5.0-01 放开为全部记录可删（演示实现）。</summary>
         public Task<RefundAdjustmentDto> DeleteRefundAsync(RefundDeleteRequest request)
         {
             if (request == null || request.Id <= 0)
             {
-                throw new InvalidOperationException("请选择要删除的调整记录");
+                throw new InvalidOperationException("请选择要删除的记录");
             }
             var record = _refunds.FirstOrDefault(x => x.Id == request.Id);
             if (record == null)
             {
-                throw new InvalidOperationException("调整记录不存在或已被删除");
-            }
-            if (record.BillId > 0)
-            {
-                throw new InvalidOperationException("该记录已关联账单，删除会影响账单应收/实缴；只能删除无关联账单的补收/冲正记录");
+                throw new InvalidOperationException("记录不存在或已被删除");
             }
             _refunds.Remove(record);
             return Task.FromResult(record);
+        }
+
+        /// <summary>CHG-v1.5.0-01：演示实现——批量删除退款/减免/调整记录。</summary>
+        public Task<RefundBatchDeleteResultDto> DeleteRefundBatchAsync(RefundDeleteBatchRequest request)
+        {
+            var ids = request == null || request.Ids == null
+                ? new List<int>() : request.Ids.Where(x => x > 0).Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                throw new InvalidOperationException("请选择要删除的记录");
+            }
+            var result = new RefundBatchDeleteResultDto
+            {
+                DeletedIds = new List<int>(),
+                SkippedItems = new List<string>()
+            };
+            foreach (int id in ids)
+            {
+                var record = _refunds.FirstOrDefault(x => x.Id == id);
+                if (record == null)
+                {
+                    result.SkippedItems.Add("记录 " + id + "：记录不存在或已被删除");
+                    continue;
+                }
+                _refunds.Remove(record);
+                result.DeletedIds.Add(id);
+                if (record.RefundType == RefundType.Adjustment && record.BillId > 0)
+                {
+                    result.BillReverted++;
+                }
+            }
+            result.Deleted = result.DeletedIds.Count;
+            result.Skipped = result.SkippedItems.Count;
+            return Task.FromResult(result);
         }
 
         /// <summary>CHG-v1.4.0-03：演示实现——账单工作台导出 PDF（批次明细）。</summary>

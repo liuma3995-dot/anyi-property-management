@@ -408,6 +408,10 @@
     <EmbeddedResource Include="Infrastructure\Data\migration_060.sql">
       <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_060.sql</LogicalName>
     </EmbeddedResource>
+    <!-- CHG-v1.5.0-03：出账 / 收款抹零留痕（t_bill.rounding_amount） -->
+    <EmbeddedResource Include="Infrastructure\Data\migration_061.sql">
+      <LogicalName>PropertyManagement.Server.Infrastructure.Data.migration_061.sql</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
   <ItemGroup>
     <None Include="App.config" />

@@ -60,14 +60,16 @@ namespace PropertyManagement.Server.Services
                 {
                     BillId = request.BillId,
                     Amount = request.Amount
-                }, request.PayMethod, request.PrintReceipt, request.Remark, batchNo);
+                }, request.PayMethod, request.PrintReceipt, request.Remark, batchNo,
+                    request.RoundingAmount, operatorName);
                 transaction.Commit();
 
                 _audit.Write("PAYMENT_CREATE", "bill", settled.Payment.BillId.ToString(),
-                    string.Format("收款登记：账单 {0}，实收 {1:0.00}，其中抵扣预存 {2:0.00}，转预存 {3:0.00}，收款流水号 {4}{5}",
+                    string.Format("收款登记：账单 {0}，实收 {1:0.00}，其中抵扣预存 {2:0.00}，转预存 {3:0.00}，抹零 {6:0.00}，收款流水号 {4}{5}",
                         settled.Payment.BillId, settled.Payment.Amount, settled.UsedFromPreDeposit, settled.Payment.ToPreDeposit,
                         batchNo,
-                        string.IsNullOrEmpty(settled.Payment.Remark) ? string.Empty : "，备注：" + settled.Payment.Remark),
+                        string.IsNullOrEmpty(settled.Payment.Remark) ? string.Empty : "，备注：" + settled.Payment.Remark,
+                        request.RoundingAmount),
                     userName: operatorName, ip: ip, result: "成功");
 
                 return settled.Payment;
@@ -110,7 +112,7 @@ namespace PropertyManagement.Server.Services
                 foreach (PaymentBatchItemRequest item in items)
                 {
                     SettlementResult settled = SettleBill(connection, transaction, item,
-                        request.PayMethod, request.PrintReceipt, request.Remark, batchNo);
+                        request.PayMethod, request.PrintReceipt, request.Remark, batchNo, 0m, operatorName);
                     payments.Add(settled.Payment);
                     total += settled.Payment.Amount;
                 }
@@ -147,7 +149,8 @@ namespace PropertyManagement.Server.Services
         /// 预存抵扣 → 超额转预存 → 更新账单状态 → 落收款记录 → 出收据（BR-FIN-08 编号唯一）。
         /// </summary>
         private SettlementResult SettleBill(IDbConnection connection, IDbTransaction transaction,
-            PaymentBatchItemRequest item, PayMethod payMethod, bool printReceipt, string remark, string batchNo)
+            PaymentBatchItemRequest item, PayMethod payMethod, bool printReceipt, string remark, string batchNo,
+            decimal roundingAmount = 0m, string operatorName = null)
         {
             BillDto bill = _finance.GetBill(connection, item.BillId);
             if (bill == null)
@@ -178,12 +181,22 @@ namespace PropertyManagement.Server.Services
                 throw ApiException.ValidationFailed("账单 " + bill.Id + " 已无应缴金额");
             }
 
+            // CHG-v1.5.0-04（负责人 2026-10-11 裁定）：收款抹零 —— **直接冲减该账单应收**，
+            // 使「应收 = 实收」结清；上限 = 未收金额（允许整单减免）；收据不显示抹零金额。
+            decimal rounding = roundingAmount > 0m ? roundingAmount : 0m;
+            if (rounding > remaining)
+            {
+                throw ApiException.ValidationFailed(
+                    "抹零金额不能超过该账单未收金额 ¥" + remaining.ToString("0.00"));
+            }
+            decimal payable = remaining - rounding;   // 抹零后仍需收取的金额
+
             // P-06 自动抵扣：业主预存款余额优先抵扣账单（自定义缴费对象无预存主体）
             decimal preDeposit = ownerId > 0 ? _finance.GetOwnerPreDeposit(connection, ownerId) : 0m;
             decimal usedFromPreDeposit = 0m;
-            if (preDeposit > 0m && remaining > 0m)
+            if (preDeposit > 0m && payable > 0m)
             {
-                usedFromPreDeposit = Math.Min(preDeposit, remaining);
+                usedFromPreDeposit = Math.Min(preDeposit, payable);
                 _finance.DecreasePreDeposit(connection, transaction, ownerId, usedFromPreDeposit);
             }
 
@@ -195,13 +208,14 @@ namespace PropertyManagement.Server.Services
             {
                 throw ApiException.ValidationFailed("收款金额必须大于 0");
             }
-            if (cash > remaining)
+            if (cash > payable)
             {
                 throw ApiException.ValidationFailed(
-                    "收款金额不能超过该账单未收金额 ¥" + remaining.ToString("0.00") +
-                    "，请调整后重新收款");
+                    rounding > 0m
+                        ? "收款金额不能超过抹零后应收 ¥" + payable.ToString("0.00") + "，请调整后重新收款"
+                        : "收款金额不能超过该账单未收金额 ¥" + remaining.ToString("0.00") + "，请调整后重新收款");
             }
-            decimal toBill = Math.Min(cash, remaining - usedFromPreDeposit);
+            decimal toBill = Math.Min(cash, payable - usedFromPreDeposit);
             // 业主预存余额抵扣后，等额现金回存预存账户（余额不变），仅存量预存款适用
             decimal excess = cash - toBill;
             if (excess > 0m)
@@ -210,6 +224,12 @@ namespace PropertyManagement.Server.Services
             }
 
             decimal totalCovered = usedFromPreDeposit + toBill;
+            // 抹零：冲减应收并把尾差累加到 rounding_amount（应收按抹零后金额落库）
+            if (rounding > 0m)
+            {
+                bill.Amount -= rounding;
+                bill.RoundingAmount += rounding;
+            }
             bill.PaidAmount += totalCovered;
             BillStatus oldStatus = bill.Status;
             bill.Status = bill.PaidAmount >= bill.Amount
@@ -239,6 +259,25 @@ namespace PropertyManagement.Server.Services
                 Remark = string.IsNullOrWhiteSpace(remark) ? string.Empty : remark.Trim()
             };
             payment.Id = _finance.InsertPayment(connection, transaction, payment);
+
+            // CHG-v1.5.0-04：收款抹零留痕 —— 同笔在「退款/减免/调整 → 最近申请记录」落一条「收款抹零」记录
+            // （减免类型，仅留痕：应收已在上方直接冲减，不重复扣减）。收据不显示抹零金额。
+            if (rounding > 0m)
+            {
+                var roundingRecord = new RefundAdjustmentDto
+                {
+                    BillId = bill.Id,
+                    RefundType = RefundType.Discount,
+                    Amount = rounding,
+                    Reason = "收款抹零",
+                    Method = "收款抹零",
+                    AdjustDir = 0,
+                    OperatorName = operatorName,
+                    CreatedAt = DateTime.Now
+                };
+                roundingRecord.RefNo = "RF-" + DateTime.Now.ToString("yyyyMMddHHmmssfff") + "-" + bill.Id;
+                roundingRecord.Id = _finance.InsertRefund(connection, transaction, roundingRecord);
+            }
 
             // CHG-v1.1.0-15：收据号前后端下线 —— 不再生成 t_receipt 记录，
             // 收款凭据统一以「收款流水号」（t_payment.batch_no）标识，收支明细流水「关联单据」同源。
@@ -709,53 +748,165 @@ namespace PropertyManagement.Server.Services
         }
 
         /// <summary>
-        /// 删除退款/减免/调整记录（CHG-v1.4.0-01，负责人 2026-10-08 裁定 A）。
+        /// 删除退款/减免/调整记录（CHG-v1.4.0-01 初版；CHG-v1.5.0-01，负责人 2026-10-11 裁定放开为全部记录可删）。
         ///
-        /// 适用范围：**无关联账单**的补收/冲正记录（`bill_id IS NULL`）—— 这类记录由
-        /// <see cref="ApplyAdjustmentWithoutBill"/> 落下，只登记不动账单，删除不影响任何账单的应收/实缴。
-        /// 有关联账单的记录一律拒绝：其金额已经冲减/调增过账单实缴或应收，删除必须先撤销对账单的影响，
-        /// 属高风险改造（本轮不开放）。
-        ///
-        /// 删除语义：软删留痕（`del_flag = 1`）+ 下游读数过滤 —— 退款列表、财务报表、收支明细流水
-        /// 同步不再显示；留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
+        /// 删除语义：软删留痕（`del_flag = 1`）；下游按记录类型区分 ——
+        /// - 调整（refund_type = 2，冲正/补收）：删除 = 报表 / 收支明细流水移除该金额，
+        ///   并**同步回退关联账单实缴**（与创建对称，保证账实一致）；
+        /// - 退款（refund_type = 0）/ 减免（refund_type = 1）：只移除记录，账面上的金额数字不动。
+        /// 留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
         /// </summary>
         public RefundAdjustmentDto DeleteRefund(RefundDeleteRequest request,
             string operatorName = null, string ip = null)
         {
             if (request == null || request.Id <= 0)
             {
-                throw ApiException.BadRequest("请选择要删除的调整记录");
+                throw ApiException.BadRequest("请选择要删除的记录");
             }
 
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
-                RefundAdjustmentDto record = _finance.GetRefund(connection, request.Id);
-                if (record == null)
+                RefundAdjustmentDto record;
+                string skipReason = TryDeleteRefundCore(connection, transaction, request.Id, out record);
+                if (skipReason != null)
                 {
-                    throw ApiException.NotFound("调整记录不存在或已被删除");
-                }
-                if (record.BillId > 0)
-                {
-                    throw ApiException.ValidationFailed(
-                        "该记录已关联账单（账单主键 " + record.BillId + "），删除会影响账单的应收/实缴金额；" +
-                        "本轮只支持删除「无关联账单」的补收/冲正记录，如需纠正请对该账单登记反向冲减或补收");
-                }
-
-                int affected = _finance.SoftDeleteRefund(connection, transaction, request.Id);
-                if (affected <= 0)
-                {
-                    throw ApiException.NotFound("调整记录不存在或已被删除");
+                    throw ApiException.NotFound(skipReason);
                 }
                 transaction.Commit();
 
                 _audit.Write("REFUND_DELETE", "refund", record.Id.ToString(),
-                    string.Format("删除调整记录 {0} {1:0.00} 元（{2}），原因：{3}；" +
-                                  "财务报表与收支明细流水同步不再显示，留痕可由一键清理回收",
-                        record.RefundType, record.Amount, record.RefNo, record.Reason),
+                    string.Format("删除{0}记录 {1:0.00} 元（编号 {2}），原因：{3}",
+                        TypeLabel(record.RefundType), record.Amount, record.RefNo, record.Reason),
                     userName: operatorName, ip: ip, result: "成功");
 
                 return record;
+            }
+        }
+
+        /// <summary>
+        /// 批量删除退款/减免/调整记录（CHG-v1.5.0-01，负责人 2026-10-11 裁定）：
+        /// 逐条软删；调整记录同步回退关联账单实缴；单条不存在 / 已删除只计跳过，不影响其它记录。
+        /// </summary>
+        public RefundBatchDeleteResultDto DeleteRefundBatch(RefundDeleteBatchRequest request,
+            string operatorName = null, string ip = null)
+        {
+            List<int> ids = request == null || request.Ids == null
+                ? new List<int>()
+                : request.Ids.Where(x => x > 0).Distinct().ToList();
+            if (ids.Count == 0)
+            {
+                throw ApiException.BadRequest("请选择要删除的记录");
+            }
+
+            var result = new RefundBatchDeleteResultDto
+            {
+                DeletedIds = new List<int>(),
+                SkippedItems = new List<string>()
+            };
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                foreach (int id in ids)
+                {
+                    RefundAdjustmentDto record;
+                    string skipReason = TryDeleteRefundCore(connection, transaction, id, out record);
+                    if (skipReason != null)
+                    {
+                        result.SkippedItems.Add("记录 " + id + "：" + skipReason);
+                        continue;
+                    }
+                    result.DeletedIds.Add(id);
+                    if (record.RefundType == RefundType.Adjustment && record.BillId > 0)
+                    {
+                        result.BillReverted++;
+                    }
+                }
+                transaction.Commit();
+
+                result.Deleted = result.DeletedIds.Count;
+                result.Skipped = result.SkippedItems.Count;
+
+                _audit.Write("REFUND_DELETE_BATCH", "refund_batch", string.Join(",", result.DeletedIds),
+                    string.Format("批量删除 {0} 条退款/减免/调整记录，跳过 {1} 条，回退账单 {2} 张",
+                        result.Deleted, result.Skipped, result.BillReverted),
+                    userName: operatorName, ip: ip, result: "成功");
+
+                return result;
+            }
+        }
+
+        /// <summary>
+        /// 删除单条退款/减免/调整记录（单条 / 批量共用）。
+        /// 返回非 null 表示跳过（未删除），值为跳过原因；删除成功返回 null 并回填 record。
+        /// </summary>
+        private string TryDeleteRefundCore(IDbConnection connection, IDbTransaction transaction,
+            int id, out RefundAdjustmentDto record)
+        {
+            record = _finance.GetRefund(connection, id);
+            if (record == null)
+            {
+                return "记录不存在或已被删除";
+            }
+
+            // 调整（冲正/补收）：删除时同步回退关联账单实缴（与创建对称），保证账实一致
+            if (record.RefundType == RefundType.Adjustment && record.BillId > 0)
+            {
+                RevertAdjustmentOnBill(connection, transaction, record);
+            }
+
+            int affected = _finance.SoftDeleteRefund(connection, transaction, id);
+            if (affected <= 0)
+            {
+                return "记录不存在或已被删除";
+            }
+            return null;
+        }
+
+        /// <summary>
+        /// CHG-v1.5.0-01：删除调整记录时回退账单实缴 —— 补收方向（adjust_dir = 1）创建时 +金额，回退即 −金额；
+        /// 其它方向（冲正）创建时 −金额，回退即 +金额。回退后按「应收 / 净实缴」重算状态，
+        /// 若重新欠费则解除「已结清归档」，使其重新进入收款登记应缴明细。
+        /// </summary>
+        private void RevertAdjustmentOnBill(IDbConnection connection, IDbTransaction transaction,
+            RefundAdjustmentDto record)
+        {
+            BillDto bill = _finance.GetBill(connection, record.BillId);
+            if (bill == null)
+            {
+                return;   // 账单已删除：无实缴可回退，记录仍按软删处理
+            }
+            BillStatus oldStatus = bill.Status;
+            decimal paid = bill.PaidAmount;
+            decimal netPaid = record.AdjustDir == 1 ? paid - record.Amount : paid + record.Amount;
+            if (netPaid < 0m) { netPaid = 0m; }
+            bill.PaidAmount = netPaid;
+            bill.Status = ResolveBillStatusByMoney(bill.Amount, bill.PaidAmount, bill.DueAt);
+            _finance.UpdateBillAmountAndPaid(connection, transaction, bill);
+
+            if (bill.PaidAmount < bill.Amount)
+            {
+                _finance.ClearBillArchiveIfUnsettled(connection, transaction, new[] { bill.Id });
+            }
+            _finance.InsertBillStatusLog(connection, transaction, new BillStatusLogDto
+            {
+                BillId = bill.Id,
+                OldStatus = oldStatus,
+                NewStatus = bill.Status,
+                Reason = string.Format("删除调整记录回退：实缴 {0:0.00} → {1:0.00}（单据编号 {2}）",
+                    paid, netPaid, record.RefNo)
+            });
+        }
+
+        /// <summary>记录类型中文标签（审计文案）。</summary>
+        private static string TypeLabel(RefundType type)
+        {
+            switch (type)
+            {
+                case RefundType.Refund: return "退款";
+                case RefundType.Discount: return "减免";
+                default: return "调整";
             }
         }
 

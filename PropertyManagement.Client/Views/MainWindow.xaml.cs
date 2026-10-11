@@ -33,12 +33,85 @@ namespace PropertyManagement.Client.Views
             DataContext = _vm;
 
             UserMenuPopup.Closed += (sender, args) => _vm.IsUserMenuOpen = false;
-            // CHG-v1.4.1-01（负责人 2026-10-10 反馈「顶部搜索框遮挡输入法」）：顶部三处浮层统一降出置顶带，
-            // 见 NativeWindowInterop.DemotePopupFromTopmost —— WPF Popup 默认是 WS_EX_TOPMOST 独立顶层窗口。
-            HookPopupTopmost(SearchResultPopup);
+            // CHG-v1.4.1-01：待办中心 / 用户菜单两处小浮层仍用 Popup，统一降出置顶带
+            // （见 NativeWindowInterop.DemotePopupFromTopmost）。
+            // CHG-v1.5.0-09：**全局搜索浮层已改为窗口内元素**（SearchOverlay），不再需要降级 ——
+            // 窗口内元素不可能盖住输入法的独立窗口，WIN7 下第三方输入法遮挡问题从根上消失。
             HookPopupTopmost(TodoCenterPopup);
             HookPopupTopmost(UserMenuPopup);
+            // 搜索浮层可见性变化时立即重算位置（搜索框在窗口中的位置可能已变化）
+            SearchOverlay.IsVisibleChanged += (sender, args) =>
+            {
+                if (SearchOverlay.IsVisible)
+                {
+                    Dispatcher.BeginInvoke(new Action(UpdateSearchOverlayPlacement),
+                        System.Windows.Threading.DispatcherPriority.Loaded);
+                }
+            };
             ContentRendered += OnContentRendered;
+        }
+
+        /// <summary>
+        /// CHG-v1.5.0-09：把全局搜索结果浮层贴到搜索框正下方（窗口内坐标），并限制最大高度，
+        /// 使浮层始终落在窗口内。根因见 XAML 顶部注释：Popup 是独立顶层窗口，WIN7 下会压住第三方输入法候选窗。
+        /// </summary>
+        private void UpdateSearchOverlayPlacement()
+        {
+            if (SearchOverlay == null || SearchResultPanel == null || SearchArea == null || ShellRoot == null) { return; }
+            if (SearchOverlay.Visibility != Visibility.Visible) { return; }
+            try
+            {
+                Point topLeft = SearchArea.TransformToAncestor(ShellRoot).Transform(new Point(0, 0));
+                double width = 360d;
+                double left = topLeft.X;
+                double maxRight = ShellRoot.ActualWidth - 12d;
+                if (left + width > maxRight) { left = Math.Max(12d, maxRight - width); }
+                double top = topLeft.Y + SearchArea.ActualHeight + 6d;
+
+                double available = ShellRoot.ActualHeight - top - 16d;
+                double panelHeight = Math.Max(160d, Math.Min(420d, available));
+
+                SearchOverlay.Margin = new Thickness(left, top, 0, 0);
+                SearchResultPanel.Width = width;
+                SearchResultPanel.MaxHeight = panelHeight;
+                // 面板内边距 8 + 摘要行高 ~20 → 滚动区可用高度
+                SearchResultScroll.MaxHeight = Math.Max(100d, panelHeight - 44d);
+            }
+            catch (InvalidOperationException)
+            {
+                // 控件尚未接入可视树（布局未完成）时忽略本次定位
+            }
+        }
+
+        private void ShellRoot_SizeChanged(object sender, SizeChangedEventArgs e)
+        {
+            UpdateSearchOverlayPlacement();
+        }
+
+        /// <summary>
+        /// CHG-v1.5.0-09：点击搜索框 / 结果面板以外的区域收起搜索浮层
+        /// （替代原 Popup 的 StaysOpen=False 行为；点浮层内部不收起）。
+        /// </summary>
+        private void ShellRoot_PreviewMouseDown(object sender, MouseButtonEventArgs e)
+        {
+            if (!_vm.IsSearchOpen) { return; }
+            var source = e.OriginalSource as DependencyObject;
+            if (IsDescendantOf(SearchArea, source) || IsDescendantOf(SearchResultPanel, source)) { return; }
+            _vm.CloseSearchCommand.Execute(null);
+        }
+
+        private static bool IsDescendantOf(DependencyObject ancestor, DependencyObject node)
+        {
+            if (ancestor == null || node == null) { return false; }
+            var current = node;
+            while (current != null)
+            {
+                if (ReferenceEquals(current, ancestor)) { return true; }
+                current = current is System.Windows.Media.Visual || current is System.Windows.Media.Media3D.Visual3D
+                    ? System.Windows.Media.VisualTreeHelper.GetParent(current)
+                    : System.Windows.LogicalTreeHelper.GetParent(current);
+            }
+            return false;
         }
 
         private static void HookPopupTopmost(System.Windows.Controls.Primitives.Popup popup)

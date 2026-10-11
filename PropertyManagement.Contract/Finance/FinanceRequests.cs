@@ -205,6 +205,12 @@ namespace PropertyManagement.Contract.Finance
         /// 价目表公式引用的「手填」变量在档案对象下没有取值来源，由用户在生成账单表单逐行填写。
         /// </summary>
         public List<BillObjectMeasureRequest> ObjectMeasures { get; set; }
+
+        /// <summary>
+        /// CHG-v1.5.0-03（负责人 2026-10-11 裁定）：本次生成是否对账单金额**抹零**
+        /// （去尾到整元，如 123.45 → 123.00）；被抹掉的尾差记入 `t_bill.rounding_amount`。
+        /// </summary>
+        public bool RoundOff { get; set; }
     }
 
     /// <summary>
@@ -337,6 +343,13 @@ namespace PropertyManagement.Contract.Finance
 
         /// <summary>收款备注（T4R-3：可空，随收款落库并进入审计留痕）。</summary>
         public string Remark { get; set; }
+
+        /// <summary>
+        /// CHG-v1.5.0-04（负责人 2026-10-11 裁定）：本次收款抹零金额（元）——
+        /// 直接冲减该账单应收，使「应收 = 实收」结清；上限 = 未收金额（允许整单减免）。
+        /// 收据不显示抹零金额。
+        /// </summary>
+        public decimal RoundingAmount { get; set; }
     }
 
     /// <summary>
@@ -441,16 +454,26 @@ namespace PropertyManagement.Contract.Finance
     }
 
     /// <summary>
-    /// 删除退款/减免/调整记录（CHG-v1.4.0-01，负责人 2026-10-08 裁定 A）。
-    /// 适用范围：**无关联账单**的补收/冲正记录（`t_payment_refund.bill_id IS NULL`）——
-    /// 这类记录不影响任何账单的应收/实缴，删除成本最低；有关联账单的记录会被服务端拒绝。
-    /// 删除语义：软删留痕（`del_flag = 1`）+ 下游读数过滤（退款列表 / 财务报表 / 收支明细流水
-    /// 同步不再显示）；留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
+    /// 删除退款/减免/调整记录（CHG-v1.4.0-01 初版；CHG-v1.5.0-01 放开为**全部记录可删**）。
+    /// 删除语义：软删留痕（`del_flag = 1`）+ 下游按记录类型区分——
+    /// 调整（冲正/补收）删除 → 报表/收支明细流水移除该金额，并**同步回退关联账单的实缴/应收**；
+    /// 退款 / 减免删除 → 仅移除记录，账面金额不动。
+    /// 留痕行随「系统设置 → 备份与恢复 → 一键清理残余数据」物理回收。
     /// </summary>
     public class RefundDeleteRequest
     {
         /// <summary>要删除的退款/减免/调整记录主键（t_payment_refund.id）。</summary>
         public int Id { get; set; }
+    }
+
+    /// <summary>
+    /// 批量删除退款/减免/调整记录（CHG-v1.5.0-01，负责人 2026-10-11 裁定）。
+    /// 口径与单条一致：软删留痕；调整记录删除同步回退关联账单，退款/减免只删记录不动金额。
+    /// </summary>
+    public class RefundDeleteBatchRequest
+    {
+        /// <summary>要删除的退款/减免/调整记录主键集合（t_payment_refund.id）。</summary>
+        public List<int> Ids { get; set; }
     }
 
     /// <summary>
