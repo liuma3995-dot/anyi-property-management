@@ -815,6 +815,19 @@ namespace PropertyManagement.Server.Services
         }
 
         /// <summary>
+        /// CHG-v2.0.0-17（负责人 2026-10-12：「生成的账单草稿无法被删除」）：
+        /// 批次内全部在用账单（**含草稿**），供「删除账单」子窗口逐条勾选删除；
+        /// 草稿批次同样可以被整批清空（清空后批次日志一并软删，见 DeleteBatchBills）。
+        /// </summary>
+        public List<BillListItemDto> ListLiveBills(int batchId)
+        {
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                return _finance.ListLiveBillsByBatch(connection, batchId);
+            }
+        }
+
+        /// <summary>
         /// CHG-v1.1.0-17：确定收费项目的缴费对象（以 charge_object 字典为准）。
         /// 规则：①「按车位」计价 → 强制车位；②「按建筑面积」计价 → 强制房产（无面积无法计价）；
         /// ③字典编码 property/parking/owner → 系统固定三项（房产/车位/业主）；
@@ -1639,6 +1652,54 @@ namespace PropertyManagement.Server.Services
                 "删除账单批次（软删并保留轨迹，已缴/部分缴流水不回退）",
                 userName: operatorName, ip: ip, result: "Success");
         }
+
+        /// <summary>
+        /// 账单级删除（CHG-v2.0.0-02，负责人 2026-10-11 裁定 1.A / 2.A）：
+        /// 批次内按缴费对象勾选删除指定账单 → **物理清空**该账单及其下游全部关联数据
+        /// （收款行与收据、退款／减免／调整单据、欠费台账催缴与移出台账留痕、账单状态留痕、已结清归档标记）；
+        /// 批次内账单被删空时，批次一并清空（批次日志软删留痕）。
+        /// 收款登记 / 财务报表 / 收支明细流水 / 业主档案缴费概况均为实时派生取数，随资金行与账单行清空自然归零。
+        /// 注意：物理清空**不可恢复**，前端必须先做二次确认并提示导出归档。
+        /// </summary>
+        public BillBillsDeleteResultDto DeleteBatchBills(BillBillsDeleteRequest request,
+            string operatorName = null, string ip = null)
+        {
+            if (request == null || request.BatchId <= 0)
+            {
+                throw ApiException.BadRequest("批次不能为空");
+            }
+            if (request.BillIds == null || request.BillIds.Count == 0)
+            {
+                throw ApiException.BadRequest("请先勾选要删除的账单");
+            }
+
+            BillBillsDeleteResultDto result;
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            using (IDbTransaction transaction = connection.BeginTransaction())
+            {
+                BillGenerateLogDto log = _finance.GetBillGenerateLog(connection, request.BatchId);
+                if (log == null)
+                {
+                    throw ApiException.NotFound("账单批次不存在");
+                }
+
+                result = _finance.DeleteBillsWithCascade(connection, transaction, request.BatchId, request.BillIds);
+                if (result == null || result.Deleted == 0)
+                {
+                    throw ApiException.NotFound("所选账单不存在、已删除或不属于该批次");
+                }
+                transaction.Commit();
+            }
+
+            _audit.Write("BILL_BILLS_DELETE", "bill_batch", request.BatchId.ToString(),
+                "账单级删除（物理清空）：账单 " + result.Deleted + " 条、收款 " + result.Payments +
+                " 条、退款/调整 " + result.Refunds + " 条；批次剩余 " + result.Remaining + " 条" +
+                (result.BatchCleared ? "（批次已清空）" : "") +
+                "；账单主键 " + string.Join(",", request.BillIds.Distinct()),
+                userName: operatorName, ip: ip, result: "Success");
+            return result;
+        }
+
         public void RecordRemind(ArrearRemindRequest request, string operatorName = null, string ip = null)
         {
             if (request == null || request.BillId <= 0)

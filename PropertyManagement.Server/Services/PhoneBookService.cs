@@ -9,6 +9,7 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.PhoneBook;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -55,12 +56,19 @@ namespace PropertyManagement.Server.Services
                     throw ApiException.Conflict("分类名称已存在：" + name);
                 if (id > 0)
                 {
+                    PhoneCategoryDto before = cats.FirstOrDefault(x => x.Id == id);
                     var dto = new PhoneCategoryDto { Id = id, Name = name, Sort = request.Sort };
                     _repo.UpdateCategory(c, tx, dto);
+                    // CHG-v2.0.0-06（裁定 8.A）：分类改名同步镜像到「参数/字典维护 → 电话分类」
+                    DictMirror.Rename(c, tx, DictMirror.PhoneCategory,
+                        "phone" + id, before == null ? null : before.Name, name);
                     return dto;
                 }
                 var created = new PhoneCategoryDto { Name = name, Sort = request.Sort };
                 created.Id = _repo.InsertCategory(c, tx, created);
+                // 新增分类同事务镜像（业务模块是唯一写入方）
+                DictMirror.Ensure(c, tx, DictMirror.PhoneCategory,
+                    "phone" + created.Id, name, created.Sort);
                 return created;
             });
 
@@ -74,6 +82,8 @@ namespace PropertyManagement.Server.Services
                 if (refCount > 0)
                     throw ApiException.Conflict("该分类下仍有 " + refCount + " 条启用条目，请先停用相关条目后再删除分类");
                 _repo.DeleteCategory(c, tx, id);
+                // 删除分类 → 字典项一并软删留痕
+                DictMirror.Remove(c, tx, DictMirror.PhoneCategory, "phone" + id, cat.Name);
                 return true;
             });
 

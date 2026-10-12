@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows.Media;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
@@ -296,8 +297,18 @@ namespace PropertyManagement.Client.ViewModels
             ExportLedgerExcelCommand = new AsyncRelayCommand(() => ExportLedgerAsync(ExportFormat.Excel));
             ExportLedgerPdfCommand = new AsyncRelayCommand(() => ExportLedgerAsync(ExportFormat.Pdf));
             CollectCommand = new RelayCommand<ArrearRow>(Collect);
+            // CHG-v2.0.0-03（负责人 2026-10-11 裁定 5.A）：输入即检索（300ms 防抖），
+            // 回车与「搜索」按钮保留为兼容路径；检索口径由服务端受理（含组合词条）。
+            _searchDebounce = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            _searchDebounce.Tick += (s, e) =>
+            {
+                _searchDebounce.Stop();
+                _ = LoadAsync();
+            };
             _ = LoadAsync();
         }
+
+        private readonly DispatcherTimer _searchDebounce;
 
         public ObservableCollection<ArrearRow> Items { get; } = new ObservableCollection<ArrearRow>();
 
@@ -321,7 +332,23 @@ namespace PropertyManagement.Client.ViewModels
 
         public ArrearRow ConfirmRow { get { return _confirmRow; } private set { SetProperty(ref _confirmRow, value); } }
 
-        public string Keyword { get { return _keyword; } set { SetProperty(ref _keyword, value); } }
+        /// <summary>
+        /// CHG-v2.0.0-03：搜索词改变即触发检索（300ms 防抖），不再要求用户按回车。
+        /// 关键词（缴费对象 / 业主 / 楼栋 / 单元 / 房号，支持组合词条）由服务端受理。
+        /// </summary>
+        public string Keyword
+        {
+            get { return _keyword; }
+            set
+            {
+                if (!SetProperty(ref _keyword, value)) { return; }
+                if (_searchDebounce != null)
+                {
+                    _searchDebounce.Stop();
+                    _searchDebounce.Start();
+                }
+            }
+        }
 
         /// <summary>楼栋筛选（0=全部，T4F-6-1；变更即刷新）。</summary>
         public int BuildingFilter { get { return _buildingFilter; } set { if (SetProperty(ref _buildingFilter, value)) { _ = LoadAsync(); } } }
@@ -423,7 +450,15 @@ namespace PropertyManagement.Client.ViewModels
         {
             await RunAsync(async () =>
             {
-                var page = await Api.QueryArrearsAsync(new BillQueryRequest { ArrearsOnly = true, PageIndex = 1, PageSize = 200 });
+                // CHG-v2.0.0-03：关键词交给服务端（覆盖缴费对象 / 业主 / 楼栋 / 单元 / 房号 + 组合词条），
+                // 否则台账首屏之外（>200 行）的记录永远搜不到。
+                var page = await Api.QueryArrearsAsync(new BillQueryRequest
+                {
+                    ArrearsOnly = true,
+                    PageIndex = 1,
+                    PageSize = 200,
+                    Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim()
+                });
                 var source = page.Items.Where(x => x.BillId > 0).ToList();
 
                 // T4R-6：楼栋下拉由全量台账派生（先建选项再做楼栋筛选，避免选项被截断）
@@ -461,16 +496,8 @@ namespace PropertyManagement.Client.ViewModels
                 }
 
                 IEnumerable<ArrearDto> query = source;
-                if (!string.IsNullOrWhiteSpace(Keyword))
-                {
-                    string kw = Keyword.Trim();
-                    // CHG-v1.2.0-27：搜索范围纳入「楼栋/房号」（可直接搜 1号楼101 找到车位/业主直缴的欠费行）
-                    query = query.Where(x =>
-                        (x.PropertyNo ?? string.Empty).Contains(kw) ||
-                        (x.OwnerName ?? string.Empty).Contains(kw) ||
-                        (x.BuildingPath ?? string.Empty).Contains(kw) ||
-                        (x.BuildingNo ?? string.Empty).Contains(kw));
-                }
+                // CHG-v2.0.0-03：关键词过滤已上收到服务端（QueryArrears），此处不再本地过滤 ——
+                // 本地过滤只能命中首屏 200 行，且无法支持「4栋2单元」这类组合词条。
                 if (BuildingFilter > 0 && BuildingFilter < Buildings.Count)
                 {
                     string building = Buildings[BuildingFilter];

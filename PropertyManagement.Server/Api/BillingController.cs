@@ -135,6 +135,20 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<object>.Ok(null);
         }
 
+        /// <summary>
+        /// 账单级删除（CHG-v2.0.0-02，负责人 2026-10-11 裁定 1.A/2.A）：
+        /// 批次内按缴费对象勾选删除指定账单 —— 物理清空账单行及其下游关联数据
+        /// （收款/收据、退款·减免·调整、欠费台账催缴与移出台账留痕、账单状态留痕、已结清归档标记）；
+        /// 批次内账单被删空时批次一并清空。
+        /// </summary>
+        [HttpPost]
+        [Route("bills/delete")]
+        public ApiResponse<BillBillsDeleteResultDto> DeleteBills(BillBillsDeleteRequest request)
+        {
+            return ApiResponse<BillBillsDeleteResultDto>.Ok(
+                _billing.DeleteBatchBills(request, GetUsername(), GetIp()));
+        }
+
         [Route("bills/generate-logs/{id:int}")]
         public ApiResponse<BillGenerateLogDto> GetGenerateLog(int id)
         {
@@ -160,6 +174,17 @@ namespace PropertyManagement.Server.Api
         public ApiResponse<List<BillListItemDto>> ListPublished(int id)
         {
             return ApiResponse<List<BillListItemDto>>.Ok(_billing.ListPublished(id));
+        }
+
+        /// <summary>
+        /// CHG-v2.0.0-17：批次内**全部在用账单（含草稿）** —— 「删除账单」子窗口的清单来源。
+        /// 与 /published 的唯一差别是不再排除草稿（status = 5），使草稿批次也能逐条勾选删除。
+        /// </summary>
+        [HttpGet]
+        [Route("bills/generate-logs/{id:int}/bills")]
+        public ApiResponse<List<BillListItemDto>> ListLiveBills(int id)
+        {
+            return ApiResponse<List<BillListItemDto>>.Ok(_billing.ListLiveBills(id));
         }
 
         /// <summary>

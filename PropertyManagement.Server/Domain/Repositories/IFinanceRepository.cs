@@ -62,6 +62,13 @@ namespace PropertyManagement.Server.Domain.Repositories
         BillDto GetBill(IDbConnection connection, int id);
         List<BillListItemDto> ListDraftBillsByBatch(IDbConnection connection, int batchId);
         List<BillListItemDto> ListPublishedBillsByBatch(IDbConnection connection, int batchId);
+
+        /// <summary>
+        /// CHG-v2.0.0-17（负责人 2026-10-12：草稿账单也要能被删除）：
+        /// 批次内**全部在用账单**（含草稿），供「删除账单」子窗口列清单 ——
+        /// `ListPublishedBillsByBatch` 会排除草稿（status = 5），草稿批次因此无法逐条删除。
+        /// </summary>
+        List<BillListItemDto> ListLiveBillsByBatch(IDbConnection connection, int batchId);
         void PublishBatchBills(IDbConnection connection, IDbTransaction transaction, int batchId);
         int InsertBillGenerateLog(IDbConnection connection, IDbTransaction transaction, BillGenerateLogDto log);
         BillGenerateLogDto GetBillGenerateLog(IDbConnection connection, int id);
@@ -77,6 +84,16 @@ namespace PropertyManagement.Server.Domain.Repositories
 
         /// <summary>软删账单批次及其中账单（CHG-M4-16：批次/账单 del_flag=1，状态日志留痕）。</summary>
         void SoftDeleteBillBatch(IDbConnection connection, IDbTransaction transaction, int batchId);
+
+        /// <summary>
+        /// CHG-v2.0.0-02（负责人 2026-10-11 裁定 1.A/2.A）：账单级删除（**物理清空**）——
+        /// 批次内按缴费对象选删指定账单，连带清除收款行及其收据、退款／减免／调整单据、
+        /// 催缴与移出台账留痕、账单状态留痕与已结清归档标记；
+        /// 批次内已无在用账单时，批次日志一并软删留痕。返回各表实际处置条数。
+        /// </summary>
+        BillBillsDeleteResultDto DeleteBillsWithCascade(IDbConnection connection, IDbTransaction transaction,
+            int batchId, IEnumerable<int> billIds);
+
         List<BillListItemDto> ListPendingBillsByOwner(IDbConnection connection, int ownerId);
         PaymentStatisticsDto GetPaymentStatistics(IDbConnection connection);
 

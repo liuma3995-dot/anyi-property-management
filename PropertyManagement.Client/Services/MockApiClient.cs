@@ -815,6 +815,59 @@ namespace PropertyManagement.Client.Services
             return Task.CompletedTask;
         }
 
+        /// <summary>CHG-v2.0.0-02：演示实现——按批次元数据构造账单清单占位行。</summary>
+        public Task<List<BillListItemDto>> GetBatchBillsAsync(int batchId)
+        {
+            BillBatchDto batch = _batches.FirstOrDefault(x => x.Id == batchId);
+            var list = new List<BillListItemDto>();
+            if (batch == null) { return Task.FromResult(list); }
+            int count = batch.HouseCount <= 0 ? 1 : batch.HouseCount;
+            for (int i = 1; i <= count; i++)
+            {
+                list.Add(new BillListItemDto
+                {
+                    Id = batchId * 1000 + i,
+                    ChargeItemId = batch.ChargeItemId ?? 0,
+                    ChargeItemName = batch.ChargeItemName,
+                    BuildingNo = "1栋",
+                    UnitNo = "1",
+                    RoomNo = "10" + i.ToString("00"),
+                    PropertyNo = "10" + i.ToString("00"),
+                    CyclePeriod = batch.CyclePeriod,
+                    Amount = Math.Round(batch.TotalAmount / count, 2),
+                    Status = BillStatus.Pending,
+                    GenerateBatchId = batchId
+                });
+            }
+            return Task.FromResult(list);
+        }
+
+        /// <summary>CHG-v2.0.0-02：演示实现——按批次台账合计估算清除结果。</summary>
+        public Task<BillBillsDeleteResultDto> DeleteBatchBillsAsync(BillBillsDeleteRequest request)
+        {
+            int batchId = request == null ? 0 : request.BatchId;
+            BillBatchDto batch = _batches.FirstOrDefault(x => x.Id == batchId);
+            if (batch == null)
+            {
+                throw new ApiClientException(404, "账单批次不存在");
+            }
+            int deleted = request == null || request.BillIds == null ? 0 : request.BillIds.Distinct().Count();
+            if (deleted == 0)
+            {
+                throw new ApiClientException(400, "请先勾选要删除的账单");
+            }
+            int remaining = Math.Max(0, batch.HouseCount - deleted);
+            var result = new BillBillsDeleteResultDto
+            {
+                Deleted = deleted,
+                Remaining = remaining,
+                BatchCleared = remaining == 0
+            };
+            if (result.BatchCleared) { _batches.Remove(batch); }
+            else { batch.HouseCount = remaining; }
+            return Task.FromResult(result);
+        }
+
         public Task<List<BillFailureDto>> GetFailuresAsync(int batchId)
         {
             return Task.FromResult(new List<BillFailureDto>

@@ -155,6 +155,7 @@
     <Compile Include="Infrastructure\Data\SqliteConnectionFactory.cs" />
     <Compile Include="Infrastructure\SqlAddress.cs" />
     <Compile Include="Infrastructure\ArrearHousehold.cs" />
+    <Compile Include="Infrastructure\DictMirror.cs" />
     <Compile Include="Infrastructure\Repositories\SqlAuditLogRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlBaseInfoRepository.cs" />
     <Compile Include="Infrastructure\Repositories\SqlDictRepository.cs" />

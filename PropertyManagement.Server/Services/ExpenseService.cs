@@ -6,6 +6,7 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -61,6 +62,10 @@ namespace PropertyManagement.Server.Services
             using (IDbTransaction transaction = connection.BeginTransaction())
             {
                 category.Id = _finance.InsertExpenseCategory(connection, transaction, category);
+                // CHG-v2.0.0-06（负责人 2026-10-11 裁定 8.A）：同事务把分类镜像进「参数/字典维护 → 支出分类」
+                // （业务模块是唯一写入方；字典侧只读镜像，避免"新增了分类、字典里查不到"）
+                DictMirror.Ensure(connection, transaction, DictMirror.ExpenseCategory,
+                    category.CategoryType, category.Name, category.Id, operatorName);
                 transaction.Commit();
             }
 
@@ -87,9 +92,13 @@ namespace PropertyManagement.Server.Services
                     throw ApiException.NotFound("支出分类不存在或已删除");
                 }
 
+                string previousName = existing.Name;
                 existing.Name = request.Name.Trim();
                 existing.CategoryType = request.CategoryType;
                 _finance.UpdateExpenseCategory(connection, transaction, existing);
+                // 同步镜像改名（按 code 优先、旧名兜底定位）
+                DictMirror.Rename(connection, transaction, DictMirror.ExpenseCategory,
+                    existing.CategoryType, previousName, existing.Name, operatorName);
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_CATEGORY_UPDATE", "expense_category", id.ToString(),
@@ -117,6 +126,9 @@ namespace PropertyManagement.Server.Services
                 }
 
                 _finance.SoftDeleteExpenseCategory(connection, transaction, id);
+                // 同步镜像删除（字典项一并软删留痕，避免"支出登记删了、字典还在"）
+                DictMirror.Remove(connection, transaction, DictMirror.ExpenseCategory,
+                    existing.CategoryType, existing.Name, operatorName);
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_CATEGORY_DELETE", "expense_category", id.ToString(),

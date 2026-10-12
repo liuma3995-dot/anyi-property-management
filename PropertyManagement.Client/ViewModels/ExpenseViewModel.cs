@@ -94,6 +94,7 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isSelectionMode;              // v1.1.0-⑤：点击「批量删除记录」后才显示勾选框列
         private bool _isBatchConfirmVisible;
         private string _batchConfirmText = string.Empty;
+        private bool _isExportMenuOpen;              // CHG-v2.0.0-05：导出下拉（PDF / Excel）
 
         public ExpenseViewModel(IApiClient api) : base(api)
         {
@@ -117,6 +118,11 @@ namespace PropertyManagement.Client.ViewModels
             AddCategoryCommand = new AsyncRelayCommand(AddCategoryAsync);
             DeleteCategoryCommand = new AsyncRelayCommand(DeleteCategoryAsync);
             ExportCommand = new AsyncRelayCommand(ExportAsync);
+            // CHG-v2.0.0-05（负责人 2026-10-11 裁定 7.A）：单按钮「导出」+ 下拉 PDF / Excel 两选项
+            ToggleExportMenuCommand = new RelayCommand(() => IsExportMenuOpen = !IsExportMenuOpen);
+            CloseExportMenuCommand = new RelayCommand(() => IsExportMenuOpen = false);
+            ExportPdfCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Pdf));
+            ExportExcelCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Excel));
             _ = LoadAsync();
         }
 
@@ -165,8 +171,26 @@ namespace PropertyManagement.Client.ViewModels
 
         public IAsyncRelayCommand DeleteCategoryCommand { get; }
 
-        /// <summary>CHG-v1.2.0-25：导出当前筛选条件下的支出明细（PDF）。</summary>
+        /// <summary>CHG-v1.2.0-25 / CHG-v2.0.0-05：导出当前筛选条件下的支出明细（PDF / Excel）。</summary>
         public IAsyncRelayCommand ExportCommand { get; }
+
+        /// <summary>CHG-v2.0.0-05：导出下拉菜单是否展开（窗口内浮层，不用 Popup）。</summary>
+        public bool IsExportMenuOpen
+        {
+            get { return _isExportMenuOpen; }
+            private set { SetProperty(ref _isExportMenuOpen, value); }
+        }
+
+        public IRelayCommand ToggleExportMenuCommand { get; }
+
+        /// <summary>CHG-v2.0.0-11：收起导出下拉（点击页面其它位置时由透明遮罩触发）。</summary>
+        public IRelayCommand CloseExportMenuCommand { get; }
+
+        /// <summary>导出 PDF（裁定 7.A 的选项之一）。</summary>
+        public IAsyncRelayCommand ExportPdfCommand { get; }
+
+        /// <summary>导出 Excel（裁定 7.A 的选项之一）。</summary>
+        public IAsyncRelayCommand ExportExcelCommand { get; }
 
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
 
@@ -414,15 +438,16 @@ namespace PropertyManagement.Client.ViewModels
                 int month = DateTime.Now.Month;
                 var active = page.Items.Where(x => x.Status == 0).ToList();
                 var monthItems = active.Where(x => x.ExpenseDate.Year == year && x.ExpenseDate.Month == month).ToList();
-                MonthTotalText = "¥" + monthItems.Sum(x => x.Amount).ToString("N0");
-                var lastMonthItems = active.Where(x => x.ExpenseDate.Year == year && x.ExpenseDate.Month == month - 1).ToList();
-                MonthTotalSub = "较上月 —";
-                if (lastMonthItems.Sum(x => x.Amount) > 0)
-                {
-                    decimal lastTotal = lastMonthItems.Sum(x => x.Amount);
-                    decimal delta = (monthItems.Sum(x => x.Amount) - lastTotal) / lastTotal * 100m;
-                    MonthTotalSub = delta >= 0 ? "较上月 +" + delta.ToString("0.0") + "%" : "较上月 " + delta.ToString("0.0") + "%";
-                }
+
+                // CHG-v2.0.0-14（负责人 2026-10-12）：卡片口径由「本月支出合计」改为
+                // **当前数据表格（即当前关键字 / 类别 / 状态筛选结果）的支出合计** ——
+                // 卡片数字与表格所见一致；已删除记录按本页「支出笔数」同一口径不计入合计（在副文案里写明数量）。
+                var visibleRows = Items.Select(x => x.Dto).ToList();
+                int deletedVisible = visibleRows.Count(x => x.Status != 0);
+                decimal visibleTotal = visibleRows.Where(x => x.Status == 0).Sum(x => x.Amount);
+                MonthTotalText = "¥" + visibleTotal.ToString("N0");
+                MonthTotalSub = "当前筛选 " + (visibleRows.Count - deletedVisible) + " 笔" +
+                                (deletedVisible > 0 ? "（不含已删除 " + deletedVisible + " 笔）" : string.Empty);
                 CountText = active.Count.ToString();
                 if (monthItems.Count > 0)
                 {
@@ -645,11 +670,21 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         /// <summary>
-        /// CHG-v1.2.0-25：导出支出明细 PDF —— 口径 = **当前筛选条件下的明细**（关键字 / 类别 / 状态），
-        /// 与表格所见一致；服务端渲染（PDFsharp + 中文字体）并写导出留痕，随后由客户端另存到本机。
+        /// CHG-v1.2.0-25 / CHG-v2.0.0-05：导出支出明细 —— 口径 = **当前筛选条件下的明细**
+        /// （关键字 / 类别 / 状态），与表格所见一致；服务端按所选格式渲染
+        /// （Excel 或 PDF，服务端 `ReportService.ExportExpenses` 已支持双格式）并写导出留痕，
+        /// 随后由客户端另存到本机。
         /// </summary>
         private async Task ExportAsync()
         {
+            await ExportAsync(ExportFormat.Pdf);
+        }
+
+        private async Task ExportAsync(ExportFormat format)
+        {
+            IsExportMenuOpen = false;
+            string type = format == ExportFormat.Excel ? "Excel" : "PDF";
+
             if (Items.Count == 0)
             {
                 ErrorText = "当前筛选条件下没有支出记录，无需导出";
@@ -665,32 +700,33 @@ namespace PropertyManagement.Client.ViewModels
 
                 ReportLogDto log = await Api.ExportExpensesAsync(new ExpenseExportRequest
                 {
-                    Format = ExportFormat.Pdf,
+                    Format = format,
                     Keyword = string.IsNullOrWhiteSpace(Keyword) ? null : Keyword.Trim(),
                     CategoryId = categoryId,
                     StatusFilter = SelectedStatusFilter
                 });
                 if (log == null || log.Id <= 0)
                 {
-                    throw new InvalidOperationException("PDF 导出失败：服务端未生成导出记录");
+                    throw new InvalidOperationException(type + " 导出失败：服务端未生成导出记录");
                 }
 
                 var dialog = new Microsoft.Win32.SaveFileDialog
                 {
-                    Title = "保存支出登记明细（PDF）",
-                    Filter = "PDF 文件|*.pdf",
-                    FileName = "支出登记明细_" + DateTime.Now.ToString("yyyyMMddHHmm") + ".pdf"
+                    Title = "保存支出登记明细（" + type + "）",
+                    Filter = format == ExportFormat.Excel ? "Excel 文件|*.xlsx" : "PDF 文件|*.pdf",
+                    FileName = "支出登记明细_" + DateTime.Now.ToString("yyyyMMddHHmm") +
+                               (format == ExportFormat.Excel ? ".xlsx" : ".pdf")
                 };
                 if (dialog.ShowDialog() != true)
                 {
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "PDF 已在服务端生成（导出日志 " + log.Id +
+                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + type + " 已在服务端生成（导出日志 " + log.Id +
                         "），未另存到本机";
                     return;
                 }
 
                 await Api.DownloadReportFileAsync(log.Id, dialog.FileName);
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "支出明细已导出：" + dialog.FileName;
-                MessageBox.Show("支出明细已导出到：" + dialog.FileName, "导出成功",
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "支出明细（" + type + "）已导出：" + dialog.FileName;
+                MessageBox.Show("支出明细（" + type + "）已导出到：" + dialog.FileName, "导出成功",
                     MessageBoxButton.OK, MessageBoxImage.Information);
             }, null);
         }

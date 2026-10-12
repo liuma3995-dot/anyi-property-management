@@ -236,6 +236,40 @@ namespace PropertyManagement.Contract.Finance
         public int BatchId { get; set; }
     }
 
+    /// <summary>
+    /// 账单级删除请求（CHG-v2.0.0-02，负责人 2026-10-11 裁定 1.A/2.A）：
+    /// 批次内按「缴费对象」勾选删除指定账单 —— 物理清空账单行及其下游关联数据
+    /// （收款/收据、退款·减免·调整、欠费台账催缴与移出台账留痕、状态留痕、归档标记）。
+    /// 批次内账单全部被删除时，批次一并清空（批次日志软删留痕）。
+    /// </summary>
+    public class BillBillsDeleteRequest
+    {
+        /// <summary>所属批次（仅接受该批次下的账单，防跨批次误删）。</summary>
+        public int BatchId { get; set; }
+
+        /// <summary>要清除的账单主键集合（支持单选／多选／全选）。</summary>
+        public List<int> BillIds { get; set; }
+    }
+
+    /// <summary>账单级删除结果（CHG-v2.0.0-02）：用于客户端汇总提示。</summary>
+    public class BillBillsDeleteResultDto
+    {
+        /// <summary>实际清空的账单条数。</summary>
+        public int Deleted { get; set; }
+
+        /// <summary>连带清除的收款行数（含其收据）。</summary>
+        public int Payments { get; set; }
+
+        /// <summary>连带清除的退款／减免／调整单据行数。</summary>
+        public int Refunds { get; set; }
+
+        /// <summary>批次内剩余在用账单条数。</summary>
+        public int Remaining { get; set; }
+
+        /// <summary>批次是否随之清空（剩余为 0 → 批次日志软删）。</summary>
+        public bool BatchCleared { get; set; }
+    }
+
     /// <summary>账单查询条件（UC-FIN-007 欠费台账/账单列表，分页）。</summary>
     public class BillQueryRequest : PageRequest
     {

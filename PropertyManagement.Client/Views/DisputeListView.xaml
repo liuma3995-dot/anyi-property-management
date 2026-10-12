@@ -95,10 +95,13 @@
                     <CheckBox Content="全选" IsChecked="{Binding IsAllChecked, Mode=TwoWay}" FontSize="12" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding CheckedCountText}" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" Margin="10,0,0,0" VerticalAlignment="Center" />
                 </StackPanel>
-                <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="批量删除" Command="{Binding EnterBatchModeCommand}" Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
+                <!-- CHG-v2.0.0-08（负责人 2026-10-11 裁定 9.A）：主操作在左、「批量删除」在右，
+                     且「批量删除」与「纠纷登记」统一为工具栏口径；危险色只保留在「确认删除」上 -->
+                <Button Style="{StaticResource ButtonPrimary}" Content="纠纷登记" Command="{Binding NewCommand}" MinWidth="84" />
+                <Button Style="{StaticResource ButtonSecondary}" Content="批量删除" Command="{Binding EnterBatchModeCommand}"
+                        Margin="10,0,0,0" Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
                 <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="取消" Command="{Binding CancelBatchDeleteCommand}" Margin="10,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
                 <Button Height="32" FontSize="13" Background="{StaticResource DangerSoftBrush}" Foreground="{StaticResource DangerBrush}" BorderBrush="{StaticResource DangerBrush}" BorderThickness="1" Content="确认删除" Command="{Binding ConfirmSelectionCommand}" IsEnabled="{Binding HasChecked}" Margin="8,0,0,0" Visibility="{Binding IsBatchMode, Converter={StaticResource BoolToVis}}" />
-                <Button Height="32" FontSize="13" Style="{StaticResource ButtonPrimary}" Content="纠纷登记" Command="{Binding NewCommand}" Margin="10,0,0,0" MinWidth="84" />
                 <Button Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" Content="导出" Command="{Binding ExportCommand}" Margin="10,0,0,0" />
             </StackPanel>
         </Grid>

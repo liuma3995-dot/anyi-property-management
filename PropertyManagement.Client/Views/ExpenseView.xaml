@@ -11,7 +11,7 @@
         <conv:BindingProxy x:Key="VmProxy" Data="{Binding}" />
     </UserControl.Resources>
 
-    <Grid Margin="24,20">
+    <Grid x:Name="PageGrid" Margin="24,20" SizeChanged="PageGrid_SizeChanged">
         <Grid.RowDefinitions>
             <RowDefinition Height="118" />
             <RowDefinition Height="14" />
@@ -26,10 +26,13 @@
         <UniformGrid Grid.Row="0" Columns="4">
             <Border Style="{StaticResource CardBorder}" Padding="16,14" Margin="0,0,7,0">
                 <StackPanel>
-                    <TextBlock Text="本月支出合计" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
+                    <!-- CHG-v2.0.0-14（负责人 2026-10-12）：口径改为「当前筛选结果合计」→ 去掉「本月」 -->
+                    <TextBlock Text="支出合计" FontSize="11" Foreground="{StaticResource TextSecondaryBrush}" />
                     <TextBlock Text="{Binding MonthTotalText}" FontSize="26" FontWeight="Bold" Margin="0,6,0,0"
                                Foreground="{StaticResource DangerBrush}" />
-                    <TextBlock Text="登记即生效（无审批流）" FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,0" />
+                    <TextBlock Text="{Binding MonthTotalSub}" FontSize="10" Foreground="{StaticResource TextMutedBrush}"
+                               Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                               ToolTip="{Binding MonthTotalSub}" />
                 </StackPanel>
             </Border>
             <Border Style="{StaticResource CardBorder}" Padding="16,14" Margin="7,0">
@@ -64,6 +67,10 @@
         </UniformGrid>
 
         <!-- ============ 工具栏 ============ -->
+        <!-- CHG-v2.0.0-11（负责人 2026-10-12 反馈「工具栏整行被置顶 → 登记支出表单被遮挡」）：
+             根因是上一轮给**整个工具栏卡片**加了 Panel.ZIndex=30，压过了后面声明的 5 个表单/确认浮层（默认 ZIndex 0）。
+             现口径：工具栏保持默认层级；「导出」下拉改为**页面级浮层**（见文件末尾 ExportMenuLayer，ZIndex 10），
+             各浮层显式置 ZIndex=100 —— 下拉盖住数据表，但永远在表单/确认弹层之下。 -->
         <Border Grid.Row="2" Style="{StaticResource CardBorder}" Padding="14,10">
             <Grid>
                 <Grid.ColumnDefinitions>
@@ -120,9 +127,12 @@
                             Margin="10,0,0,0" Command="{Binding CancelSelectionCommand}"
                             Visibility="{Binding IsSelectionMode, Converter={StaticResource BoolToVis}}" />
                 </StackPanel>
-                <!-- CHG-v1.2.0-25：导出改为真实实现（PDF，按当前筛选条件导出明细） -->
-                <Button Grid.Column="8" Style="{StaticResource LinkButton}" Content="导出" FontSize="13"
-                        VerticalAlignment="Center" Command="{Binding ExportCommand}" />
+                <!-- CHG-v2.0.0-05 / CHG-v2.0.0-11（负责人 2026-10-11 裁定 7.A + 2026-10-12 反馈）：
+                     单按钮「导出」+ 页面级下拉两选项（PDF / Excel）；下拉放在页面级浮层里，
+                     既不参与工具栏布局（打开时不挤动表格），也不会压住表单/确认弹层。 -->
+                <Button Grid.Column="8" x:Name="ExportButton" Style="{StaticResource LinkButton}" FontSize="13"
+                        VerticalAlignment="Center" Content="导出 ▾" Click="ExportMenu_Click"
+                        ToolTip="按当前筛选条件导出明细：可选 PDF 或 Excel（再点一次或点空白处可收起）" />
             </Grid>
         </Border>
 
@@ -188,8 +198,30 @@
             <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
         </StackPanel>
 
+        <!-- ============ CHG-v2.0.0-11：「导出」下拉页面级浮层 ============
+             ① 透明遮罩铺满页面：点击任何位置（含「登记支出」「导出」按钮本身）都先收起下拉 ——
+                既解决“再点导出收不起来”，也保证下拉不会盖在随后打开的表单/确认浮层上；
+             ② 面板位置由代码后置按「导出按钮实际坐标」回写（见 ExpenseView.xaml.cs），不参与工具栏布局。 -->
+        <Grid x:Name="ExportMenuLayer" Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="10"
+              Visibility="{Binding IsExportMenuOpen, Converter={StaticResource BoolToVis}}">
+            <Border x:Name="ExportMenuCatcher" Background="Transparent" MouseLeftButtonDown="ExportMenuCatcher_Click" />
+            <Border x:Name="ExportMenuPanel" Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1" CornerRadius="8" Padding="4"
+                    HorizontalAlignment="Right" VerticalAlignment="Top">
+                <StackPanel MinWidth="132">
+                    <Button Style="{StaticResource LinkButton}" Content="导出 Excel" FontSize="13"
+                            HorizontalContentAlignment="Left" Padding="8,6"
+                            Command="{Binding ExportExcelCommand}" />
+                    <Button Style="{StaticResource LinkButton}" Content="导出 PDF" FontSize="13"
+                            HorizontalContentAlignment="Left" Padding="8,6" Margin="0,2,0,0"
+                            Command="{Binding ExportPdfCommand}" />
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <!-- ============ 登记表单浮层 ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="100"
+              Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
@@ -268,7 +300,8 @@
             </Border>
         </Grid>
         <!-- ============ 支出详情弹层（T4F-5-1 查看） ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="100"
+              Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
@@ -315,7 +348,8 @@
         </Grid>
 
         <!-- ============ 删除二次确认弹层（T4F-5-1，BR-FIN-10 软删除） ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="100"
+              Visibility="{Binding IsConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="400" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
@@ -337,7 +371,8 @@
         </Grid>
 
         <!-- ============ 批量删除二次确认弹层（v1.1.0-⑤，BR-FIN-10 软删留痕） ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="100"
+              Visibility="{Binding IsBatchConfirmVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
@@ -359,7 +394,8 @@
         </Grid>
 
         <!-- ============ v1.1.0 第 7 轮：设置本月预算（系统参数 finance.budget.monthly） ============ -->
-        <Grid Grid.Row="0" Grid.RowSpan="7" Visibility="{Binding IsBudgetFormVisible, Converter={StaticResource BoolToVis}}">
+        <Grid Grid.Row="0" Grid.RowSpan="7" Panel.ZIndex="100"
+              Visibility="{Binding IsBudgetFormVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>

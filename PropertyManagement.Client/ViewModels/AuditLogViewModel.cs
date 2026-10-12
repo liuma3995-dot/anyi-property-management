@@ -261,8 +261,11 @@ namespace PropertyManagement.Client.ViewModels
             get { return Items.Count > 0 && Items.All(i => i.IsSelected); }
             set
             {
+                // CHG-v2.0.0-07：置真 = 全选当前筛选结果（跨页）；置假 = 清空并退出跨页作用域
+                _isSelectAllFiltered = value;
                 foreach (AuditLogRow row in Items) { row.IsSelected = value; }
                 OnPropertyChanged(nameof(IsAllItemsSelected));
+                OnPropertyChanged(nameof(SelectionHint));
             }
         }
 
@@ -270,6 +273,43 @@ namespace PropertyManagement.Client.ViewModels
         public void RefreshSelectAllState()
         {
             OnPropertyChanged(nameof(IsAllItemsSelected));
+            OnPropertyChanged(nameof(SelectionHint));
+        }
+
+        /// <summary>
+        /// CHG-v2.0.0-07（负责人 2026-10-11 反馈「表头全选只勾中当前页」）：
+        /// 全选作用域。勾表头全选 = 选中**当前筛选条件下的全部记录（含其它页面）**；
+        /// 任一行被取消勾选即退出该作用域（避免误删整库），退回"仅当前页"。
+        /// </summary>
+        private bool _isSelectAllFiltered;
+
+        /// <summary>选择范围提示（让用户在删除前看清到底选中多少条、是否跨页）。</summary>
+        public string SelectionHint
+        {
+            get
+            {
+                if (!IsSelectionMode) { return string.Empty; }
+                if (_isSelectAllFiltered)
+                {
+                    return "已全选当前筛选条件下的全部 " + Total + " 条日志（删除时含其它页面）";
+                }
+                int checkedCount = Items.Count(i => i.IsSelected);
+                return checkedCount > 0 ? "已勾选 " + checkedCount + " 条（仅当前页）" : string.Empty;
+            }
+        }
+
+        /// <summary>行勾选变化：取消任一行 → 退出「全选全部」作用域。</summary>
+        private void OnRowPropertyChanged(object sender, System.ComponentModel.PropertyChangedEventArgs e)
+        {
+            if (e.PropertyName != nameof(AuditLogRow.IsSelected)) { return; }
+            var row = sender as AuditLogRow;
+            if (row == null) { return; }
+            if (!row.IsSelected && _isSelectAllFiltered)
+            {
+                _isSelectAllFiltered = false;
+            }
+            OnPropertyChanged(nameof(IsAllItemsSelected));
+            OnPropertyChanged(nameof(SelectionHint));
         }
 
         /// <summary>
@@ -330,7 +370,9 @@ namespace PropertyManagement.Client.ViewModels
                 Items.Clear();
                 foreach (var dto in page.Items)
                 {
-                    Items.Add(new AuditLogRow { Dto = dto });
+                    var row = new AuditLogRow { Dto = dto };
+                    row.PropertyChanged += OnRowPropertyChanged;
+                    Items.Add(row);
                 }
                 Total = page.Total;
                 PageIndex = page.PageIndex > 0 ? page.PageIndex : 1;
@@ -443,21 +485,43 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
 
-            int count = Items.Count(i => i.IsSelected);
+            // CHG-v2.0.0-07：表头全选 → 删除**当前筛选条件下的全部记录**（含其它页面）
+            int count = _isSelectAllFiltered ? Total : Items.Count(i => i.IsSelected);
             if (count == 0)
             {
                 ErrorText = "请先勾选要删除的记录（可勾选单条，也可勾选表头全选），或点击【取消】退出批量删除";
                 return;
             }
             ConfirmTitle = "批量删除审计日志";
-            ConfirmMessage = "将删除所选 " + count + " 条审计日志（记录留痕，不再出现在查询与导出中）。\n" +
-                             "如需彻底清理留痕数据，请到「系统设置 / 备份与恢复」执行【一键清理残余数据】。\n确认删除？";
+            ConfirmMessage = (_isSelectAllFiltered
+                                 ? "将删除当前筛选条件下的全部 " + count + " 条审计日志（含其它页面）。\n"
+                                 : "将删除所选 " + count + " 条审计日志。\n") +
+                             "记录留痕，不再出现在查询与导出中；如需彻底清理留痕数据，请到「系统设置 / 备份与恢复」执行【一键清理残余数据】。\n确认删除？";
             IsConfirmVisible = true;
+        }
+
+        /// <summary>
+        /// CHG-v2.0.0-07：按**当前筛选条件**取回全部日志主键（跨页全选删除用）。
+        /// 服务端 `QueryAuditLogs` 的 PageSize 不设上限（导出路径同样用大页），
+        /// 因此这里用一个大页一次取齐，口径与列表完全一致。
+        /// </summary>
+        private async Task<List<int>> LoadAllFilteredIdsAsync()
+        {
+            AuditLogQueryRequest request = BuildRequest();
+            request.PageIndex = 1;
+            request.PageSize = 100000;
+            PageResult<AuditLogDto> page = await Api.QueryAuditLogsAsync(request);
+            return page == null || page.Items == null
+                ? new List<int>()
+                : page.Items.Select(x => x.Id).Distinct().ToList();
         }
 
         private async Task ConfirmDeleteAsync()
         {
-            var ids = Items.Where(i => i.IsSelected).Select(i => i.Dto.Id).Distinct().ToList();
+            // CHG-v2.0.0-07：跨页全选时按当前筛选拉取全部 id（服务端 PageSize 不设上限，与导出同一口径）
+            List<int> ids = _isSelectAllFiltered
+                ? await LoadAllFilteredIdsAsync()
+                : Items.Where(i => i.IsSelected).Select(i => i.Dto.Id).Distinct().ToList();
             IsConfirmVisible = false;
             if (ids.Count == 0) { return; }
             string message = null;
@@ -484,8 +548,10 @@ namespace PropertyManagement.Client.ViewModels
         private void ExitSelectionMode()
         {
             foreach (AuditLogRow row in Items) { row.IsSelected = false; }
+            _isSelectAllFiltered = false;   // CHG-v2.0.0-07：退出选择模式同时退出跨页作用域
             IsSelectionMode = false;
             OnPropertyChanged(nameof(IsAllItemsSelected));
+            OnPropertyChanged(nameof(SelectionHint));
         }
 
         private async Task PrevPageAsync()

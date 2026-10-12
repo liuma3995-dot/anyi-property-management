@@ -8,6 +8,7 @@ using PropertyManagement.Contract.Enums;
 using PropertyManagement.Contract.Finance;
 using PropertyManagement.Server.Domain.Entities;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -60,12 +61,31 @@ namespace PropertyManagement.Server.Services
                 ? status
                 : (includeDisabled ? (int?)null : (int)DictItemStatus.Enabled);
 
+            int synced;
+            List<DictItemDto> items;
             using (IDbConnection connection = _connectionFactory.OpenConnection())
             {
-                return _dict.ListItems(connection, typeCode.Trim(), statusFilter)
+                // CHG-v2.0.0-06（负责人 2026-10-11 反馈「新增分类没有同步到字典项」/ 裁定 8.A）：
+                // 打开某个类型前，先把业务表里**既有**的行补齐成字典项（幂等）——
+                // 这样升级前就已存在的支出分类 / 电话分类 / 设备类型 / 纠纷类型 / 应急场景同样能在字典里看到，
+                // 不需要额外的数据迁移脚本；车位的「类型」文案也在这一步与业务枚举对齐。
+                // 已软删的字典项视为管理员有意移除，不会被"复活"。
+                using (IDbTransaction transaction = connection.BeginTransaction())
+                {
+                    synced = DictMirror.SyncFromBusiness(connection, transaction, typeCode.Trim(), null);
+                    transaction.Commit();
+                }
+                items = _dict.ListItems(connection, typeCode.Trim(), statusFilter)
                     .Select(MapToDto)
                     .ToList();
             }
+            if (synced > 0)
+            {
+                _audit.Write("DICT_MIRROR_SYNC", "dict_type", typeCode.Trim(),
+                    "业务模块 → 参数字典单向镜像补齐 " + synced + " 项（" + typeCode.Trim() + "）",
+                    result: "成功");
+            }
+            return items;
         }
 
         public List<DictTypeDto> ListTypes()

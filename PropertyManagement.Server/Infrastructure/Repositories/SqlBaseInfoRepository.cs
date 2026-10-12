@@ -421,8 +421,32 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             var p = new DynamicParameters();
             if (!string.IsNullOrWhiteSpace(query.Keyword))
             {
-                where += " AND (o.name LIKE @kw OR o.phone LIKE @kw OR o.id_card LIKE @kw)";
-                p.Add("kw", "%" + query.Keyword.Trim() + "%");
+                // CHG-v2.0.0-15（负责人 2026-10-12 反馈「业主档案搜索缺楼栋/单元/房号」）：
+                // 检索维度对齐房产列表 / 业主-房产关系 —— 姓名 / 电话 / 证件号 + 主房产「楼栋 / 单元 / 房号」，
+                // 并用同一套「去分隔符归一化拼接串」命中组合词条（4栋2单元 / 4栋201 / 4栋2单元602）。
+                string kw = query.Keyword.Trim();
+                string kwNorm = SqlAddress.NormalizeKeyword(kw);
+                string bldExpr = OwnerPrimaryBuildingExpr("o.id");
+                string unitExpr = OwnerPrimaryUnitExpr("o.id");
+                string roomExpr = OwnerPrimaryRoomExpr("o.id");
+                var conds = new List<string>
+                {
+                    "o.name LIKE @kw",
+                    "o.phone LIKE @kw",
+                    "o.id_card LIKE @kw",
+                    bldExpr + " LIKE @kw",
+                    unitExpr + " LIKE @kw",
+                    roomExpr + " LIKE @kw"
+                };
+                if (kwNorm.Length > 0)
+                {
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, unitExpr, roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, SqlAddress.UnitSegment(unitExpr), roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, roomExpr) + " LIKE @kwn");
+                    p.Add("kwn", "%" + kwNorm + "%");
+                }
+                where += " AND (" + string.Join(" OR ", conds) + ")";
+                p.Add("kw", "%" + kw + "%");
             }
             if (!string.IsNullOrWhiteSpace(query.Phone))
             {
@@ -511,13 +535,49 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             public string Path { get; set; }
         }
 
-        private const string OwnerSelectSql =
+        // 注：因内联了「主房产楼栋/单元/房号」三个静态 SQL 片段，此处不能是 const（方法调用非常量表达式）
+        private static readonly string OwnerSelectSql =
             "SELECT o.id, o.name, o.id_card_type AS IdCardType, o.id_card AS IdCard, o.phone, " +
             "o.resident_address AS ResidentAddress, o.emergency_contact_name AS EmergencyContactName, " +
             "o.emergency_contact_phone AS EmergencyContactPhone, o.check_in_date AS CheckInDate, o.status AS Status, " +
             "CASE o.status WHEN 0 THEN '在住' ELSE '搬离' END AS StatusText, " +
             "(SELECT COUNT(1) FROM t_owner_property_rel r WHERE r.owner_id = o.id AND r.del_flag = 0 AND r.rel_status IN (0,1)) AS PropertyCount, " +
+            // CHG-v2.0.0-15：主房产（最近一条有效关系）的楼栋 / 单元 / 房号 —— 业主档案下拉展示与检索共用同一口径。
+            // 楼栋取 COALESCE(单元所属楼栋, 房产自身楼栋)：房产只填单元（未填楼栋）时同样能带出楼栋（v2.0.0-09 同一课）。
+            OwnerPrimaryBuildingExpr("o.id") + " AS BuildingNo, " +
+            OwnerPrimaryUnitExpr("o.id") + " AS UnitNo, " +
+            OwnerPrimaryRoomExpr("o.id") + " AS RoomNo, " +
             "o.del_flag AS DelFlag, o.created_at AS CreatedAt, o.updated_at AS UpdatedAt";
+
+        /// <summary>业主主房产楼栋（最近一条有效关系；楼栋回落单元所属楼栋）。</summary>
+        private static string OwnerPrimaryBuildingExpr(string ownerIdExpr)
+        {
+            return "(SELECT b.building_no FROM t_owner_property_rel r " +
+                   "JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                   "LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                   "LEFT JOIN t_building b ON b.id = COALESCE(u.building_id, p.building_id) " +
+                   "WHERE r.owner_id = " + ownerIdExpr + " AND r.del_flag = 0 AND r.rel_status IN (0,1) " +
+                   "ORDER BY r.id DESC LIMIT 1)";
+        }
+
+        /// <summary>业主主房产单元号。</summary>
+        private static string OwnerPrimaryUnitExpr(string ownerIdExpr)
+        {
+            return "(SELECT u.unit_no FROM t_owner_property_rel r " +
+                   "JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                   "LEFT JOIN t_unit u ON u.id = p.unit_id " +
+                   "WHERE r.owner_id = " + ownerIdExpr + " AND r.del_flag = 0 AND r.rel_status IN (0,1) " +
+                   "ORDER BY r.id DESC LIMIT 1)";
+        }
+
+        /// <summary>业主主房产房号。</summary>
+        private static string OwnerPrimaryRoomExpr(string ownerIdExpr)
+        {
+            return "(SELECT p.room_no FROM t_owner_property_rel r " +
+                   "JOIN t_property p ON p.id = r.property_id AND p.del_flag = 0 " +
+                   "WHERE r.owner_id = " + ownerIdExpr + " AND r.del_flag = 0 AND r.rel_status IN (0,1) " +
+                   "ORDER BY r.id DESC LIMIT 1)";
+        }
 
         private const string OwnerFromSql = "FROM t_owner o";
 
@@ -535,6 +595,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             public OwnerStatus Status { get; set; }
             public string StatusText { get; set; }
             public int PropertyCount { get; set; }
+            // CHG-v2.0.0-15：主房产楼栋/单元/房号（业主档案下拉展示）
+            public string BuildingNo { get; set; }
+            public string UnitNo { get; set; }
+            public string RoomNo { get; set; }
             public bool DelFlag { get; set; }
             public DateTime? CreatedAt { get; set; }
             public DateTime? UpdatedAt { get; set; }
@@ -556,6 +620,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 Status = r.Status,
                 StatusText = r.StatusText,
                 PropertyCount = r.PropertyCount,
+                // CHG-v2.0.0-15：主房产楼栋/单元/房号（业主档案搜索与下拉展示用）
+                BuildingNo = r.BuildingNo,
+                UnitNo = r.UnitNo,
+                RoomNo = r.RoomNo,
                 YearReceivable = 0m,
                 YearPaid = 0m,
                 CurrentArrear = 0m,

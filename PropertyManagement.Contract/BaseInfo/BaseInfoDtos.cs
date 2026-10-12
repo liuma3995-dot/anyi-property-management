@@ -82,6 +82,16 @@ namespace PropertyManagement.Contract.BaseInfo
         public decimal YearReceivable { get; set; }
         public decimal YearPaid { get; set; }
         public decimal CurrentArrear { get; set; }
+
+        /// <summary>
+        /// CHG-v2.0.0-15（负责人 2026-10-12：业主档案下拉需显示「楼栋/单元/房号」）：
+        /// 该业主**主房产**（最近一条有效业主-房产关系）的楼栋 / 单元 / 房号。
+        /// 单元可能为空（无单元房产）；三者都空表示该业主暂未绑定房产。
+        /// </summary>
+        public string BuildingNo { get; set; }
+        public string UnitNo { get; set; }
+        public string RoomNo { get; set; }
+
         public bool DelFlag { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? UpdatedAt { get; set; }

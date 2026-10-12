@@ -330,6 +330,7 @@
     <Compile Include="ViewModels\ChargeItemsViewModel.cs" />
     <Compile Include="ViewModels\ChargeItemsViewModel.PriceList.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.BillPreview.cs" />
+    <Compile Include="ViewModels\BillWorkbenchViewModel.BillDelete.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.PriceOverride.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.SpecPick.cs" />
     <Compile Include="ViewModels\BillWorkbenchViewModel.cs" />
@@ -337,6 +338,7 @@
     <Compile Include="ViewModels\RefundAdjustmentViewModel.cs" />
     <Compile Include="ViewModels\ExpenseViewModel.cs" />
     <Compile Include="ViewModels\ArrearViewModel.cs" />
+    <Compile Include="ViewModels\AddressText.cs" />
     <Compile Include="ViewModels\FinancialReportViewModel.cs" />
     <Compile Include="ViewModels\LedgerViewModel.cs" />
     <Compile Include="ViewModels\BaseInfoPageViewModel.cs" />

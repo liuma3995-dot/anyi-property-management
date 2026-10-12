@@ -9,6 +9,7 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Equipment;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -63,9 +64,13 @@ namespace PropertyManagement.Server.Services
                     dto.Id = id;
                     dto.Status = request.Status.HasValue ? (request.Status.Value == 0 ? 0 : 1) : existing.Status;
                     _repo.UpdateDeviceType(c, tx, dto);
+                    // CHG-v2.0.0-06（裁定 8.A）：设备类型改名同步镜像到「参数/字典维护 → 设备类型」
+                    DictMirror.Rename(c, tx, DictMirror.EquipmentType, "dev" + id, existing.Name, name);
                     return dto;
                 }
                 dto.Id = _repo.InsertDeviceType(c, tx, dto);
+                // 新增类型同事务镜像（业务模块是唯一写入方）
+                DictMirror.Ensure(c, tx, DictMirror.EquipmentType, "dev" + dto.Id, name, dto.Id);
                 return dto;
             });
 
@@ -78,6 +83,8 @@ namespace PropertyManagement.Server.Services
                 if (used > 0)
                     throw ApiException.Conflict("该类别下仍有 " + used + " 台在册设备（如「" + existing.Name + "」），请先转移或删除设备后再删除类别");
                 _repo.SoftDeleteDeviceType(c, tx, id);
+                // 删除类型 → 字典项一并软删留痕
+                DictMirror.Remove(c, tx, DictMirror.EquipmentType, "dev" + id, existing.Name);
             });
 
         // ===================== 保养/年检登记类型（PG-EQP-02 自定义新增/删除） =====================

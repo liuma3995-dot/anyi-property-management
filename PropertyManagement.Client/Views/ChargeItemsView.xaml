@@ -290,13 +290,13 @@
                         <Button Grid.Column="6" Style="{StaticResource ButtonPrimary}" Content="新增项目"
                                 Command="{Binding OpenItemFormCommand}" Margin="0,0,10,0"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
-                        <Button Grid.Column="7" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
-                                Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                                BorderThickness="1" Cursor="Hand" Content="批量删除"
+                        <!-- CHG-v2.0.0-08（裁定 9.A）：与主操作同尺寸口径（ButtonSecondary 与 ButtonPrimary 同尺寸） -->
+                        <Button Grid.Column="7" Style="{StaticResource ButtonSecondary}" Content="批量删除"
                                 Command="{Binding EnterBatchModeCommand}" Margin="0,0,10,0"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
-                        <Button Grid.Column="8" Style="{StaticResource LinkButton}" Content="导出 PDF"
-                                FontSize="13" VerticalAlignment="Center" Command="{Binding ExportPdfCommand}"
+                        <!-- CHG-v2.0.0-08（负责人 2026-10-11 裁定 9.A）：与「批量删除」同款（次级白底描边 / 32 高 / 13 号） -->
+                        <Button Grid.Column="8" Style="{StaticResource ButtonSecondary}" Content="导出 PDF"
+                                Command="{Binding ExportPdfCommand}"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
                         <Button Grid.Column="9" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
                                 Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
@@ -414,21 +414,20 @@
                         <ComboBox Grid.Column="2" Height="32" Width="260" FontSize="12" HorizontalAlignment="Left"
                                   VerticalContentAlignment="Center" ItemsSource="{Binding Standards}"
                                   DisplayMemberPath="Name" SelectedItem="{Binding SelectedStandard}" />
-                        <Button Grid.Column="3" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
-                                Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                                BorderThickness="1" Cursor="Hand" Content="新增收费标准" Command="{Binding NewStandardCommand}"
-                                Margin="0,0,10,0" Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
+                        <!-- CHG-v2.0.0-08（裁定 9.A）：「新增收费标准」与「新增规格」同款（主色实心） -->
+                        <Button Grid.Column="3" Style="{StaticResource ButtonPrimary}" Content="新增收费标准"
+                                Command="{Binding NewStandardCommand}" Margin="0,0,10,0"
+                                Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
                         <Button Grid.Column="4" Style="{StaticResource ButtonPrimary}" Content="新增规格"
                                 Command="{Binding NewSpecCommand}" Margin="0,0,10,0"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
                         <!-- CHG-v1.1.2-34：批量删除改为「批量删除 → 取消 + 确认删除」两段式（点击才出现勾选框） -->
-                        <Button Grid.Column="5" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
-                                Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                                BorderThickness="1" Cursor="Hand" Content="批量删除"
+                        <Button Grid.Column="5" Style="{StaticResource ButtonSecondary}" Content="批量删除"
                                 Command="{Binding EnterBatchModeCommand}" Margin="0,0,10,0"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
-                        <Button Grid.Column="6" Style="{StaticResource LinkButton}" Content="编辑标准"
-                                FontSize="13" VerticalAlignment="Center" Command="{Binding EditStandardCommand}"
+                        <!-- CHG-v2.0.0-08（裁定 9.A）：「编辑标准」与「批量删除」同款（次级白底描边） -->
+                        <Button Grid.Column="6" Style="{StaticResource ButtonSecondary}" Content="编辑标准"
+                                Command="{Binding EditStandardCommand}"
                                 Visibility="{Binding IsNotBatchMode, Converter={StaticResource BoolToVis}}" />
                         <Button Grid.Column="7" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
                                 Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"

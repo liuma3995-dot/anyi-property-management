@@ -6,6 +6,7 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Dispute;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -49,6 +50,8 @@ namespace PropertyManagement.Server.Services
                 if (string.IsNullOrWhiteSpace(request.Name)) throw ApiException.ValidationFailed("纠纷类型名称不能为空");
                 var dto = new DisputeTypeDto { Name = request.Name.Trim(), Status = 0 };
                 dto.Id = _repo.InsertType(c, tx, dto);
+                // CHG-v2.0.0-06（裁定 8.A）：纠纷类型镜像到「参数/字典维护 → 纠纷类型」
+                DictMirror.Ensure(c, tx, DictMirror.DisputeType, "dispute" + dto.Id, dto.Name, dto.Id);
                 return dto;
             });
 
@@ -62,6 +65,8 @@ namespace PropertyManagement.Server.Services
                 if (used > 0)
                     throw ApiException.Conflict("该纠纷类型已被 " + used + " 个案件引用，请先停用后再删除");
                 _repo.DeleteType(c, tx, typeId);
+                // 删除类型 → 字典项一并软删留痕
+                DictMirror.Remove(c, tx, DictMirror.DisputeType, "dispute" + typeId, existing.Name);
             });
 
         public PageResult<DisputeCaseDto> QueryCases(DisputeQueryRequest query) =>

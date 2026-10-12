@@ -245,7 +245,8 @@
                         Command="{Binding OpenGenerateCommand}" Margin="0,0,10,0" />
                 <Button Grid.Column="7" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
                         Foreground="{StaticResource TextPrimaryBrush}" BorderBrush="{StaticResource BorderBrushColor}"
-                        BorderThickness="1" Content="批量删除" Command="{Binding BatchDeleteCommand}" Margin="0,0,10,0" />
+                        BorderThickness="1" Content="批量删除" Command="{Binding BatchBillDeleteCommand}" Margin="0,0,10,0"
+                        ToolTip="打开所选批次的账单明细（默认全选），可按缴费对象勾选删除" />
                 <!-- CHG-v1.4.0-03：新增「导出PDF」——当前筛选下的批次清单 + 每批次缴费对象明细；
                      尺寸/间距与「批量删除」同一口径（GridStyle 工具栏按钮规范） -->
                 <Button Grid.Column="8" Height="32" FontSize="13" Background="{StaticResource SurfaceBrush}"
@@ -341,21 +342,6 @@
                                             </Style>
                                         </Button.Style>
                                     </Button>
-                                    <!-- 部分缴纳：催缴 -->
-                                    <Button Content="催缴"
-                                            Command="{Binding DataContext.RemindCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}">
-                                        <Button.Style>
-                                            <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
-                                                <Setter Property="Visibility" Value="Collapsed" />
-                                                <Style.Triggers>
-                                                    <DataTrigger Binding="{Binding CanRemind}" Value="True">
-                                                        <Setter Property="Visibility" Value="Visible" />
-                                                    </DataTrigger>
-                                                </Style.Triggers>
-                                            </Style>
-                                        </Button.Style>
-                                    </Button>
                                     <!-- 失败：重推 + 失败明细 -->
                                     <Button Content="重推"
                                             Command="{Binding DataContext.RetryCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
@@ -385,10 +371,11 @@
                                             </Style>
                                         </Button.Style>
                                     </Button>
-                                    <!-- CHG-M4-16：任意状态批次删除（软删批次及其账单，保留轨迹） -->
+                                    <!-- CHG-v2.0.0-02：任意状态批次「删除」→ 打开账单明细子窗口（账单级物理清空） -->
                                     <Button Content="删除"
-                                            Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
-                                            CommandParameter="{Binding}">
+                                            Command="{Binding DataContext.OpenBillDeleteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}"
+                                            ToolTip="打开该批次的账单明细，可按缴费对象勾选删除（物理清空并同步清空下游关联数据）">
                                         <Button.Style>
                                             <Style TargetType="Button" BasedOn="{StaticResource LinkButton}">
                                                 <Setter Property="Foreground" Value="{StaticResource DangerBrush}" />
@@ -1021,6 +1008,149 @@
                     </Grid>
                 </Grid>
             </Border>
+        </Grid>
+
+        <!-- ============ CHG-v2.0.0-02：账单级删除子窗口（行内「删除」/ 工具栏「批量删除」共用） ============ -->
+        <Grid x:Name="BillDeleteOverlay" Grid.Row="0" Grid.RowSpan="7"
+              Visibility="{Binding IsBillDeleteVisible, Converter={StaticResource BoolToVis}}">
+            <Border Background="#66000000" />
+            <Border x:Name="BillDeleteDialog" HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Style="{StaticResource CardBorder}" Padding="22,18">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Text="{Binding BillDeleteTitle}" FontSize="16" FontWeight="Bold"
+                               Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Grid.Row="1" Text="{Binding BillDeleteSubTitle}" FontSize="12" Margin="0,6,0,0"
+                               TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- 工具栏：搜索（CHG-v2.0.0-10 负责人 2026-10-12：移除「按缴费对象勾选」——
+                         子窗口的多选/全选已够用）+ 清空勾选 -->
+                    <Grid Grid.Row="2" Margin="0,12,0,10">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.Column="0" Height="32" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
+                                BorderThickness="1" CornerRadius="6" MaxWidth="420" HorizontalAlignment="Left" Width="420">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}"
+                                      Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0"
+                                      VerticalAlignment="Center" />
+                                <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                                         Text="{Binding BillDeleteKeyword, UpdateSourceTrigger=PropertyChanged}"
+                                         hc:InfoElement.Placeholder="搜索缴费对象 / 缴费人 / 楼栋 / 单元 / 房号"
+                                         Margin="8,0,8,0" />
+                            </Grid>
+                        </Border>
+                        <Button Grid.Column="1" Height="32" FontSize="13" Margin="10,0,0,0" Cursor="Hand"
+                                Background="{StaticResource SurfaceBrush}" Foreground="{StaticResource TextPrimaryBrush}"
+                                BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1"
+                                Content="清空勾选" Command="{Binding ClearBillDeleteSelectionCommand}"
+                                ToolTip="取消当前所有已勾选的账单（不影响批次）"
+                                Visibility="{Binding HasBillDeleteSelection, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+
+                    <!-- 账单清单 -->
+                    <Border Grid.Row="3" Style="{StaticResource CardBorder}" Padding="0" MinHeight="200">
+                        <DataGrid x:Name="BillDeleteGrid" Style="{StaticResource GridStyle}" IsReadOnly="True"
+                                  ItemsSource="{Binding BillDeleteRows}">
+                            <!-- DataGridColumn 不在可视树内，列上的 Visibility 需经代理元素取 DataContext -->
+                            <DataGrid.Resources>
+                                <FrameworkElement x:Key="BillDeleteColumnProxy" DataContext="{Binding}" />
+                            </DataGrid.Resources>
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Width="40">
+                                    <DataGridTemplateColumn.HeaderTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding DataContext.IsBillDeleteAllChecked, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}, Mode=TwoWay}"
+                                                      VerticalAlignment="Center" HorizontalAlignment="Center" ToolTip="全选 / 取消全选" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.HeaderTemplate>
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <CheckBox IsChecked="{Binding IsChecked, Mode=OneWay}" VerticalAlignment="Center"
+                                                      HorizontalAlignment="Center" Click="BillDeleteRowCheckBox_Click" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="批次号" Width="100" Binding="{Binding BatchNoText}"
+                                                    ElementStyle="{StaticResource GridCellText}"
+                                                    Visibility="{Binding DataContext.IsBillDeleteMultiBatch, Source={StaticResource BillDeleteColumnProxy}, Converter={StaticResource BoolToVis}}" />
+                                <DataGridTextColumn Header="缴费对象" Width="*" MinWidth="180" Binding="{Binding ObjectText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="缴费人" Width="130" Binding="{Binding PayerText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="账单期间" Width="150" Binding="{Binding PeriodText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="金额" Width="110" Binding="{Binding AmountText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="已缴" Width="110" Binding="{Binding PaidText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                                <DataGridTextColumn Header="状态" Width="90" Binding="{Binding StatusText}"
+                                                    ElementStyle="{StaticResource GridCellText}" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Border>
+
+                    <TextBlock Grid.Row="4" Text="{Binding BillDeleteHint}" FontSize="11" Margin="0,10,0,0"
+                               TextWrapping="Wrap" Foreground="{StaticResource TextSecondaryBrush}" />
+
+                    <!-- 固定页脚：已选汇总 + 动作 -->
+                    <Grid Grid.Row="5" Margin="0,12,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="{Binding BillDeleteSelectedText}" FontSize="12"
+                                   VerticalAlignment="Center" Foreground="{StaticResource TextPrimaryBrush}" />
+                        <Button Grid.Column="1" Style="{StaticResource ButtonSecondary}" Content="取消"
+                                Command="{Binding CloseBillDeleteCommand}" Margin="0,0,10,0" />
+                        <Button Grid.Column="2" Height="32" FontSize="13" Cursor="Hand"
+                                Background="{StaticResource DangerBrush}" Foreground="White" BorderThickness="0"
+                                Content="删除所选" Command="{Binding RequestBillDeleteCommand}"
+                                IsEnabled="{Binding HasBillDeleteSelection}" />
+                    </Grid>
+                </Grid>
+            </Border>
+
+            <!-- 二次确认（裁定 3.A：条数 / 合计 / 含已缴条数 + 建议先导出归档） -->
+            <Grid Visibility="{Binding IsBillDeleteConfirmVisible, Converter={StaticResource BoolToVis}}">
+                <Border Background="#66000000" />
+                <Border Width="520" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Style="{StaticResource CardBorder}" Padding="26,22">
+                    <StackPanel>
+                        <TextBlock Text="确认删除账单（不可恢复）" FontSize="16" FontWeight="Bold"
+                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                        <TextBlock Text="{Binding BillDeleteConfirmText}" FontSize="13" TextWrapping="Wrap"
+                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="0,14,0,22" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <Button Grid.Column="1" Style="{StaticResource ButtonSecondary}" Content="取消"
+                                    Command="{Binding CancelBillDeleteConfirmCommand}" Margin="0,0,10,0" />
+                            <Button Grid.Column="2" Height="32" FontSize="13" Cursor="Hand"
+                                    Background="{StaticResource DangerBrush}" Foreground="White" BorderThickness="0"
+                                    Content="确认删除" Command="{Binding ConfirmBillDeleteCommand}" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+            </Grid>
         </Grid>
     </Grid>
 </UserControl>

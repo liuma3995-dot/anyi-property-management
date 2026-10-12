@@ -60,7 +60,9 @@
                 <Grid.ColumnDefinitions>
                     <!-- CHG-v1.4.0-28（第 4 轮遮挡复查，125% 缩放下发现）：工具栏在窄有效宽度下把「批量移出」挤成「批」，
                          按同一口径收窄搜索框与三个筛选下拉，为右侧按钮让位 -->
-                    <ColumnDefinition Width="170" />
+                    <!-- CHG-v2.0.0-03：引导文案扩到「搜索缴费对象/业主/楼栋/单元/房号」，搜索框 170 → 228；
+                         仍按 v1.4.0-28 口径，为右侧「导出/批量移出」按钮让位（避免 1366×768 下被挤成「批」） -->
+                    <ColumnDefinition Width="228" />
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="88" />
                     <ColumnDefinition Width="Auto" />
@@ -83,10 +85,11 @@
                         <Path Grid.Column="0" Data="{StaticResource Icon.Search}" Style="{StaticResource IconStroke}"
                               Stroke="{StaticResource TextMutedBrush}" Width="14" Height="14" Margin="10,0,0,0"
                               VerticalAlignment="Center" />
-                        <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}"
+                        <TextBox Grid.Column="1" Style="{StaticResource SearchTextBox}" FontSize="11"
                                  Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
-                                 hc:InfoElement.Placeholder="搜索房号/业主" Margin="8,0,0,0"
-                                 KeyDown="KeywordBox_KeyDown" />
+                                 hc:InfoElement.Placeholder="搜索缴费对象/业主/楼栋/单元/房号" Margin="8,0,0,0"
+                                 KeyDown="KeywordBox_KeyDown"
+                                 ToolTip="输入即检索（支持「4栋2单元」「4栋201」这类组合词条；回车同样可查）" />
                     </Grid>
                 </Border>
                 <TextBlock Grid.Column="1" Text="楼栋" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"

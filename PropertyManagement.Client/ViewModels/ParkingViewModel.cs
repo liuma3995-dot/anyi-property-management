@@ -59,9 +59,23 @@ namespace PropertyManagement.Client.ViewModels
         public int Id { get; set; }
         public string Name { get; set; }
         public string Phone { get; set; }
+
+        /// <summary>CHG-v2.0.0-18：主房产楼栋 / 单元 / 房号（下拉展示用，与业主档案同口径）。</summary>
+        public string BuildingNo { get; set; }
+        public string UnitNo { get; set; }
+        public string RoomNo { get; set; }
+
         public string DisplayText
         {
-            get { return string.IsNullOrEmpty(Phone) ? (Name ?? string.Empty) : (Name ?? string.Empty) + "（" + Phone + "）"; }
+            get
+            {
+                string text = string.IsNullOrEmpty(Phone)
+                    ? (Name ?? string.Empty)
+                    : (Name ?? string.Empty) + "（" + Phone + "）";
+                // CHG-v2.0.0-18（负责人 2026-10-12）：补充「楼栋/单元/房号」，同名业主可直接分辨
+                string address = AddressText.Build(BuildingNo, UnitNo, RoomNo);
+                return string.IsNullOrEmpty(address) ? text : text + " · " + address;
+            }
         }
     }
 
@@ -329,7 +343,16 @@ namespace PropertyManagement.Client.ViewModels
             Owners.Clear();
             foreach (var o in page.Items)
             {
-                Owners.Add(new OwnerPickItem { Id = o.Id, Name = o.Name, Phone = o.Phone });
+                Owners.Add(new OwnerPickItem
+                {
+                    Id = o.Id,
+                    Name = o.Name,
+                    Phone = o.Phone,
+                    // CHG-v2.0.0-18：一并带出主房产地址，供下拉展示与同名区分
+                    BuildingNo = o.BuildingNo,
+                    UnitNo = o.UnitNo,
+                    RoomNo = o.RoomNo
+                });
             }
             RaiseOwnerPageState();
         }

@@ -54,9 +54,12 @@
                           ItemsSource="{Binding Subjects}" SelectedIndex="{Binding SubjectFilter}" />
                 <Border Grid.Column="8" Height="34" Background="#F7F4EE" BorderBrush="{StaticResource BorderBrushColor}"
                         BorderThickness="1" CornerRadius="6" Margin="14,0,14,0">
+                    <!-- CHG-v2.0.0-04：引导文案补「楼栋/单元/房号」，并加回车快捷查询（Enter = 查询按钮） -->
                     <TextBox x:Name="LedgerKeywordBox" Style="{StaticResource SearchTextBox}" FontSize="12"
                              Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
-                             hc:InfoElement.Placeholder="搜索单据号 / 付款人 / 项目" VerticalContentAlignment="Center" />
+                             hc:InfoElement.Placeholder="搜索单据号 / 付款人 / 项目 / 楼栋 / 单元 / 房号"
+                             VerticalContentAlignment="Center" KeyDown="KeywordBox_KeyDown"
+                             ToolTip="回车可直接查询；支持按楼栋 / 单元 / 房号检索" />
                 </Border>
                 <Button Grid.Column="9" Style="{StaticResource ButtonPrimary}" Content="查询" Command="{Binding SearchCommand}"
                         Margin="0,0,10,0" />

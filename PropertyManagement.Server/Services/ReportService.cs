@@ -495,7 +495,9 @@ namespace PropertyManagement.Server.Services
         /// CHG-v1.2.0-25：支出登记明细导出（PDF）。
         /// 口径与页面一致 —— 导出**当前筛选条件**下的支出明细（关键字 / 类别 / 状态），
         /// 文件写 t_report_log（report_type = expense）并经 /reports/files/{id} 下载。
-        /// 列：支出编号 / 日期 / 类别 / 摘要 / 金额 / 收款方 / 状态；文末追加合计行（不含已删除）。
+/// 列：支出编号 / 日期 / 类别 / 摘要 / 金额 / 收款方 / 状态；文末追加合计行 ——
+/// **合计 = 文件内全部记录的金额合计**（CHG-v2.0.0-16：导出只含 `del_flag = 0` 的记录，
+/// 「未删除 / 不含已删除」这类免责说明属于噪点，已移除）。
         /// </summary>
         public ReportLogDto ExportExpenses(ExpenseExportRequest request)
         {
@@ -2638,7 +2640,8 @@ namespace PropertyManagement.Server.Services
             parts.Add(request.CategoryId.HasValue && request.CategoryId.Value > 0
                 ? "类别：指定分类"
                 : "类别：全部");
-            parts.Add(request.StatusFilter == 1 ? "状态：仅未删除"
+            // CHG-v2.0.0-16：状态筛选文案与页面下拉一致（全部 / 已支付 / 已删除），不再写「未删除」等噪点词
+            parts.Add(request.StatusFilter == 1 ? "状态：仅已支付"
                 : (request.StatusFilter == 2 ? "状态：仅已删除" : "状态：全部"));
             return string.Join(" ｜ ", parts);
         }
@@ -2657,6 +2660,9 @@ namespace PropertyManagement.Server.Services
                 {
                     sheet.Cell(start, c).Value = headers[c - 1];
                     sheet.Cell(start, c).Style.Font.Bold = true;
+                    // CHG-v2.0.0-13（负责人 2026-10-12 反馈「加粗 11 号字的『删』笔画发糊」）：
+                    // 加粗单元格字号 11 → 12，加粗笔画不再挤在一起。
+                    sheet.Cell(start, c).Style.Font.FontSize = 12;
                 }
 
                 int row = start + 1;
@@ -2674,13 +2680,16 @@ namespace PropertyManagement.Server.Services
 
                 if (items.Count > 0)
                 {
-                    decimal active = items.Where(x => x.Status == 0).Sum(x => x.Amount);
+                    // CHG-v2.0.0-16（负责人 2026-10-12）：合计 = **文件内全部记录**的金额合计
+                    // （导出查询恒带 `del_flag = 0`，文件里不会出现已删除记录，故无需「未删除 / 不含已删除」这类说明）
+                    decimal total = items.Sum(x => x.Amount);
                     sheet.Cell(row, 1).Value = "合计";
                     sheet.Cell(row, 2).Value = "共 " + items.Count + " 笔";
-                    sheet.Cell(row, 4).Value = "未删除合计 " + active.ToString("0.00") + " 元（不含已删除）";
+                    sheet.Cell(row, 4).Value = total.ToString("0.00") + " 元";
                     for (int c = 1; c <= headers.Length; c++)
                     {
                         sheet.Cell(row, c).Style.Font.Bold = true;
+                        sheet.Cell(row, c).Style.Font.FontSize = 12;   // CHG-v2.0.0-13：合计行加粗字号 12（避免 11 号加粗笔画发糊）
                         sheet.Cell(row, c).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
                     }
                 }
@@ -2711,7 +2720,8 @@ namespace PropertyManagement.Server.Services
             double[] widths = { 52, 54, 60, 146, 62, 100, 36 };
             const double TableRight = 550;
 
-            decimal activeTotal = items.Where(x => x.Status == 0).Sum(x => x.Amount);
+            // CHG-v2.0.0-16：合计口径与 Excel 模板一致 —— 文件内全部记录的金额合计（导出恒含 `del_flag = 0`）
+            decimal activeTotal = items.Sum(x => x.Amount);
 
             using (var document = new PdfDocument())
             {
@@ -2740,7 +2750,7 @@ namespace PropertyManagement.Server.Services
                                 gfx.DrawString("安怡物业 · 支出登记明细", titleFont, XBrushes.Black, 40, y);
                                 y += 18;
                                 gfx.DrawString("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") +
-                                               "，共 " + items.Count + " 笔，未删除合计 " + activeTotal.ToString("0.00") + " 元",
+                                               "，共 " + items.Count + " 笔，合计 " + activeTotal.ToString("0.00") + " 元",
                                     smallFont, XBrushes.Black, 40, y);
                                 y += 13;
                                 gfx.DrawString("筛选：" + ExpenseFilterText(request), smallFont, XBrushes.Black, 40, y);
@@ -2808,9 +2818,9 @@ namespace PropertyManagement.Server.Services
                         y += 4;
                         gfx.DrawLine(XPens.Gray, xs[0], y, TableRight, y);
                         y += 14;
-                        gfx.DrawString("合计：" + items.Count + " 笔 ｜ 未删除 " +
-                                       items.Count(x => x.Status == 0) + " 笔，合计 " + activeTotal.ToString("0.00") +
-                                       " 元（不含已删除）", bodyFont, XBrushes.Black, xs[0], y);
+                        // CHG-v2.0.0-16：只保留「笔数 + 金额合计」，去掉「未删除 / 不含已删除」等噪点说明
+                        gfx.DrawString("合计：" + items.Count + " 笔 ｜ " + activeTotal.ToString("0.00") + " 元",
+                            bodyFont, XBrushes.Black, xs[0], y);
                     }
 
                     if (gfx != null)

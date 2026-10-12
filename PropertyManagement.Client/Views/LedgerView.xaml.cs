@@ -13,6 +13,18 @@ namespace PropertyManagement.Client.Views
             InitializeComponent();
         }
 
+        /// <summary>
+        /// CHG-v2.0.0-04（负责人 2026-10-11 反馈「搜索框需支持回车快捷查询」）：
+        /// 与欠费台账同一写法 —— 回车直接执行「查询」，省去鼠标点击。
+        /// </summary>
+        private void KeywordBox_KeyDown(object sender, KeyEventArgs e)
+        {
+            if (e.Key == Key.Enter && DataContext is LedgerViewModel vm)
+            {
+                _ = vm.SearchCommand.ExecuteAsync(null);
+            }
+        }
+
         /// <summary>行双击 → 查看关联单据详情（T4F-7-1）。</summary>
         private void DataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {

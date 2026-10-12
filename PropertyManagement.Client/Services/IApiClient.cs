@@ -103,6 +103,16 @@ namespace PropertyManagement.Client.Services
         Task<BillGenerateLogDto> RetryFailuresAsync(int batchId);
         Task<List<BillBatchDto>> GetGenerateLogsAsync();
         Task DeleteBillBatchAsync(int batchId);
+
+        /// <summary>
+        /// CHG-v2.0.0-02 / CHG-v2.0.0-17：批次内全部在用账单（缴费对象 / 缴费人 / 金额 / 状态，**含草稿**），
+        /// 供账单级删除子窗口。
+        /// </summary>
+        Task<List<BillListItemDto>> GetBatchBillsAsync(int batchId);
+
+        /// <summary>CHG-v2.0.0-02：账单级删除（物理清空账单及其下游关联数据）。</summary>
+        Task<BillBillsDeleteResultDto> DeleteBatchBillsAsync(BillBillsDeleteRequest request);
+
         Task<List<BillFailureDto>> GetFailuresAsync(int batchId);
         Task<PageResult<BillListItemDto>> QueryBillsAsync(BillQueryRequest request);
         Task<PageResult<ArrearDto>> QueryArrearsAsync(BillQueryRequest request);

@@ -497,6 +497,17 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 new { batchId }).ToList();
         }
 
+        /// <summary>
+        /// CHG-v2.0.0-17（负责人 2026-10-12：「生成的账单草稿无法被删除」）：
+        /// 批次内**全部在用账单**（含草稿 status = 5），供「删除账单」子窗口列清单/勾选删除。
+        /// 与 <see cref="ListPublishedBillsByBatch"/> 的唯一差别就是不再排除草稿。
+        /// </summary>
+        public List<BillListItemDto> ListLiveBillsByBatch(IDbConnection connection, int batchId)
+        {
+            return connection.Query<BillListItemDto>(BillListSql + " AND b.generate_batch_id = @batchId",
+                new { batchId }).ToList();
+        }
+
         public void PublishBatchBills(IDbConnection connection, IDbTransaction transaction, int batchId)
         {
             var drafts = connection.Query<int>(
@@ -569,18 +580,21 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             // 原实现用 `b.owner_id IS NOT NULL` 作守卫 → 车位账单（owner_id 为空、缴费人经 ps.owner_id 解析）
             // 取不到楼栋/房号，下拉只剩「姓名 · — · — · 欠费 N 笔」；现改用已解析的缴费人 `o.id`。
             // 两段子查询用同一排序（楼栋 → 房号）取同一套房产，避免同一位业主的楼栋与房号来自不同房产。
+            // CHG-v2.0.0-09（账单级删除子窗口实测发现）：楼栋一律取 `COALESCE(单元楼栋, 房产自身楼栋)` ——
+            // 房产行只填了「单元」而没填 building_id 时（模板导入常见形态），原实现取不到楼栋，
+            // 缴费对象就只剩「2单元/201」，与欠费台账/收支流水「1栋/2单元/201」口径不一致。
             "COALESCE(bd.building_no, " +
             "  (SELECT bd2.building_no FROM t_owner_property_rel r2 " +
             "   JOIN t_property p2 ON p2.id = r2.property_id AND p2.del_flag = 0 " +
-            "   JOIN t_building bd2 ON bd2.id = p2.building_id AND bd2.del_flag = 0 " +
+            "   LEFT JOIN t_unit u2 ON u2.id = p2.unit_id " +
+            "   LEFT JOIN t_building bd2 ON bd2.id = COALESCE(u2.building_id, p2.building_id) AND bd2.del_flag = 0 " +
             "   WHERE o.id IS NOT NULL AND r2.owner_id = o.id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
             "   ORDER BY bd2.building_no, p2.room_no, r2.id LIMIT 1), '') AS BuildingNo, " +
             "COALESCE(p.room_no, " +
             "  (SELECT p2.room_no FROM t_owner_property_rel r2 " +
             "   JOIN t_property p2 ON p2.id = r2.property_id AND p2.del_flag = 0 " +
-            "   JOIN t_building bd2 ON bd2.id = p2.building_id AND bd2.del_flag = 0 " +
             "   WHERE o.id IS NOT NULL AND r2.owner_id = o.id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
-            "   ORDER BY bd2.building_no, p2.room_no, r2.id LIMIT 1), '') AS RoomNo, " +
+            "   ORDER BY p2.room_no, r2.id LIMIT 1), '') AS RoomNo, " +
             // CHG-v1.2.0-33：单元号（业主-房产关系绑定的房产带单元时取该单元）——
             // 与楼栋/房号同源同序（同一套主房产），保证「楼栋/单元/房号」组合来自同一户。
             // 注意：**有本房产的账单不回落到缴费人主房产**（否则「无单元房产」会被误填成别户/另一套的单元）；
@@ -588,8 +602,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             "CASE WHEN b.property_id IS NOT NULL THEN COALESCE(u.unit_no, '') " +
             "  ELSE COALESCE((SELECT u2.unit_no FROM t_owner_property_rel r2 " +
             "   JOIN t_property p2 ON p2.id = r2.property_id AND p2.del_flag = 0 " +
-            "   JOIN t_building bd2 ON bd2.id = p2.building_id AND bd2.del_flag = 0 " +
             "   LEFT JOIN t_unit u2 ON u2.id = p2.unit_id " +
+            "   LEFT JOIN t_building bd2 ON bd2.id = COALESCE(u2.building_id, p2.building_id) AND bd2.del_flag = 0 " +
             "   WHERE o.id IS NOT NULL AND r2.owner_id = o.id AND r2.del_flag = 0 AND r2.rel_status <> 2 " +
             "   ORDER BY bd2.building_no, p2.room_no, r2.id LIMIT 1), '') END AS UnitNo, " +
             "COALESCE(ps.space_no, '') AS SpaceNo, " +
@@ -614,7 +628,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             "LEFT JOIN t_property p ON p.id = b.property_id " +
             // CHG-v1.2.0-33：房产单元的 JOIN（账单自身房产的单元；无单元的房产为空）
             "LEFT JOIN t_unit u ON u.id = p.unit_id " +
-            "LEFT JOIN t_building bd ON bd.id = p.building_id " +
+            // CHG-v2.0.0-09：房产自身楼栋为空时回落「单元所属楼栋」（模板导入的房产常只填单元）
+            "LEFT JOIN t_building bd ON bd.id = COALESCE(u.building_id, p.building_id) " +
             "LEFT JOIN t_parking_space ps ON ps.id = b.parking_id " +
             "LEFT JOIN t_owner bo ON bo.id = b.owner_id " +
             "LEFT JOIN t_owner o ON o.id = COALESCE(" +
@@ -763,6 +778,77 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "UPDATE t_bill_generate_log SET del_flag = 1 WHERE id = @batchId AND del_flag = 0",
                 new { batchId }, transaction);
         }
+
+        /// <summary>
+        /// CHG-v2.0.0-02（负责人 2026-10-11 裁定 1.A/2.A）：账单级删除（物理清空）。
+        /// 处理顺序按外键依赖排列（收据 → 收款 → 退款 → 账单侧留痕 → 账单行），
+        /// 否则连接串开启的 `Foreign Keys=True` 会拦下父行删除。
+        /// 「收款登记 / 财务报表 / 收支明细流水 / 业主档案缴费概况」都是**实时派生**取数，
+        /// 资金行与账单行清掉后这几处自然归零，无需再写额外清理语句。
+        /// </summary>
+        public BillBillsDeleteResultDto DeleteBillsWithCascade(IDbConnection connection, IDbTransaction transaction,
+            int batchId, IEnumerable<int> billIds)
+        {
+            var result = new BillBillsDeleteResultDto();
+            var ids = (billIds ?? Enumerable.Empty<int>()).Distinct().Where(x => x > 0).ToList();
+            if (batchId <= 0 || ids.Count == 0) { return result; }
+
+            // 只接受「属于该批次 + 未删除」的账单，避免跨批次误删
+            var targetIds = connection.Query<int>(
+                "SELECT id FROM t_bill WHERE id IN @ids AND generate_batch_id = @batchId AND del_flag = 0",
+                new { ids, batchId }, transaction).ToList();
+            if (targetIds.Count == 0)
+            {
+                result.Remaining = CountLiveBatchBills(connection, transaction, batchId);
+                return result;
+            }
+
+            // ① 收款行 → 收据（t_receipt.payment_id → t_payment.id，先删子行）
+            var paymentIds = connection.Query<int>(
+                "SELECT id FROM t_payment WHERE bill_id IN @targetIds", new { targetIds }, transaction).ToList();
+            if (paymentIds.Count > 0)
+            {
+                connection.Execute("DELETE FROM t_receipt WHERE payment_id IN @paymentIds",
+                    new { paymentIds }, transaction);
+                result.Payments = connection.Execute("DELETE FROM t_payment WHERE id IN @paymentIds",
+                    new { paymentIds }, transaction);
+            }
+
+            // ② 退款 / 减免 / 调整单据行
+            result.Refunds = connection.Execute("DELETE FROM t_payment_refund WHERE bill_id IN @targetIds",
+                new { targetIds }, transaction);
+
+            // ③ 账单侧留痕（FK 指向 t_bill，必须先于账单行删除）
+            connection.Execute("DELETE FROM t_bill_status_log WHERE bill_id IN @targetIds", new { targetIds }, transaction);
+            connection.Execute("DELETE FROM t_arrear_remind_log WHERE bill_id IN @targetIds", new { targetIds }, transaction);
+            connection.Execute("DELETE FROM t_arrear_dismiss WHERE bill_id IN @targetIds", new { targetIds }, transaction);
+            connection.Execute("DELETE FROM t_bill_archive WHERE bill_id IN @targetIds", new { targetIds }, transaction);
+
+            // ④ 账单行本体（物理清空）
+            result.Deleted = connection.Execute(
+                "DELETE FROM t_bill WHERE id IN @targetIds AND generate_batch_id = @batchId AND del_flag = 0",
+                new { targetIds, batchId }, transaction);
+
+            // ⑤ 批次内已无在用账单 → 批次日志软删留痕（批次行随之从批次列表下线）
+            result.Remaining = CountLiveBatchBills(connection, transaction, batchId);
+            if (result.Remaining == 0)
+            {
+                connection.Execute(
+                    "UPDATE t_bill_generate_log SET del_flag = 1 WHERE id = @batchId AND del_flag = 0",
+                    new { batchId }, transaction);
+                result.BatchCleared = true;
+            }
+            return result;
+        }
+
+        /// <summary>批次内仍在用的账单条数（del_flag = 0）。</summary>
+        private static int CountLiveBatchBills(IDbConnection connection, IDbTransaction transaction, int batchId)
+        {
+            return connection.ExecuteScalar<int>(
+                "SELECT COUNT(1) FROM t_bill WHERE generate_batch_id = @batchId AND del_flag = 0",
+                new { batchId }, transaction);
+        }
+
         public List<BillListItemDto> ListPendingBillsByOwner(IDbConnection connection, int ownerId)
         {
             return connection.Query<BillListItemDto>(
@@ -839,6 +925,51 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             string billPropertyPath = SqlAddress.BuildingUnitRoom("bld.building_no", "u.unit_no", "p.room_no");
             string ownerPropertyPath = SqlAddress.BuildingUnitRoom("bld6.building_no", "u6.unit_no", "p6.room_no");
 
+            // CHG-v2.0.0-03（负责人 2026-10-11 裁定 5.A）：关键词检索上收到服务端，
+            // 口径对齐房产列表 / 业主-房产关系 —— 缴费对象（房产地址｜车位编号｜业主直缴｜自定义缴费对象）、
+            // 业主、楼栋、单元、房号，并用「去分隔符归一化拼接串」命中组合词条（4栋2单元 / 4栋201 / 4栋2单元602）。
+            // 放服务端的意义：台账首屏只取 200 行，客户端过滤会漏掉首屏之外的记录。
+            // 该子查询同时供 SELECT 的 BuildingPath 复用，避免「展示列」与「检索口径」各写一套。
+            string ownerMainPathExpr = "(SELECT " + ownerPropertyPath + " FROM t_owner_property_rel r6 " +
+                "JOIN t_property p6 ON p6.id = r6.property_id AND p6.del_flag = 0 " +
+                "LEFT JOIN t_unit u6 ON u6.id = p6.unit_id " +
+                "LEFT JOIN t_building bld6 ON bld6.id = COALESCE(u6.building_id, p6.building_id) " +
+                "WHERE r6.owner_id = " + ownerIdExpr + " AND r6.del_flag = 0 " +
+                "ORDER BY r6.id DESC LIMIT 1)";
+            if (!string.IsNullOrWhiteSpace(query.Keyword))
+            {
+                string kw = query.Keyword.Trim();
+                string kwNorm = SqlAddress.NormalizeKeyword(kw);
+                string bldExpr = "COALESCE(bld.building_no, '')";
+                string unitExpr = "COALESCE(u.unit_no, '')";
+                string roomExpr = "COALESCE(p.room_no, ps.space_no, '')";
+                var conds = new List<string>
+                {
+                    "COALESCE(o.name, '') LIKE @kw",
+                    "COALESCE(b.payer_name, '') LIKE @kw",
+                    "COALESCE(ci.name, '') LIKE @kw",
+                    roomExpr + " LIKE @kw",
+                    unitExpr + " LIKE @kw",
+                    bldExpr + " LIKE @kw",
+                    // 缴费对象的文字标识（业主直缴）也要能搜到
+                    "CASE WHEN b.property_id IS NULL AND b.parking_id IS NULL AND b.owner_id IS NOT NULL " +
+                    "THEN '业主直缴' ELSE '' END LIKE @kw",
+                    // 显示口径的「楼栋/单元/房号」：房产账单取本房产，车位 / 业主直缴账单回落到业主主房产
+                    "COALESCE(NULLIF(" + billPropertyPath + ", ''), " + ownerMainPathExpr + ", '') LIKE @kw"
+                };
+                if (kwNorm.Length > 0)
+                {
+                    // 组合词条：楼栋+单元+房号、楼栋+房号（跳过单元）、单元带「单元」后缀三种拼法
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, unitExpr, roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, SqlAddress.UnitSegment("u.unit_no"), roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(bldExpr, roomExpr) + " LIKE @kwn");
+                    conds.Add(SqlAddress.NormalizedConcat(ownerMainPathExpr) + " LIKE @kwn");
+                    parameters.Add("kwn", "%" + kwNorm + "%");
+                }
+                where += " AND (" + string.Join(" OR ", conds) + ")";
+                parameters.Add("kw", "%" + kw + "%");
+            }
+
             string from = "FROM t_bill b " +
                 "JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
                 // CHG-v1.1.2-54：台账「欠费期间」取账单真实账期（与收款登记 / 账单工作台同源）
@@ -874,12 +1005,8 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "COALESCE((SELECT COALESCE(r.note, '') FROM t_arrear_remind_log r WHERE r.bill_id = b.id ORDER BY r.id DESC LIMIT 1), '') AS RemindNote, " +
                 // CHG-v1.2.0-27：新增「楼栋/房号」列 —— 房产账单取本房产；车位 / 业主直缴账单按**业主-房产关系**回查主房产
                 "COALESCE(NULLIF(" + billPropertyPath + ", ''), " +
-                "  (SELECT " + ownerPropertyPath + " FROM t_owner_property_rel r6 " +
-                "    JOIN t_property p6 ON p6.id = r6.property_id AND p6.del_flag = 0 " +
-                "    LEFT JOIN t_unit u6 ON u6.id = p6.unit_id " +
-                "    LEFT JOIN t_building bld6 ON bld6.id = COALESCE(u6.building_id, p6.building_id) " +
-                "   WHERE r6.owner_id = " + ownerIdExpr + " AND r6.del_flag = 0 " +
-                "   ORDER BY r6.id DESC LIMIT 1), '') AS BuildingPath, " +
+                // CHG-v2.0.0-03：与关键词检索共用同一段 SQL（ownerMainPathExpr），避免展示列与检索口径各写一套
+                "  " + ownerMainPathExpr + ", '') AS BuildingPath, " +
                 // CHG-v1.4.1-07（负责人 2026-10-10）：户数身份键 —— 前端「涉及户数」按它去重、
                 // 仪表盘按 COUNT(DISTINCT 同表达式) 计数，两处不再各写一套文本拼接（原实现漏单元）。
                 ArrearHousehold.KeyExpr("b") + " AS HouseholdKey, " +
@@ -1435,8 +1562,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             {
                 string kw = query.Keyword.Trim();
                 // CHG-v1.1.0-18：搜索范围扩至「付款人 + 项目（科目）」——原仅支持单据号/流水号
+                // CHG-v2.0.0-04（负责人 2026-10-11 反馈「缺少楼栋/单元/房号检索」）：再补派生列 ObjectText
+                // （房产 → 楼栋/单元/房号；车位 → 车位编号；业主直缴 → 业主主房产地址；自定义缴费对象 → 名称），
+                // 使「1栋」「101」「1单元」都能命中流水行；搜索结果与导出同口径（导出复用同一 where）。
                 where += " AND (BizNo LIKE @kw OR printf('LS-%04d', Id) LIKE @kw" +
-                         " OR OwnerName LIKE @kw OR Subject LIKE @kw)";
+                         " OR OwnerName LIKE @kw OR Subject LIKE @kw OR ObjectText LIKE @kw)";
                 parameters.Add("kw", "%" + kw + "%");
             }
 

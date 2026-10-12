@@ -272,6 +272,22 @@ namespace PropertyManagement.Client.Services
             return PostAsync<BillBatchDeleteRequest, object>(
                 "billing/bills/generate-logs/delete", new BillBatchDeleteRequest { BatchId = batchId });
         }
+
+        /// <summary>
+        /// CHG-v2.0.0-02：批次内全部在用账单（含缴费对象 / 缴费人 / 金额 / 状态），
+        /// 供「账单级删除」子窗口列清单（含草稿 / 已发布 / 部分缴 / 已缴，排除发布失败）。
+        /// </summary>
+        public Task<List<BillListItemDto>> GetBatchBillsAsync(int batchId)
+        {
+            // CHG-v2.0.0-17：改走 /bills（含草稿）——原 /published 排除草稿，草稿批次在子窗口里是空的
+            return GetAsync<List<BillListItemDto>>("billing/bills/generate-logs/" + batchId + "/bills");
+        }
+
+        /// <summary>CHG-v2.0.0-02：账单级删除（物理清空账单及其下游关联数据）。</summary>
+        public Task<BillBillsDeleteResultDto> DeleteBatchBillsAsync(BillBillsDeleteRequest request)
+        {
+            return PostAsync<BillBillsDeleteRequest, BillBillsDeleteResultDto>("billing/bills/delete", request);
+        }
         public Task<List<BillBatchDto>> GetGenerateLogsAsync()
         {
             return GetAsync<List<BillBatchDto>>("billing/bills/generate-logs");

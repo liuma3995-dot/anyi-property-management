@@ -33,7 +33,8 @@
                                           PageText="{Binding OwnerPageText}"
                                           PrevCommand="{Binding OwnerPrevPageCommand}"
                                           NextCommand="{Binding OwnerNextPageCommand}"
-                                          Placeholder="搜索姓名 / 电话 / 证件号" />
+                                          Placeholder="搜索姓名 / 电话 / 证件号 / 楼栋 / 单元 / 房号"
+                                          ToolTip="支持姓名、电话、证件号，以及楼栋 / 单元 / 房号（含「4栋2单元」「4栋201」这类组合词条）" />
                 </StackPanel>
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button Style="{StaticResource ButtonPrimary}" Content="新增业主" Command="{Binding NewCommand}" />

@@ -92,8 +92,11 @@
                 </Border>
             </StackPanel>
             <StackPanel Grid.Column="1" Orientation="Horizontal">
+                <!-- CHG-v2.0.0-07：选择范围提示（全选当前页 / 全选当前筛选结果） -->
+                <TextBlock Text="{Binding SelectionHint}" FontSize="11" VerticalAlignment="Center" Margin="0,0,10,0"
+                           Foreground="{StaticResource TextSecondaryBrush}" />
                 <Button Style="{StaticResource ButtonSecondary}" Height="36" Padding="16,6" Command="{Binding BatchDeleteCommand}"
-                        ToolTip="点击后显示勾选框列（可勾选单条，也可勾选表头全选）">
+                        ToolTip="点击后显示勾选框列；表头全选 = 选中当前筛选条件下的全部日志（含其它页面）">
                     <TextBlock Text="{Binding BatchDeleteButtonText}" FontSize="12" Foreground="{StaticResource DangerBrush}" />
                 </Button>
                 <Button Style="{StaticResource ButtonSecondary}" Content="取消" Height="36" Padding="16,6" Margin="10,0,0,0"

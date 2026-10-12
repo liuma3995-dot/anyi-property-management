@@ -116,7 +116,6 @@ namespace PropertyManagement.Client.ViewModels
         public bool CanPublish { get { return Dto.Status == "Draft"; } }
         public bool CanEdit { get { return Dto.Status == "Draft"; } }
         public bool CanView { get { return Dto.Status == "Published" || Dto.Status == "Partial"; } }
-        public bool CanRemind { get { return Dto.Status == "Partial"; } }
         public bool CanRetry { get { return Dto.Status == "Failed"; } }
         public bool CanShowFailures { get { return Dto.Status == "Failed"; } }
         /// <summary>删除可用：所有状态（草稿/已发布/部分缴/发布失败/已缴）均可删除（软删批次及其账单，保留操作轨迹）。</summary>
@@ -215,14 +214,12 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isDeleteConfirmVisible;
         private string _deleteConfirmText = string.Empty;
         private string _deleteConfirmTitle = "确认删除批次";
-        private BillBatchRow _pendingDelete;
         // ---- CHG-v1.5.0-03：生成草稿前确认（含抹零子功能） ----
         private bool _isGenerateConfirmVisible;
         private string _generateConfirmText = string.Empty;
         private bool _generateRoundOff;
         /// <summary>CHG-v1.1.0-17：待删除的计费周期（与批次删除复用同一确认弹窗）。</summary>
         private BillingCycleDto _pendingCycleDelete;
-        private List<BillBatchRow> _batchDeleteRows;
         private bool _isSelectAll;
         private DateTime? _newCycleStart;
         private DateTime? _newCycleEnd;
@@ -248,6 +245,8 @@ namespace PropertyManagement.Client.ViewModels
             _navigateToPage = navigateToPage;
             // CHG-v1.1.2-26：出账预演（规格自动匹配 + 金额试算）与自定义对象计量卡
             InitBillingPreview();
+            // CHG-v2.0.0-02：账单级删除子窗口（行内「删除」/ 工具栏「批量删除」共用）
+            InitBillDelete();
             GenerateCommand = new AsyncRelayCommand(GenerateAsync);
             OpenGenerateCommand = new AsyncRelayCommand(OpenGenerateAsync);
             CloseGenerateCommand = new RelayCommand(() => IsGenerateVisible = false);
@@ -260,17 +259,14 @@ namespace PropertyManagement.Client.ViewModels
             EditCommand = new AsyncRelayCommand<BillBatchRow>(EditBatchAsync);
             ViewCommand = new RelayCommand<BillBatchRow>(ViewBatch);
             CloseViewCommand = new RelayCommand(() => IsViewVisible = false);
-            RemindCommand = new RelayCommand<BillBatchRow>(RemindBatch);
             RetryCommand = new AsyncRelayCommand<BillBatchRow>(RetryAsync);
             RetryAllFailuresCommand = new AsyncRelayCommand(RetryAllFailuresAsync);
             ShowFailuresCommand = new RelayCommand<BillBatchRow>(ShowFailures);
             ShowAllFailuresCommand = new RelayCommand(ShowAllFailures);
             CloseFailuresCommand = new RelayCommand(() => IsFailurePanelVisible = false);
             AddCycleCommand = new AsyncRelayCommand(AddCycleAsync);
-            DeleteCommand = new RelayCommand<BillBatchRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(ConfirmDeleteAsync);
             CancelDeleteCommand = new RelayCommand(() => IsDeleteConfirmVisible = false);
-            BatchDeleteCommand = new RelayCommand(RequestBatchDelete);
             // CHG-v1.4.0-03：导出 PDF（当前筛选下的批次清单 + 每批次缴费对象明细）
             ExportBatchPdfCommand = new AsyncRelayCommand(ExportBatchPdfAsync);
             DeleteCycleCommand = new RelayCommand(RequestDeleteCycle);
@@ -563,7 +559,6 @@ namespace PropertyManagement.Client.ViewModels
         public IAsyncRelayCommand<BillBatchRow> EditCommand { get; }
         public IRelayCommand<BillBatchRow> ViewCommand { get; }
         public IRelayCommand CloseViewCommand { get; }
-        public IRelayCommand<BillBatchRow> RemindCommand { get; }
         public IAsyncRelayCommand<BillBatchRow> RetryCommand { get; }
         /// <summary>CHG-v1.1.0-21：顶部「发布失败」卡片一键重推全部失败批次（FL-FIN-01）。</summary>
         public IAsyncRelayCommand RetryAllFailuresCommand { get; }
@@ -571,10 +566,8 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand ShowAllFailuresCommand { get; }
         public IRelayCommand CloseFailuresCommand { get; }
         public IAsyncRelayCommand AddCycleCommand { get; }
-        public IRelayCommand<BillBatchRow> DeleteCommand { get; }
         public IAsyncRelayCommand ConfirmDeleteCommand { get; }
         public IRelayCommand CancelDeleteCommand { get; }
-        public IRelayCommand BatchDeleteCommand { get; }
 
         /// <summary>
         /// CHG-v1.4.0-03（负责人 2026-10-08 反馈「已发布账单只显示对象和数字，看不出是哪个对象、缴费人是谁」）：
@@ -1335,18 +1328,6 @@ namespace PropertyManagement.Client.ViewModels
             IsViewVisible = true;
         }
 
-        /// <summary>T4F-2-1：部分缴纳批次催缴 → 跳转欠费台账。</summary>
-        private void RemindBatch(BillBatchRow row)
-        {
-            if (row == null || !row.CanRemind) { return; }
-            StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已跳转欠费台账，可对部分缴纳户执行催缴";
-            if (_navigateToPage != null)
-            {
-                _navigateToPage("欠费台账");
-            }
-        }
-
-        /// <summary>删除任意状态批次（CHG-M4-16 修订：软删批次及其账单，保留操作轨迹；已缴/部分缴流水不回退）。</summary>
         /// <summary>
         /// CHG-v1.1.0-17：删除计费周期（自定义周期栏）。
         /// 内置周期与已被账单引用的周期由服务端拦截，前端先行提示，避免无效操作。
@@ -1364,8 +1345,6 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
             _pendingCycleDelete = SelectedCycle;
-            _pendingDelete = null;
-            _batchDeleteRows = null;
             DeleteConfirmTitle = "确认删除周期";
             DeleteConfirmText = "将删除计费周期 " + PeriodText(SelectedCycle) +
                 "，删除后该周期会从下拉框中消失。已被账单引用的周期无法删除（系统会自动拦截）。确认删除？";
@@ -1376,21 +1355,6 @@ namespace PropertyManagement.Client.ViewModels
         private static string PeriodText(BillingCycleDto cycle)
         {
             return cycle.StartDate.ToString("yyyy-MM-dd") + " ~ " + cycle.EndDate.ToString("yyyy-MM-dd");
-        }
-
-        private void RequestDelete(BillBatchRow row)
-        {
-            if (row == null || !row.CanDelete) { return; }
-            _pendingDelete = row;
-            DeleteConfirmTitle = "确认删除批次";
-            // CHG-v1.1.2-02：删除口径更新 —— 下游模块（收款登记/退款记录/欠费台账/财务报表/收支明细流水）
-            // 对该批次账单的记录将同步不再计入，避免「删了账单、报表还照算」的账实不一致。
-            int paidHouseholds = (row.Dto == null ? 0 : row.Dto.PaidCount) + (row.Dto == null ? 0 : row.Dto.PartialCount);
-            DeleteConfirmText = "将删除批次 " + row.BatchNoText + "（" + row.ChargeItemName + "，户数 " + row.HouseCountText +
-                (paidHouseholds > 0 ? "，其中已缴/部分缴 " + paidHouseholds + " 户" : string.Empty) + "）。\n" +
-                "删除后：该批次账单，以及它在收款登记、退款记录、欠费台账、财务报表、收支明细流水中的记录会同步不再显示（原始流水数据保留留痕，不做物理销毁）。\n" +
-                "请确认后再删除。";
-            IsDeleteConfirmVisible = true;
         }
 
         private async Task ConfirmDeleteAsync()
@@ -1409,47 +1373,6 @@ namespace PropertyManagement.Client.ViewModels
                 }, null);
                 return;
             }
-
-            BillBatchRow row = _pendingDelete;
-            IsDeleteConfirmVisible = false;
-            _pendingDelete = null;
-            if (_batchDeleteRows != null && _batchDeleteRows.Count > 0)
-            {
-                var rows = _batchDeleteRows;
-                _batchDeleteRows = null;
-                await RunAsync(async () =>
-                {
-                    foreach (var r in rows) { await Api.DeleteBillBatchAsync(r.Dto.Id); }
-                    await RefreshBatchesAsync();
-                    await RefreshSummaryAsync();
-                    StatusText = DateTime.Now.ToString("HH:mm:ss ") + "已批量删除 " + rows.Count + " 个批次（软删，轨迹保留）";
-                }, null);
-                RaiseDataChanged(); // CHG-v1.2.0-23：批次删除后待办数同步
-                return;
-            }
-            if (row == null) { return; }
-            await RunAsync(async () =>
-            {
-                await Api.DeleteBillBatchAsync(row.Dto.Id);
-                await RefreshBatchesAsync();
-                await RefreshSummaryAsync();
-                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "批次 " + row.BatchNoText + " 已删除（软删，轨迹保留）";
-            }, null);
-            RaiseDataChanged(); // CHG-v1.2.0-23：批次删除后待办数同步
-        }
-
-        /// <summary>批量删除批次（任意状态均可删；软删批次及其账单，已缴/部分缴流水不回退）。</summary>
-        private void RequestBatchDelete()
-        {
-            var rows = Batches.Where(x => x.IsChecked).ToList();
-            if (rows.Count == 0) { ErrorText = "请先勾选要删除的批次"; return; }
-            _batchDeleteRows = rows;
-            _pendingDelete = null;
-            DeleteConfirmTitle = "确认删除批次";
-            DeleteConfirmText = "将批量删除 " + rows.Count + " 个批次。\n" +
-                "删除后：这些批次账单，以及它们在收款登记、退款记录、欠费台账、财务报表、收支明细流水中的记录会同步不再显示（原始流水数据保留留痕）。\n" +
-                "请确认后再删除。";
-            IsDeleteConfirmVisible = true;
         }
         private async Task RetryAsync(BillBatchRow row)
         {

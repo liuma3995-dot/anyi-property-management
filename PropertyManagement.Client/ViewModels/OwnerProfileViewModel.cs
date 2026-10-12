@@ -630,12 +630,26 @@ namespace PropertyManagement.Client.ViewModels
         public string StatusText { get { return Dto.Status == OwnerStatus.Living ? "在住" : "搬离"; } }
         public string OwnerDisplayName { get { return BuildDisplayName(Dto); } }
 
-        /// <summary>业主展示名：姓名 · 手机尾4（区分同名业主）。</summary>
+        /// <summary>
+        /// 业主展示名：姓名 · 手机尾4 · 楼栋/单元/房号（CHG-v2.0.0-15，负责人 2026-10-12：
+        /// 下拉框需带出业主的房产地址，便于同名业主区分）。
+        /// 未绑定房产时只显示前两段；单元为空整段省略（单元号未含「单元」时自动补后缀，与 SQL 侧同口径）。
+        /// </summary>
         public static string BuildDisplayName(OwnerDto dto)
         {
             if (dto == null) return string.Empty;
             string p4 = string.IsNullOrEmpty(dto.Phone) || dto.Phone.Length < 4 ? string.Empty : dto.Phone.Substring(dto.Phone.Length - 4);
-            return (dto.Name ?? string.Empty) + " · " + (string.IsNullOrEmpty(p4) ? "—" : ("手机尾" + p4));
+            string text = (dto.Name ?? string.Empty) + " · " + (string.IsNullOrEmpty(p4) ? "—" : ("手机尾" + p4));
+            string address = BuildPropertyPath(dto);
+            return string.IsNullOrEmpty(address) ? text : text + " · " + address;
+        }
+
+        /// <summary>主房产「楼栋/单元/房号」（单元补后缀、缺项省略；未绑定房产返回空串）。</summary>
+        public static string BuildPropertyPath(OwnerDto dto)
+        {
+            if (dto == null) return string.Empty;
+            // CHG-v2.0.0-18：拼接口径收敛到 AddressText（车位维护「绑定业主」下拉共用同一实现）
+            return AddressText.Build(dto.BuildingNo, dto.UnitNo, dto.RoomNo);
         }
     }
 

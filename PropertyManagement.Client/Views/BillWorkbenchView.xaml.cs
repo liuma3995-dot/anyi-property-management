@@ -21,6 +21,46 @@ namespace PropertyManagement.Client.Views
                         System.Windows.Threading.DispatcherPriority.Loaded);
                 }
             };
+            // CHG-v2.0.0-02：账单级删除子窗口同样在「打开瞬间」按页面可用区重算尺寸
+            BillDeleteOverlay.IsVisibleChanged += (s, e) =>
+            {
+                if (BillDeleteOverlay.IsVisible)
+                {
+                    Dispatcher.BeginInvoke(new Action(ApplyBillDeleteDialogSize),
+                        System.Windows.Threading.DispatcherPriority.Loaded);
+                }
+            };
+        }
+
+        /// <summary>
+        /// CHG-v2.0.0-02：账单级删除子窗口尺寸自适应 ——
+        /// 与「生成账单」同一口径：以**子窗口所在页面（PageGrid）的实际宽高**为基准
+        /// （窗口宽会被左侧导航与页面边距误导，v1.5.0 已踩坑），
+        /// 宽 = Clamp(页宽 − 24, 720, 1180)、高 = Min(页高 − 24, 820)，
+        /// 正文表格内部滚动、页脚固定，1366×768 与最大化两档都不裁切。
+        /// </summary>
+        private void ApplyBillDeleteDialogSize()
+        {
+            if (BillDeleteDialog == null) { return; }
+            double availWidth = PageGrid != null && PageGrid.ActualWidth > 0 ? PageGrid.ActualWidth : ActualWidth;
+            double availHeight = PageGrid != null && PageGrid.ActualHeight > 0 ? PageGrid.ActualHeight : ActualHeight;
+            if (availWidth <= 0 || availHeight <= 0)
+            {
+                Window host = Window.GetWindow(this);
+                availWidth = host == null || host.ActualWidth <= 0 ? 1366d : host.ActualWidth;
+                availHeight = host == null || host.ActualHeight <= 0 ? 768d : host.ActualHeight;
+            }
+            BillDeleteDialog.Width = Math.Max(720d, Math.Min(1180d, availWidth - 24d));
+            BillDeleteDialog.MaxHeight = Math.Min(820d, Math.Max(360d, availHeight - 24d));
+        }
+
+        /// <summary>CHG-v2.0.0-02：子窗口行勾选写回（只读 DataGrid 的 CheckBox 不写回源）。</summary>
+        private void BillDeleteRowCheckBox_Click(object sender, RoutedEventArgs e)
+        {
+            if (sender is CheckBox cb && cb.DataContext is BillDeleteRow row)
+            {
+                row.IsChecked = cb.IsChecked == true;
+            }
         }
 
         /// <summary>行勾选写回：只读 DataGrid 中 CheckBox 的 IsChecked 绑定不会写回源，需在点击时显式同步到行对象。</summary>
@@ -56,6 +96,7 @@ namespace PropertyManagement.Client.Views
         private void PageGrid_SizeChanged(object sender, SizeChangedEventArgs e)
         {
             ApplyGenerateDialogHeight();
+            ApplyBillDeleteDialogSize();
         }
 
         private void ApplyGenerateDialogHeight()

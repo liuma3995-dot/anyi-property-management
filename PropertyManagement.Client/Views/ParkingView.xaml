@@ -196,7 +196,8 @@
                                           PageText="{Binding OwnerPageText}"
                                           PrevCommand="{Binding OwnerPrevPageCommand}"
                                           NextCommand="{Binding OwnerNextPageCommand}"
-                                          Placeholder="搜索业主姓名 / 手机号"
+                                          Placeholder="搜索姓名 / 电话 / 楼栋 / 单元 / 房号"
+                                          ToolTip="支持姓名、电话，以及楼栋 / 单元 / 房号（含「4栋2单元」「4栋201」这类组合词条）"
                                           Height="32" Margin="0,6,0,12" FontSize="12" />
                     <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,0,0,8" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">

@@ -6,6 +6,7 @@ using PropertyManagement.Contract.Common;
 using PropertyManagement.Contract.Emergency;
 using PropertyManagement.Contract.Enums;
 using PropertyManagement.Server.Domain.Repositories;
+using PropertyManagement.Server.Infrastructure;
 using PropertyManagement.Server.Infrastructure.Data;
 using PropertyManagement.Server.Infrastructure.Repositories;
 
@@ -61,10 +62,14 @@ namespace PropertyManagement.Server.Services
                         Status = request.Status.HasValue ? (request.Status.Value == 1 ? 1 : 0) : existing.Status
                     };
                     _repo.UpdateScene(c, tx, dto);
+                    // CHG-v2.0.0-06（裁定 8.A）：应急场景改名同步镜像到「参数/字典维护 → 应急场景」
+                    DictMirror.Rename(c, tx, DictMirror.EmergencyScene, "scene" + id, existing.Name, dto.Name);
                     return _repo.GetScene(c, id);
                 }
                 var created = new EmergencySceneDto { Name = request.Name.Trim(), Category = request.Category, IconKey = NormalizeIcon(request.IconKey), Status = 0 };
                 created.Id = _repo.InsertScene(c, tx, created);
+                // 新增场景同事务镜像（业务模块是唯一写入方）
+                DictMirror.Ensure(c, tx, DictMirror.EmergencyScene, "scene" + created.Id, created.Name, created.Id);
                 return _repo.GetScene(c, created.Id);
             });
 
@@ -92,7 +97,10 @@ namespace PropertyManagement.Server.Services
                 if (_repo.GetScene(c, id) == null) throw ApiException.NotFound("场景不存在");
                 if (_repo.CountSceneEvents(c, id) > 0)
                     throw ApiException.Conflict("该场景存在进行中的应急事件，不可删除；已结案/已复盘的事件不影响场景删除");
+                var scene = _repo.GetScene(c, id);
                 _repo.SoftDeleteScene(c, tx, id);
+                // 删除场景 → 字典项一并软删留痕
+                DictMirror.Remove(c, tx, DictMirror.EmergencyScene, "scene" + id, scene == null ? null : scene.Name);
             });
 
         public List<EmergencyStepDto> ListSteps(int sceneId) =>
