@@ -74,6 +74,60 @@ namespace PropertyManagement.Server.Services
             }
         }
 
+        /// <summary>
+        /// 收支明细流水「查看」：以 BizType + SourceId 复合定位来源，再返回关联账单及来源单据。
+        /// 只读，不改变流水、账单和财务金额。
+        /// </summary>
+        public LedgerEntryDetailDto GetLedgerEntryDetail(string bizType, int sourceId)
+        {
+            string kind = (bizType ?? string.Empty).Trim().ToLowerInvariant();
+            if (kind != "payment" && kind != "refund" && kind != "expense" && kind != "reversed")
+                throw ApiException.ValidationFailed("不支持的流水类型");
+            if (sourceId <= 0) throw ApiException.ValidationFailed("流水来源主键不正确");
+
+            using (IDbConnection connection = _connectionFactory.OpenConnection())
+            {
+                PageResult<LedgerEntryDto> page = _finance.QueryLedger(connection, new LedgerQueryRequest
+                {
+                    PageIndex = 1,
+                    PageSize = 2,
+                    BizType = kind,
+                    SourceId = sourceId
+                });
+                LedgerEntryDto entry = (page.Items ?? new List<LedgerEntryDto>()).FirstOrDefault();
+                if (entry == null) throw ApiException.NotFound("流水不存在或来源单据已删除");
+
+                var detail = new LedgerEntryDetailDto { Entry = entry };
+                if (entry.BillId.HasValue && entry.BillId.Value > 0)
+                {
+                    PageResult<BillListItemDto> bills = _finance.QueryBills(connection, new BillQueryRequest
+                    {
+                        PageIndex = 1,
+                        PageSize = 1,
+                        BillIds = new List<int> { entry.BillId.Value }
+                    });
+                    detail.Bill = (bills.Items ?? new List<BillListItemDto>()).FirstOrDefault();
+                }
+
+                if (kind == "refund")
+                {
+                    detail.Adjustment = _finance.GetRefundRecord(connection, sourceId);
+                }
+                else if (kind == "expense")
+                {
+                    detail.Expense = _finance.GetExpense(connection, sourceId);
+                }
+
+                if (detail.Bill == null)
+                {
+                    if (kind == "expense") detail.NoBillReason = "支出流水无关联账单";
+                    else if (kind == "refund") detail.NoBillReason = "该调整单据未关联账单";
+                    else detail.NoBillReason = "该收款流水未关联账单";
+                }
+                return detail;
+            }
+        }
+
         public FinancialReportDto GetFinancialReport(FinancialReportQueryRequest query)
         {
             FinancialReportWindow window = ResolveWindow(query);

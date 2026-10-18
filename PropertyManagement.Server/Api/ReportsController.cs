@@ -34,6 +34,14 @@ namespace PropertyManagement.Server.Api
             return ApiResponse<PageResult<LedgerEntryDto>>.Ok(_reports.QueryLedger(request));
         }
 
+        /// <summary>收支明细流水「查看」：返回来源单据及关联账单明细（只读）。</summary>
+        [HttpGet]
+        [Route("ledger/{bizType}/{sourceId:int}")]
+        public ApiResponse<LedgerEntryDetailDto> GetLedgerEntryDetail(string bizType, int sourceId)
+        {
+            return ApiResponse<LedgerEntryDetailDto>.Ok(_reports.GetLedgerEntryDetail(bizType, sourceId));
+        }
+
         [HttpGet]
         [Route("financial")]
         public ApiResponse<FinancialReportDto> GetFinancialReport([FromUri] FinancialReportQueryRequest request)

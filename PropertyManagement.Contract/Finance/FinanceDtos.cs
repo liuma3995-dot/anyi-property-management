@@ -678,6 +678,10 @@ namespace PropertyManagement.Contract.Finance
     public class LedgerEntryDto
     {
         public int Id { get; set; }
+        /// <summary>来源表主键。与 BizType 组合唯一标识一笔流水。</summary>
+        public int SourceId { get; set; }
+        /// <summary>关联账单主键；支出或无关联账单的调整流水为空。</summary>
+        public int? BillId { get; set; }
         public DateTime BizTime { get; set; }
         public string BizType { get; set; }     // payment / expense / refund
         public string BizNo { get; set; }
@@ -690,6 +694,17 @@ namespace PropertyManagement.Contract.Finance
         public string OwnerName { get; set; }    // T4F-7-1：付款户主信息（收款/退款/红冲按账单解析房产或车位业主，支出为空）
         /// <summary>CHG-v1.1.2-05：楼栋/房号（车位显示车位编号，自定义缴费对象显示名称，支出为空）。</summary>
         public string ObjectText { get; set; }
+    }
+
+    /// <summary>收支明细流水「查看」：统一承载流水及来源账单/单据详情。</summary>
+    public class LedgerEntryDetailDto
+    {
+        public LedgerEntryDto Entry { get; set; }
+        public BillListItemDto Bill { get; set; }
+        public RefundRecordDetailDto Adjustment { get; set; }
+        public ExpenseDto Expense { get; set; }
+        /// <summary>无关联账单时给界面的说明；账单正常返回时为空。</summary>
+        public string NoBillReason { get; set; }
     }
 
     /// <summary>欠费台账行（UC-FIN-007，账龄>90天标红）。</summary>

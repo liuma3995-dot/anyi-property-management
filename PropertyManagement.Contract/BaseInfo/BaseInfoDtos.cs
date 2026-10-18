@@ -137,6 +137,10 @@ namespace PropertyManagement.Contract.BaseInfo
         public decimal? MonthlyRent { get; set; }
         public RentMode RentMode { get; set; }
         public DateTime? RentTo { get; set; }
+        /// <summary>车位资料时间周期起始日（可选）。</summary>
+        public DateTime? PeriodStart { get; set; }
+        /// <summary>车位资料时间周期终止日（可选）。</summary>
+        public DateTime? PeriodEnd { get; set; }
         public string StatusText { get; set; }
         public string SpaceTypeText { get; set; }
         public bool DelFlag { get; set; }

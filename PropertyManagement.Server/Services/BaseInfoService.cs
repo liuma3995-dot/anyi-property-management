@@ -361,6 +361,7 @@ namespace PropertyManagement.Server.Services
                 // 普通（原「人防」）类型禁售：该类型车位不可为已售（CHG-v1.1.2-48 文案由「人防」改为「普通」，约束不变）
                 if (request.SpaceType == ParkingSpaceType.CivilDefense && request.Status == ParkingSpaceStatus.Owned)
                     throw ApiException.ValidationFailed("普通车位不可标为出售");
+                ValidateParkingPeriod(request.PeriodStart, request.PeriodEnd);
 
                 string spaceNo = request.SpaceNo.Trim();
                 var dup = _repo.GetParkingByNo(connection, spaceNo, id);
@@ -413,7 +414,9 @@ namespace PropertyManagement.Server.Services
                     OwnerId = request.OwnerId,
                     MonthlyRent = request.MonthlyRent,
                     RentMode = request.RentMode,
-                    RentTo = request.RentTo
+                    RentTo = request.RentTo,
+                    PeriodStart = request.PeriodStart,
+                    PeriodEnd = request.PeriodEnd
                 };
                 if (id > 0)
                 {
@@ -954,6 +957,8 @@ namespace PropertyManagement.Server.Services
                         F("绑定楼栋号", false, "1号楼", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」（单元号可留空）"),
                         F("绑定单元号", false, "", "选填。与绑定楼栋号/绑定房号配套使用"),
                         F("绑定房号", false, "101", "选填。需要绑定房产时，必须同时填写「绑定楼栋号 + 绑定房号」"),
+                        F("起始日期", false, "2026-01-01", "选填。与「终止日期」同时填写；格式 yyyy-MM-dd"),
+                        F("终止日期", false, "2026-12-31", "选填。与「起始日期」同时填写；格式 yyyy-MM-dd，且不得早于起始日期"),
                     };
                 case ImportModule.OwnerRelation:
                     return new List<ImportField>
@@ -1641,6 +1646,8 @@ namespace PropertyManagement.Server.Services
             // （房产权属由业主名下有效房产自动引用），与页面 SaveParking 口径一致。
             int colBindOwner = ColIndex(map, "绑定业主", "业主姓名", "业主");
             int colBindOwnerPhone = ColIndex(map, "业主电话", "业主手机号", "绑定业主电话");
+            int colPeriodStart = ColIndex(map, "起始日期", "周期开始日期");
+            int colPeriodEnd = ColIndex(map, "终止日期", "周期结束日期");
 
             var count = new ImportCount();
             int row = 2;
@@ -1657,9 +1664,11 @@ namespace PropertyManagement.Server.Services
                 string bindRoomNo = CellAt(sheet, row, colBindRoom);
                 string bindOwnerName = CellAt(sheet, row, colBindOwner);
                 string bindOwnerPhone = CellAt(sheet, row, colBindOwnerPhone);
+                string periodStartText = CellAt(sheet, row, colPeriodStart);
+                string periodEndText = CellAt(sheet, row, colPeriodEnd);
                 // v1.2.0（CHG-v1.2.0-04）：模板预留空白行跳过
                 if (IsBlankRow(spaceNo, area, typeText, statusText, bindBuildingNo, bindUnitNo, bindRoomNo,
-                        bindOwnerName, bindOwnerPhone))
+                        bindOwnerName, bindOwnerPhone, periodStartText, periodEndText))
                 { row++; continue; }
                 string spaceKey = string.IsNullOrWhiteSpace(spaceNo) ? "（未填写车位编号）" : spaceNo.Trim();
 
@@ -1676,6 +1685,21 @@ namespace PropertyManagement.Server.Services
                     rowErrors.Add(Err(row, "状态", statusText, "状态不合法（已售/已租/空置/维修中）", "填写 已售/已租/空置/维修中"));
                 if (spaceType == ParkingSpaceType.CivilDefense && status == ParkingSpaceStatus.Owned)
                         rowErrors.Add(Err(row, "类型/状态", typeText + "-" + statusText, "普通车位不可标为出售", "改为已租/空置"));
+
+                DateTime? periodStart = ParseDate(periodStartText);
+                DateTime? periodEnd = ParseDate(periodEndText);
+                bool hasPeriodStartText = !string.IsNullOrWhiteSpace(periodStartText);
+                bool hasPeriodEndText = !string.IsNullOrWhiteSpace(periodEndText);
+                if (hasPeriodStartText && !periodStart.HasValue)
+                    rowErrors.Add(Err(row, "起始日期", periodStartText, "起始日期格式不正确", "填写 yyyy-MM-dd"));
+                if (hasPeriodEndText && !periodEnd.HasValue)
+                    rowErrors.Add(Err(row, "终止日期", periodEndText, "终止日期格式不正确", "填写 yyyy-MM-dd"));
+                if (hasPeriodStartText != hasPeriodEndText)
+                    rowErrors.Add(Err(row, "时间周期", periodStartText + " ~ " + periodEndText,
+                        "起始日期和终止日期需要同时填写", "两项都填写，或两项都留空"));
+                else if (periodStart.HasValue && periodEnd.HasValue && periodStart.Value.Date > periodEnd.Value.Date)
+                    rowErrors.Add(Err(row, "时间周期", periodStartText + " ~ " + periodEndText,
+                        "起始日期不得晚于终止日期", "调整日期顺序"));
 
                 if (rowErrors.Count == 0)
                 {
@@ -1716,7 +1740,9 @@ namespace PropertyManagement.Server.Services
                                     OwnerId = effOwnerId,
                                     MonthlyRent = before.MonthlyRent,   // 模板已下线「租金」列 → 保留库内原值
                                     RentMode = before.RentMode,
-                                    RentTo = before.RentTo               // 模板已下线「租期至」列 → 保留库内原值
+                                    RentTo = before.RentTo,              // 模板已下线「租期至」列 → 保留库内原值
+                                    PeriodStart = hasPeriodStartText ? periodStart : before.PeriodStart,
+                                    PeriodEnd = hasPeriodEndText ? periodEnd : before.PeriodEnd
                                 });
                                 if (before.Status != newStatus)
                                 {
@@ -1773,7 +1799,9 @@ namespace PropertyManagement.Server.Services
                                 PropertyId = propertyId,
                                 OwnerId = ownerId,
                                 MonthlyRent = null,
-                                RentTo = null
+                                RentTo = null,
+                                PeriodStart = periodStart,
+                                PeriodEnd = periodEnd
                             });
                             string insertedLabel = spaceKey + "（车位 #" + newParkingId + "）";
                             count.AddInserted(row, bindNotes.Count == 0
@@ -2045,9 +2073,18 @@ namespace PropertyManagement.Server.Services
             return c.QueryFirstOrDefault<ParkingSpaceDto>(
                 "SELECT id, space_no AS SpaceNo, area AS Area, space_type AS SpaceType, status AS Status, " +
                 "property_id AS PropertyId, owner_id AS OwnerId, monthly_rent AS MonthlyRent, " +
-                "rent_mode AS RentMode, rent_to AS RentTo, del_flag AS DelFlag " +
+                "rent_mode AS RentMode, rent_to AS RentTo, period_start AS PeriodStart, period_end AS PeriodEnd, del_flag AS DelFlag " +
                 "FROM t_parking_space WHERE id = @id AND del_flag = 0",
                 new { id }, tx);
+        }
+
+        /// <summary>车位时间周期必须成对出现；允许整体留空。</summary>
+        private static void ValidateParkingPeriod(DateTime? start, DateTime? end)
+        {
+            if (start.HasValue != end.HasValue)
+                throw ApiException.ValidationFailed("起始日期和终止日期需要同时填写，或同时留空");
+            if (start.HasValue && end.HasValue && start.Value.Date > end.Value.Date)
+                throw ApiException.ValidationFailed("起始日期不得晚于终止日期");
         }
 
         private static string ParkingStatusLabel(ParkingSpaceStatus status)
@@ -2488,7 +2525,7 @@ namespace PropertyManagement.Server.Services
             var sheet = workbook.Worksheets.Add("车位");
             // CHG-v1.4.1-03（负责人 2026-10-10）：租金/租期至自 v1.1.0-12 已从界面下线（定价统一归收费项目），
             // 导出却仍在导这两列 —— 本轮回退对齐：移除「租金 / 租期至」，新增「绑定业主」。
-            string[] headers = { "车位编号", "区域", "类型", "状态", "绑定房产", "绑定业主" };
+            string[] headers = { "车位编号", "区域", "类型", "状态", "绑定房产", "绑定业主", "起始日期", "终止日期" };
             for (int i = 0; i < headers.Length; i++) sheet.Cell(1, i + 1).Value = headers[i];
             int r = 2;
             foreach (var p in data.Items)
@@ -2499,6 +2536,8 @@ namespace PropertyManagement.Server.Services
                 sheet.Cell(r, 4).Value = p.StatusText ?? string.Empty;
                 sheet.Cell(r, 5).Value = p.BindingProperty ?? string.Empty;
                 sheet.Cell(r, 6).Value = p.OwnerName ?? string.Empty;
+                sheet.Cell(r, 7).Value = p.PeriodStart.HasValue ? p.PeriodStart.Value.ToString("yyyy-MM-dd") : string.Empty;
+                sheet.Cell(r, 8).Value = p.PeriodEnd.HasValue ? p.PeriodEnd.Value.ToString("yyyy-MM-dd") : string.Empty;
                 r++;
             }
             for (int c = 1; c <= headers.Length; c++) sheet.Column(c).Width = 16;

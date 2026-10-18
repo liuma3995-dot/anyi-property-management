@@ -20,7 +20,7 @@ namespace PropertyManagement.Server.Infrastructure.Data
     {
         // CHG-v1.3.1-05：59 = 报表/导出留痕新增 del_flag（「报表与导出留痕」清单可清理）
         // CHG-v1.4.0-01：60 = t_payment_refund 新增 del_flag（无关联账单的补收/冲正记录可删除）
-        private const int SchemaVersion = 61;
+        private const int SchemaVersion = 62;
 
         private static readonly Logger Log = LogManager.GetCurrentClassLogger();
 

@@ -150,16 +150,21 @@
                         <hc:NumericUpDown Value="{Binding FormShare, Mode=TwoWay}" Minimum="0" Maximum="100" Increment="10"
                                           ValueFormat="0" Height="32" Margin="0,6,0,12" />
                     </StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,14">
-                        <StackPanel Width="180">
+                    <Grid Margin="0,0,0,14">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
                             <TextBlock Text="起始日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                            <TextBox Text="{Binding FormStart, StringFormat=yyyy-MM-dd, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" />
+                            <hc:DatePicker SelectedDate="{Binding FormStart, Mode=TwoWay}" Height="32" Margin="0,6,0,0" />
                         </StackPanel>
-                        <StackPanel Width="180" Margin="12,0,0,0">
+                        <StackPanel Grid.Column="2">
                             <TextBlock Text="终止日期" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                            <TextBox Text="{Binding FormEnd, StringFormat=yyyy-MM-dd, UpdateSourceTrigger=PropertyChanged}" Height="32" Margin="0,6,0,0" />
+                            <hc:DatePicker SelectedDate="{Binding FormEnd, Mode=TwoWay}" Height="32" Margin="0,6,0,0" />
                         </StackPanel>
-                    </StackPanel>
+                    </Grid>
                     <TextBlock Text="{Binding ErrorText}" Foreground="{StaticResource DangerBrush}" FontSize="12" Margin="0,0,0,8" />
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Style="{StaticResource ButtonSecondary}" Content="取消" Command="{Binding CancelCommand}" />

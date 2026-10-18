@@ -1557,6 +1557,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 where += " AND Subject = @subject";
                 parameters.Add("subject", query.Subject.Trim());
             }
+            if (query.SourceId.HasValue && query.SourceId.Value > 0)
+            {
+                where += " AND SourceId = @sourceId";
+                parameters.Add("sourceId", query.SourceId.Value);
+            }
 
             if (!string.IsNullOrWhiteSpace(query.Keyword))
             {
@@ -1600,7 +1605,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "NULLIF(b.payer_name, ''), '')";
 
             string from = "FROM (" +
-                "SELECT p.id AS Id, p.paid_at AS BizTime, 'payment' AS BizType, " +
+                "SELECT p.id AS Id, p.id AS SourceId, b.id AS BillId, p.paid_at AS BizTime, 'payment' AS BizType, " +
                 // CHG-v1.1.0-15：关联单据优先取「收款流水号」（与收据打印模板一致），存量数据回落原收据号
                 "COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, '') AS BizNo, p.amount AS InAmount, 0 AS OutAmount, " +
                 "COALESCE(ci.name, '收款') AS Subject, " +
@@ -1615,7 +1620,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "UNION ALL " +
                 // CHG-v1.1.2-12：账务调整的 +/− 由「方式」决定 —— 调增补收计入收入方向，调减冲正/退款为冲减方向
                 // CHG-v1.1.2-40：减免改为「调减应收」，**不产生资金流出** → 不进收支明细流水（否则会把减免误记成支出）
-                "SELECT pr.id, pr.created_at, 'refund', COALESCE(pr.ref_no, ''), " +
+                "SELECT pr.id, pr.id, pr.bill_id, pr.created_at, 'refund', COALESCE(pr.ref_no, ''), " +
                 "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN pr.amount ELSE 0 END AS InAmount, " +
                 "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN 0 ELSE pr.amount END AS OutAmount, " +
                 "CASE WHEN pr.refund_type = 2 AND pr.adjust_dir = 1 THEN '调增补收' " +
@@ -1628,10 +1633,10 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 // CHG-v1.5.0-01：退款（refund_type = 0）删除后金额数字不变 —— 不再按 del_flag 过滤；调整（2）仍按软删过滤
                 "WHERE (pr.del_flag = 0 OR pr.refund_type = 0) AND (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
-                "SELECT e.id, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
+                "SELECT e.id, e.id, NULL, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
                 "UNION ALL " +
-                "SELECT p.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " +
+                "SELECT p.id, p.id, b.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " +
                 ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id LEFT JOIN t_bill b ON b.id = p.bill_id " +
                 "WHERE p.status = 1 AND (p.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0))) x";
@@ -1642,7 +1647,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
             int total = connection.ExecuteScalar<int>("SELECT COUNT(1) " + from + where, parameters);
 
-            string sql = "SELECT Id, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, ObjectText, " +
+            string sql = "SELECT Id, SourceId, BillId, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, ObjectText, " +
                 "CAST(InAmount AS REAL) AS InAmount, CAST(OutAmount AS REAL) AS OutAmount " +
                 from + where + " ORDER BY BizTime DESC, Id DESC LIMIT @limit OFFSET @offset";
             parameters.Add("limit", pageSize);

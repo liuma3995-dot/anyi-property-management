@@ -363,8 +363,15 @@ namespace PropertyManagement.Server.Services
                 row = ExcelSection(sheet, row, "一、案件基本信息");
                 row = ExcelKeyValue(sheet, row, "纠纷类型", Dash(kase.TypeName), "纠纷等级", Dash(kase.LevelText));
                 row = ExcelKeyValue(sheet, row, "关联房产", Dash(context.PropertyPath), "登记日期", kase.OccurTime.ToString("yyyy-MM-dd"));
-                row = ExcelKeyValue(sheet, row, "期望解决时间", Dash(kase.ExpectedAt.HasValue ? kase.ExpectedAt.Value.ToString("yyyy-MM-dd") : null),
-                    "调解员", Dash(kase.MediatorName));
+                if (kase.ExpectedAt.HasValue)
+                {
+                    row = ExcelKeyValue(sheet, row, "期望解决时间", kase.ExpectedAt.Value.ToString("yyyy-MM-dd"),
+                        "调解员", Dash(kase.MediatorName));
+                }
+                else
+                {
+                    row = ExcelKeyValue(sheet, row, "调解员", Dash(kase.MediatorName), string.Empty, string.Empty);
+                }
                 row = ExcelKeyValue(sheet, row, "案件状态", Dash(kase.StatusText), "已受理", ContextDays(kase) + " 天");
                 row = ExcelKeyValue(sheet, row, "结案类型", Dash(kase.CloseTypeText),
                     "结案时间", kase.ClosedAt.HasValue ? kase.ClosedAt.Value.ToString("yyyy-MM-dd HH:mm") : "—");
@@ -853,19 +860,24 @@ namespace PropertyManagement.Server.Services
                 _y += 6;
 
                 Section("一、案件基本信息");
-                KeyValuePairs(new List<KeyValuePair<string, string>>
+                var basicPairs = new List<KeyValuePair<string, string>>
                 {
                     new KeyValuePair<string, string>("纠纷类型", Dash(kase.TypeName)),
                     new KeyValuePair<string, string>("纠纷等级", Dash(kase.LevelText)),
                     new KeyValuePair<string, string>("关联房产", Dash(context.PropertyPath)),
                     new KeyValuePair<string, string>("登记日期", kase.OccurTime.ToString("yyyy-MM-dd")),
-                    new KeyValuePair<string, string>("期望解决时间", Dash(kase.ExpectedAt.HasValue ? kase.ExpectedAt.Value.ToString("yyyy-MM-dd") : null)),
                     new KeyValuePair<string, string>("调解员", Dash(kase.MediatorName)),
                     new KeyValuePair<string, string>("案件状态", Dash(kase.StatusText)),
                     new KeyValuePair<string, string>("已受理", ContextDays(kase) + " 天"),
                     new KeyValuePair<string, string>("结案类型", Dash(kase.CloseTypeText)),
                     new KeyValuePair<string, string>("结案时间", kase.ClosedAt.HasValue ? kase.ClosedAt.Value.ToString("yyyy-MM-dd HH:mm") : "—")
-                });
+                };
+                if (kase.ExpectedAt.HasValue)
+                {
+                    basicPairs.Insert(4, new KeyValuePair<string, string>(
+                        "期望解决时间", kase.ExpectedAt.Value.ToString("yyyy-MM-dd")));
+                }
+                KeyValuePairs(basicPairs);
 
                 Section("二、当事人");
                 if (context.Parties.Count == 0)

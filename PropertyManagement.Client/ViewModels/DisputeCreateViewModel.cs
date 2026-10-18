@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Windows;
-using System.Windows.Data;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PropertyManagement.Client.Services;
@@ -26,14 +26,17 @@ namespace PropertyManagement.Client.ViewModels
             get
             {
                 if (!OwnerId.HasValue) return "外部登记（手动填写姓名 / 电话）";
-                // R3：完整房号 + 姓名 + 完整手机号（如「1号楼1单元101 张伟 · 13800000001」）
-                var path = FullPath ?? string.Empty;
+                var path = AddressText.Build(BuildingNo, UnitNo, RoomNo);
+                if (string.IsNullOrWhiteSpace(path)) { path = FullPath ?? string.Empty; }
                 var name = Name ?? string.Empty;
                 var phone = Phone ?? string.Empty;
                 var head = string.IsNullOrEmpty(path) ? name : (path + " " + name);
                 return phone.Length > 0 ? head + " · " + phone : head;
             }
         }
+        public string BuildingNo { get; set; }
+        public string UnitNo { get; set; }
+        public string RoomNo { get; set; }
     }
 
     /// <summary>关联房产选项（「不关联」= null）。</summary>
@@ -72,7 +75,7 @@ namespace PropertyManagement.Client.ViewModels
         private string _partyBName = string.Empty;
         private string _partyBPhone = string.Empty;
         private int _level;
-        private DateTime? _expectedAt = DateTime.Today;
+        private DateTime? _expectedAt;
         private string _location = string.Empty;
         private string _detail = string.Empty;
         private int? _selectedMediatorId;
@@ -86,11 +89,22 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isTypeDeleteVisible;
         private string _deleteTypeName = string.Empty;
         private int _deleteTypeId;
-        private readonly List<DisputePropertyOption> _allProperties = new List<DisputePropertyOption>();
-        private readonly List<DisputeOwnerOption> _allOwners = new List<DisputeOwnerOption>();
-        private ListCollectionView _propertyView;
-        private ListCollectionView _ownerAView;
-        private ListCollectionView _ownerBView;
+        private const int PickerPageSize = 20;
+        private readonly DispatcherTimer _propertySearchDebounce;
+        private readonly DispatcherTimer _ownerASearchDebounce;
+        private readonly DispatcherTimer _ownerBSearchDebounce;
+        private bool _suppressPropertySearch;
+        private bool _suppressOwnerASearch;
+        private bool _suppressOwnerBSearch;
+        private int _propertyPage = 1;
+        private int _propertyTotal;
+        private int _propertySearchSeq;
+        private int _ownerAPage = 1;
+        private int _ownerATotal;
+        private int _ownerASearchSeq;
+        private int _ownerBPage = 1;
+        private int _ownerBTotal;
+        private int _ownerBSearchSeq;
         private DisputePropertyOption _selectedPropertyOption;
         private DisputeOwnerOption _selectedOwnerAOption;
         private DisputeOwnerOption _selectedOwnerBOption;
@@ -98,6 +112,9 @@ namespace PropertyManagement.Client.ViewModels
 
         public DisputeCreateViewModel(IApiClient api) : base(api)
         {
+            _propertySearchDebounce = NewSearchDebounce(async () => await SearchPropertiesCoreAsync(CurrentPropertyKeyword(), 1));
+            _ownerASearchDebounce = NewSearchDebounce(async () => await SearchOwnersCoreAsync(true, CurrentOwnerAKeyword(), 1));
+            _ownerBSearchDebounce = NewSearchDebounce(async () => await SearchOwnersCoreAsync(false, CurrentOwnerBKeyword(), 1));
             SubmitCommand = new AsyncRelayCommand(SubmitAsync);
             ResetCommand = new RelayCommand(Reset);
             SelectMediatorCommand = new RelayCommand<DisputeMediatorOption>(SelectMediator);
@@ -107,12 +124,25 @@ namespace PropertyManagement.Client.ViewModels
             RequestDeleteTypeCommand = new RelayCommand(RequestDeleteType);
             ConfirmDeleteTypeCommand = new AsyncRelayCommand(ConfirmDeleteTypeAsync);
             CancelDeleteTypeCommand = new RelayCommand(() => IsTypeDeleteVisible = false);
+            PropertyPrevPageCommand = new AsyncRelayCommand(
+                () => SearchPropertiesCoreAsync(CurrentPropertyKeyword(), _propertyPage - 1), () => CanPropertyPrev);
+            PropertyNextPageCommand = new AsyncRelayCommand(
+                () => SearchPropertiesCoreAsync(CurrentPropertyKeyword(), _propertyPage + 1), () => CanPropertyNext);
+            OwnerAPrevPageCommand = new AsyncRelayCommand(
+                () => SearchOwnersCoreAsync(true, CurrentOwnerAKeyword(), _ownerAPage - 1), () => CanOwnerAPrev);
+            OwnerANextPageCommand = new AsyncRelayCommand(
+                () => SearchOwnersCoreAsync(true, CurrentOwnerAKeyword(), _ownerAPage + 1), () => CanOwnerANext);
+            OwnerBPrevPageCommand = new AsyncRelayCommand(
+                () => SearchOwnersCoreAsync(false, CurrentOwnerBKeyword(), _ownerBPage - 1), () => CanOwnerBPrev);
+            OwnerBNextPageCommand = new AsyncRelayCommand(
+                () => SearchOwnersCoreAsync(false, CurrentOwnerBKeyword(), _ownerBPage + 1), () => CanOwnerBNext);
             _ = InitAsync();
         }
 
         public ObservableCollection<DisputeTypeDto> Types { get; } = new ObservableCollection<DisputeTypeDto>();
         public ObservableCollection<DisputePropertyOption> PropertyOptions { get; } = new ObservableCollection<DisputePropertyOption>();
-        public ObservableCollection<DisputeOwnerOption> OwnerOptions { get; } = new ObservableCollection<DisputeOwnerOption>();
+        public ObservableCollection<DisputeOwnerOption> OwnerAOptions { get; } = new ObservableCollection<DisputeOwnerOption>();
+        public ObservableCollection<DisputeOwnerOption> OwnerBOptions { get; } = new ObservableCollection<DisputeOwnerOption>();
         public ObservableCollection<DisputeMediatorOption> Mediators { get; } = new ObservableCollection<DisputeMediatorOption>();
 
         public int TypeId
@@ -184,19 +214,51 @@ namespace PropertyManagement.Client.ViewModels
         public bool IsTypeDeleteVisible { get { return _isTypeDeleteVisible; } set { SetProperty(ref _isTypeDeleteVisible, value); } }
         public string DeleteTypeName { get { return _deleteTypeName; } set { SetProperty(ref _deleteTypeName, value); } }
 
-        /// <summary>关联房产搜索词：输入即过滤下拉。</summary>
-        public string PropertySearch { get { return _propertySearch; } set { if (SetProperty(ref _propertySearch, value)) ApplyPropertyFilter(); } }
-        /// <summary>甲方搜索词：输入即过滤下拉。</summary>
-        public string PartyASearch { get { return _partyASearch; } set { if (SetProperty(ref _partyASearch, value)) ApplyOwnerAFilter(); } }
-        /// <summary>乙方搜索词：输入即过滤下拉。</summary>
-        public string PartyBSearch { get { return _partyBSearch; } set { if (SetProperty(ref _partyBSearch, value)) ApplyOwnerBFilter(); } }
+        /// <summary>关联房产搜索词：防抖后走服务端检索。</summary>
+        public string PropertySearch
+        {
+            get { return _propertySearch; }
+            set
+            {
+                if (!SetProperty(ref _propertySearch, value) || _suppressPropertySearch) { return; }
+                _propertySearchDebounce.Stop();
+                _propertySearchDebounce.Start();
+            }
+        }
 
-        /// <summary>房产下拉过滤视图。</summary>
-        public ListCollectionView PropertyView { get { return _propertyView; } }
-        /// <summary>甲方业主下拉过滤视图。</summary>
-        public ListCollectionView OwnerAView { get { return _ownerAView; } }
-        /// <summary>乙方业主下拉过滤视图。</summary>
-        public ListCollectionView OwnerBView { get { return _ownerBView; } }
+        /// <summary>甲方搜索词：独立防抖后走服务端检索。</summary>
+        public string PartyASearch
+        {
+            get { return _partyASearch; }
+            set
+            {
+                if (!SetProperty(ref _partyASearch, value) || _suppressOwnerASearch) { return; }
+                _ownerASearchDebounce.Stop();
+                _ownerASearchDebounce.Start();
+            }
+        }
+
+        /// <summary>乙方搜索词：独立防抖后走服务端检索。</summary>
+        public string PartyBSearch
+        {
+            get { return _partyBSearch; }
+            set
+            {
+                if (!SetProperty(ref _partyBSearch, value) || _suppressOwnerBSearch) { return; }
+                _ownerBSearchDebounce.Stop();
+                _ownerBSearchDebounce.Start();
+            }
+        }
+
+        public string PropertyPageText { get { return "共 " + _propertyTotal + " 条 · 第 " + _propertyPage + "/" + LastPageOf(_propertyTotal) + " 页"; } }
+        public string OwnerAPageText { get { return "共 " + _ownerATotal + " 条 · 第 " + _ownerAPage + "/" + LastPageOf(_ownerATotal) + " 页"; } }
+        public string OwnerBPageText { get { return "共 " + _ownerBTotal + " 条 · 第 " + _ownerBPage + "/" + LastPageOf(_ownerBTotal) + " 页"; } }
+        public bool CanPropertyPrev { get { return _propertyPage > 1; } }
+        public bool CanPropertyNext { get { return _propertyPage * PickerPageSize < _propertyTotal; } }
+        public bool CanOwnerAPrev { get { return _ownerAPage > 1; } }
+        public bool CanOwnerANext { get { return _ownerAPage * PickerPageSize < _ownerATotal; } }
+        public bool CanOwnerBPrev { get { return _ownerBPage > 1; } }
+        public bool CanOwnerBNext { get { return _ownerBPage * PickerPageSize < _ownerBTotal; } }
 
         /// <summary>关联房产选中项（下拉内部检索；输入过程中的瞬时 null 忽略，避免误清空）。</summary>
         public DisputePropertyOption SelectedPropertyOption
@@ -208,7 +270,7 @@ namespace PropertyManagement.Client.ViewModels
                 if (SetProperty(ref _selectedPropertyOption, value)) FormPropertyId = value.PropertyId;
                 // 选中后回填展示文本，避免输入框残留检索关键字（与业主-房产关系/车位维护同口径）
                 string display = value.Display ?? string.Empty;
-                if (!string.Equals(_propertySearch, display, StringComparison.Ordinal)) PropertySearch = display;
+                SetSearchText(ref _propertySearch, display, nameof(PropertySearch), true);
             }
         }
 
@@ -221,7 +283,7 @@ namespace PropertyManagement.Client.ViewModels
                 if (value == null) return;
                 if (SetProperty(ref _selectedOwnerAOption, value)) PartyAOwnerId = value.OwnerId;
                 string display = value.Display ?? string.Empty;
-                if (!string.Equals(_partyASearch, display, StringComparison.Ordinal)) PartyASearch = display;
+                SetSearchText(ref _partyASearch, display, nameof(PartyASearch), true);
             }
         }
 
@@ -234,7 +296,7 @@ namespace PropertyManagement.Client.ViewModels
                 if (value == null) return;
                 if (SetProperty(ref _selectedOwnerBOption, value)) PartyBOwnerId = value.OwnerId;
                 string display = value.Display ?? string.Empty;
-                if (!string.Equals(_partyBSearch, display, StringComparison.Ordinal)) PartyBSearch = display;
+                SetSearchText(ref _partyBSearch, display, nameof(PartyBSearch), false);
             }
         }
 
@@ -247,6 +309,12 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand RequestDeleteTypeCommand { get; }
         public IAsyncRelayCommand ConfirmDeleteTypeCommand { get; }
         public IRelayCommand CancelDeleteTypeCommand { get; }
+        public IAsyncRelayCommand PropertyPrevPageCommand { get; }
+        public IAsyncRelayCommand PropertyNextPageCommand { get; }
+        public IAsyncRelayCommand OwnerAPrevPageCommand { get; }
+        public IAsyncRelayCommand OwnerANextPageCommand { get; }
+        public IAsyncRelayCommand OwnerBPrevPageCommand { get; }
+        public IAsyncRelayCommand OwnerBNextPageCommand { get; }
 
         private async Task InitAsync()
         {
@@ -257,34 +325,9 @@ namespace PropertyManagement.Client.ViewModels
                 else if (Types.Count == 0) TypeId = 0;
                 // 兜底：确保调解员推荐一定会加载（不依赖 TypeId 变化触发）
                 if (Mediators.Count == 0) await LoadRecommendationsAsync();
-
-                _allProperties.Add(new DisputePropertyOption { PropertyId = null, Display = "不关联" });
-                var props = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 200 });
-                foreach (var p in props.Items)
-                {
-                    var path = string.IsNullOrEmpty(p.UnitPath) ? p.RoomNo : p.UnitPath;
-                    var display = path + (string.IsNullOrEmpty(p.OwnerName) ? string.Empty : " · " + p.OwnerName);
-                    _allProperties.Add(new DisputePropertyOption { PropertyId = p.Id, Display = display });
-                }
-                _propertyView = new ListCollectionView(_allProperties);
-                ApplyPropertyFilter();
-                OnPropertyChanged(nameof(PropertyView));
-
-                _allOwners.Add(new DisputeOwnerOption { OwnerId = null });
-                var owners = await Api.QueryOwnersAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 200 });
-                var pathByOwner = await LoadOwnerFullPathMapAsync();
-                foreach (var o in owners.Items)
-                {
-                    string fullPath = null;
-                    pathByOwner.TryGetValue(o.Id, out fullPath);
-                    _allOwners.Add(new DisputeOwnerOption { OwnerId = o.Id, Name = o.Name, Phone = o.Phone, FullPath = fullPath });
-                }
-                _ownerAView = new ListCollectionView(_allOwners);
-                _ownerBView = new ListCollectionView(_allOwners);
-                ApplyOwnerAFilter();
-                ApplyOwnerBFilter();
-                OnPropertyChanged(nameof(OwnerAView));
-                OnPropertyChanged(nameof(OwnerBView));
+                await SearchPropertiesCoreAsync(string.Empty, 1);
+                await SearchOwnersCoreAsync(true, string.Empty, 1);
+                await SearchOwnersCoreAsync(false, string.Empty, 1);
             }
             catch (Exception ex)
             {
@@ -292,80 +335,205 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        /// <summary>跨模块联查业主-房产关系，按业主 Id 取首个房产的完整房号（楼栋+单元+房号）。</summary>
-        private async Task<Dictionary<int, string>> LoadOwnerFullPathMapAsync()
+        private DispatcherTimer NewSearchDebounce(Func<Task> search)
         {
-            var map = new Dictionary<int, string>();
+            var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(300) };
+            timer.Tick += async (s, e) =>
+            {
+                timer.Stop();
+                try
+                {
+                    await search();
+                }
+                catch (Exception ex)
+                {
+                    ErrorText = "检索失败：" + ex.Message;
+                }
+            };
+            return timer;
+        }
+
+        private string CurrentPropertyKeyword()
+        {
+            return string.IsNullOrWhiteSpace(_propertySearch) ? string.Empty : _propertySearch.Trim();
+        }
+
+        private string CurrentOwnerAKeyword()
+        {
+            return string.IsNullOrWhiteSpace(_partyASearch) ? string.Empty : _partyASearch.Trim();
+        }
+
+        private string CurrentOwnerBKeyword()
+        {
+            return string.IsNullOrWhiteSpace(_partyBSearch) ? string.Empty : _partyBSearch.Trim();
+        }
+
+        private async Task SearchPropertiesCoreAsync(string keyword, int pageIndex)
+        {
+            int target = pageIndex < 1 ? 1 : pageIndex;
+            int seq = ++_propertySearchSeq;
             try
             {
-                var rels = await Api.QueryRelationsAsync(new BaseInfoQueryRequest { PageIndex = 1, PageSize = 500 });
-                foreach (var r in rels.Items)
+                var page = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest
                 {
-                    if (r.OwnerId <= 0 || map.ContainsKey(r.OwnerId)) continue;
-                    // 完整房号：楼栋 + 单元 + 房号（与房产列表同一口径，原值不转写）
-                    var full = r.PropertyUnitPath;
-                    if (string.IsNullOrWhiteSpace(full))
-                        full = (r.BuildingNo ?? string.Empty) + (r.UnitNo ?? string.Empty) + (r.PropertyRoomNo ?? string.Empty);
-                    if (!string.IsNullOrWhiteSpace(full)) map[r.OwnerId] = full.Trim();
+                    PageIndex = target,
+                    PageSize = PickerPageSize,
+                    Keyword = keyword
+                });
+                if (seq != _propertySearchSeq) { return; }
+                int last = LastPageOf(page.Total);
+                if (target > last)
+                {
+                    target = last;
+                    page = await Api.QueryPropertiesAsync(new BaseInfoQueryRequest
+                    {
+                        PageIndex = target,
+                        PageSize = PickerPageSize,
+                        Keyword = keyword
+                    });
+                    if (seq != _propertySearchSeq) { return; }
+                }
+
+                _propertyPage = target;
+                _propertyTotal = page.Total;
+                PropertyOptions.Clear();
+                PropertyOptions.Add(new DisputePropertyOption { PropertyId = null, Display = "不关联" });
+                foreach (var p in page.Items)
+                {
+                    string path = !string.IsNullOrWhiteSpace(p.UnitPath)
+                        ? p.UnitPath
+                        : AddressText.Build(p.BuildingNo, p.UnitNo, p.RoomNo);
+                    if (string.IsNullOrWhiteSpace(path)) { path = "房产 #" + p.Id; }
+                    PropertyOptions.Add(new DisputePropertyOption
+                    {
+                        PropertyId = p.Id,
+                        Display = path + (string.IsNullOrWhiteSpace(p.OwnerName) ? string.Empty : " · " + p.OwnerName)
+                    });
+                }
+                RaisePropertyPageState();
+            }
+            catch (Exception ex)
+            {
+                if (seq == _propertySearchSeq) { ErrorText = "关联房产加载失败：" + ex.Message; }
+            }
+        }
+
+        private async Task SearchOwnersCoreAsync(bool isPartyA, string keyword, int pageIndex)
+        {
+            int target = pageIndex < 1 ? 1 : pageIndex;
+            int seq = isPartyA ? ++_ownerASearchSeq : ++_ownerBSearchSeq;
+            try
+            {
+                var page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+                {
+                    PageIndex = target,
+                    PageSize = PickerPageSize,
+                    Keyword = keyword
+                });
+                if (!IsCurrentOwnerSearch(isPartyA, seq)) { return; }
+                int last = LastPageOf(page.Total);
+                if (target > last)
+                {
+                    target = last;
+                    page = await Api.QueryOwnersAsync(new BaseInfoQueryRequest
+                    {
+                        PageIndex = target,
+                        PageSize = PickerPageSize,
+                        Keyword = keyword
+                    });
+                    if (!IsCurrentOwnerSearch(isPartyA, seq)) { return; }
+                }
+
+                if (isPartyA)
+                {
+                    _ownerAPage = target;
+                    _ownerATotal = page.Total;
+                }
+                else
+                {
+                    _ownerBPage = target;
+                    _ownerBTotal = page.Total;
+                }
+
+                ObservableCollection<DisputeOwnerOption> options = isPartyA ? OwnerAOptions : OwnerBOptions;
+                options.Clear();
+                options.Add(new DisputeOwnerOption { OwnerId = null });
+                foreach (var o in page.Items)
+                {
+                    options.Add(new DisputeOwnerOption
+                    {
+                        OwnerId = o.Id,
+                        Name = o.Name,
+                        Phone = o.Phone,
+                        BuildingNo = o.BuildingNo,
+                        UnitNo = o.UnitNo,
+                        RoomNo = o.RoomNo
+                    });
+                }
+                RaiseOwnerPageState(isPartyA);
+            }
+            catch (Exception ex)
+            {
+                if (IsCurrentOwnerSearch(isPartyA, seq))
+                {
+                    ErrorText = (isPartyA ? "甲方" : "乙方") + "业主加载失败：" + ex.Message;
                 }
             }
-            catch { /* 完整房号查询失败不阻断登记 */ }
-            return map;
         }
 
-        /// <summary>房产下拉过滤：关键词命中 Display；「不关联」始终保留。</summary>
-        private void ApplyPropertyFilter()
+        private bool IsCurrentOwnerSearch(bool isPartyA, int seq)
         {
-            if (_propertyView == null) return;
-            string kw = _propertySearch?.Trim() ?? string.Empty;
-            _propertyView.Filter = o =>
-            {
-                var opt = o as DisputePropertyOption;
-                if (opt == null) return false;
-                if (!opt.PropertyId.HasValue) return true;
-                // T5 同类加固：已选中项恒定保留，避免过滤刷新把当前选中项挤出下拉
-                if (ReferenceEquals(opt, _selectedPropertyOption)) return true;
-                return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
-            };
-            _propertyView.Refresh();
+            return isPartyA ? seq == _ownerASearchSeq : seq == _ownerBSearchSeq;
         }
 
-        /// <summary>甲方业主下拉过滤：关键词命中 Display（含姓名/电话/楼栋）；「外部登记」始终保留。</summary>
-        private void ApplyOwnerAFilter()
+        private static int LastPageOf(int total)
         {
-            if (_ownerAView == null) return;
-            string kw = _partyASearch?.Trim() ?? string.Empty;
-            _ownerAView.Filter = o =>
-            {
-                var opt = o as DisputeOwnerOption;
-                if (opt == null) return false;
-                if (!opt.OwnerId.HasValue) return true;
-                if (ReferenceEquals(opt, _selectedOwnerAOption)) return true;
-                return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
-            };
-            _ownerAView.Refresh();
+            return total <= 0 ? 1 : ((total + PickerPageSize - 1) / PickerPageSize);
         }
 
-        /// <summary>乙方业主下拉过滤：关键词命中 Display（含姓名/电话/楼栋）；「外部登记」始终保留。</summary>
-        private void ApplyOwnerBFilter()
+        private void RaisePropertyPageState()
         {
-            if (_ownerBView == null) return;
-            string kw = _partyBSearch?.Trim() ?? string.Empty;
-            _ownerBView.Filter = o =>
+            OnPropertyChanged(nameof(PropertyPageText));
+            OnPropertyChanged(nameof(CanPropertyPrev));
+            OnPropertyChanged(nameof(CanPropertyNext));
+            PropertyPrevPageCommand.NotifyCanExecuteChanged();
+            PropertyNextPageCommand.NotifyCanExecuteChanged();
+        }
+
+        private void RaiseOwnerPageState(bool isPartyA)
+        {
+            OnPropertyChanged(isPartyA ? nameof(OwnerAPageText) : nameof(OwnerBPageText));
+            OnPropertyChanged(isPartyA ? nameof(CanOwnerAPrev) : nameof(CanOwnerBPrev));
+            OnPropertyChanged(isPartyA ? nameof(CanOwnerANext) : nameof(CanOwnerBNext));
+            IAsyncRelayCommand prev = isPartyA ? (IAsyncRelayCommand)OwnerAPrevPageCommand : OwnerBPrevPageCommand;
+            IAsyncRelayCommand next = isPartyA ? (IAsyncRelayCommand)OwnerANextPageCommand : OwnerBNextPageCommand;
+            prev.NotifyCanExecuteChanged();
+            next.NotifyCanExecuteChanged();
+        }
+
+        private void SetSearchText(ref string field, string display, string propertyName, bool isPartyA)
+        {
+            if (string.Equals(field, display, StringComparison.Ordinal)) { return; }
+            if (propertyName == nameof(PropertySearch)) { _suppressPropertySearch = true; }
+            else if (isPartyA) { _suppressOwnerASearch = true; }
+            else { _suppressOwnerBSearch = true; }
+            try
             {
-                var opt = o as DisputeOwnerOption;
-                if (opt == null) return false;
-                if (!opt.OwnerId.HasValue) return true;
-                if (ReferenceEquals(opt, _selectedOwnerBOption)) return true;
-                return kw.Length == 0 || (opt.Display ?? string.Empty).IndexOf(kw, StringComparison.OrdinalIgnoreCase) >= 0;
-            };
-            _ownerBView.Refresh();
+                field = display;
+                OnPropertyChanged(propertyName);
+            }
+            finally
+            {
+                if (propertyName == nameof(PropertySearch)) { _suppressPropertySearch = false; }
+                else if (isPartyA) { _suppressOwnerASearch = false; }
+                else { _suppressOwnerBSearch = false; }
+            }
         }
 
         private void ApplyPartyOwner(bool isPartyA)
         {
             int? ownerId = isPartyA ? _partyAOwnerId : _partyBOwnerId;
-            var opt = _allOwners.FirstOrDefault(o => o.OwnerId == ownerId);
+            var opt = isPartyA ? _selectedOwnerAOption : _selectedOwnerBOption;
             if (opt != null && opt.OwnerId.HasValue)
             {
                 // 引用业主：带出姓名与电话（只读展示）
@@ -557,18 +725,18 @@ namespace PropertyManagement.Client.ViewModels
             FormPropertyId = null;
             PartyAOwnerId = null;
             PartyBOwnerId = null;
-            _selectedPropertyOption = _allProperties.FirstOrDefault(o => !o.PropertyId.HasValue);
+            _selectedPropertyOption = PropertyOptions.FirstOrDefault(o => !o.PropertyId.HasValue);
             OnPropertyChanged(nameof(SelectedPropertyOption));
-            _selectedOwnerAOption = _allOwners.FirstOrDefault(o => !o.OwnerId.HasValue);
+            _selectedOwnerAOption = OwnerAOptions.FirstOrDefault(o => !o.OwnerId.HasValue);
             OnPropertyChanged(nameof(SelectedOwnerAOption));
-            _selectedOwnerBOption = _allOwners.FirstOrDefault(o => !o.OwnerId.HasValue);
+            _selectedOwnerBOption = OwnerBOptions.FirstOrDefault(o => !o.OwnerId.HasValue);
             OnPropertyChanged(nameof(SelectedOwnerBOption));
             PartyAName = string.Empty;
             PartyAPhone = string.Empty;
             PartyBName = string.Empty;
             PartyBPhone = string.Empty;
             Level = 0;
-            ExpectedAt = DateTime.Today;
+            ExpectedAt = null;
             Location = string.Empty;
             Detail = string.Empty;
             SelectedMediatorId = null;
@@ -579,6 +747,9 @@ namespace PropertyManagement.Client.ViewModels
             IsTypeAdd = false;
             NewTypeName = string.Empty;
             IsTypeDeleteVisible = false;
+            _ = SearchPropertiesCoreAsync(string.Empty, 1);
+            _ = SearchOwnersCoreAsync(true, string.Empty, 1);
+            _ = SearchOwnersCoreAsync(false, string.Empty, 1);
         }
     }
 }

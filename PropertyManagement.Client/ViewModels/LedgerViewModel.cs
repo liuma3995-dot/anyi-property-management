@@ -91,13 +91,20 @@ namespace PropertyManagement.Client.ViewModels
         private string _totalText = "0 条";
         private LedgerRow _selectedRow;
         private bool _isDetailVisible;
+        private LedgerEntryDetailDto _detail;
 
         private static readonly string[] BizTypes = { string.Empty, "payment", "expense", "refund" };
 
         public LedgerViewModel(IApiClient api) : base(api)
         {
             SearchCommand = new AsyncRelayCommand(LoadAsync);
-            CloseDetailCommand = new RelayCommand(() => IsDetailVisible = false);
+            ViewCommand = new AsyncRelayCommand<LedgerRow>(OpenDetailAsync);
+            CloseDetailCommand = new RelayCommand(() =>
+            {
+                IsDetailVisible = false;
+                Detail = null;
+                StatusText = DateTime.Now.ToString("HH:mm:ss ") + "流水明细已关闭";
+            });
             ExportExcelCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Excel));
             ExportPdfCommand = new AsyncRelayCommand(() => ExportAsync(ExportFormat.Pdf));
             _ = LoadSubjectsAsync();
@@ -127,7 +134,45 @@ namespace PropertyManagement.Client.ViewModels
 
         public bool IsDetailVisible { get { return _isDetailVisible; } set { SetProperty(ref _isDetailVisible, value); } }
 
+        public LedgerEntryDetailDto Detail
+        {
+            get { return _detail; }
+            private set
+            {
+                if (!SetProperty(ref _detail, value)) { return; }
+                OnPropertyChanged(nameof(HasBill));
+                OnPropertyChanged(nameof(NoBillVisible));
+                OnPropertyChanged(nameof(HasAdjustment));
+                OnPropertyChanged(nameof(HasExpense));
+                OnPropertyChanged(nameof(DetailTitle));
+                OnPropertyChanged(nameof(DetailBillNo));
+                OnPropertyChanged(nameof(DetailChargeItem));
+                OnPropertyChanged(nameof(DetailPayer));
+                OnPropertyChanged(nameof(DetailObject));
+                OnPropertyChanged(nameof(DetailCycle));
+                OnPropertyChanged(nameof(DetailAmount));
+                OnPropertyChanged(nameof(DetailPaid));
+                OnPropertyChanged(nameof(DetailUnpaid));
+                OnPropertyChanged(nameof(DetailBillStatus));
+                OnPropertyChanged(nameof(DetailDueAt));
+                OnPropertyChanged(nameof(DetailAdjustmentType));
+                OnPropertyChanged(nameof(DetailAdjustmentDirection));
+                OnPropertyChanged(nameof(DetailAdjustmentAmount));
+                OnPropertyChanged(nameof(DetailAdjustmentMethod));
+                OnPropertyChanged(nameof(DetailAdjustmentReason));
+                OnPropertyChanged(nameof(DetailAdjustmentOperator));
+                OnPropertyChanged(nameof(DetailExpenseCategory));
+                OnPropertyChanged(nameof(DetailExpenseDate));
+                OnPropertyChanged(nameof(DetailExpensePayee));
+                OnPropertyChanged(nameof(DetailExpenseAmount));
+                OnPropertyChanged(nameof(DetailExpenseNote));
+                OnPropertyChanged(nameof(DetailNoBillReason));
+            }
+        }
+
         public IAsyncRelayCommand SearchCommand { get; }
+
+        public IAsyncRelayCommand<LedgerRow> ViewCommand { get; }
 
         public IRelayCommand CloseDetailCommand { get; }
 
@@ -180,11 +225,123 @@ namespace PropertyManagement.Client.ViewModels
             }, null);
         }
 
-        public void OpenDetail(LedgerRow row)
+        public async Task OpenDetailAsync(LedgerRow row)
         {
             if (row == null) { return; }
             SelectedRow = row;
-            IsDetailVisible = true;
+            await RunAsync(async () =>
+            {
+                Detail = await Api.GetLedgerEntryDetailAsync(row.Dto.BizType, row.Dto.SourceId);
+                if (Detail == null)
+                {
+                    throw new InvalidOperationException("流水不存在或来源单据已删除");
+                }
+                IsDetailVisible = true;
+            }, "流水明细已加载");
+        }
+
+        public bool HasBill { get { return Detail != null && Detail.Bill != null; } }
+        public bool NoBillVisible { get { return Detail != null && Detail.Bill == null; } }
+        public bool HasAdjustment { get { return Detail != null && Detail.Adjustment != null; } }
+        public bool HasExpense { get { return Detail != null && Detail.Expense != null; } }
+
+        public string DetailTitle
+        {
+            get
+            {
+                if (Detail == null || Detail.Entry == null) { return "流水明细"; }
+                switch ((Detail.Entry.BizType ?? string.Empty).ToLowerInvariant())
+                {
+                    case "payment": return "收款流水与关联账单";
+                    case "reversed": return "红冲流水与关联账单";
+                    case "refund": return "退款／调整单与关联账单";
+                    case "expense": return "支出流水明细";
+                    default: return "流水明细";
+                }
+            }
+        }
+
+        public string DetailBillNo { get { return HasBill ? "BILL-" + Detail.Bill.Id.ToString("D4") : "—"; } }
+        public string DetailChargeItem { get { return HasBill && !string.IsNullOrWhiteSpace(Detail.Bill.ChargeItemName) ? Detail.Bill.ChargeItemName : "—"; } }
+        public string DetailPayer { get { return HasBill ? FirstNonEmpty(Detail.Bill.OwnerName, Detail.Bill.PayerName, Detail.Bill.PropertyNo) : "—"; } }
+        public string DetailObject
+        {
+            get
+            {
+                if (!HasBill) { return "—"; }
+                return FirstNonEmpty(
+                    AddressText.Build(Detail.Bill.BuildingNo, Detail.Bill.UnitNo, Detail.Bill.RoomNo),
+                    Detail.Bill.SpaceNo,
+                    Detail.Bill.PropertyNo);
+            }
+        }
+        public string DetailCycle { get { return HasBill && !string.IsNullOrWhiteSpace(Detail.Bill.CyclePeriod) ? Detail.Bill.CyclePeriod : "—"; } }
+        public string DetailAmount { get { return HasBill ? Money(Detail.Bill.Amount) : "—"; } }
+        public string DetailPaid { get { return HasBill ? Money(Detail.Bill.PaidAmount) : "—"; } }
+        public string DetailUnpaid { get { return HasBill ? Money(Math.Max(0m, Detail.Bill.Amount - Detail.Bill.PaidAmount)) : "—"; } }
+        public string DetailBillStatus { get { return HasBill ? BillStatusText(Detail.Bill.Status) : "—"; } }
+        public string DetailDueAt { get { return HasBill ? Detail.Bill.DueAt.ToString("yyyy-MM-dd") : "—"; } }
+
+        public string DetailAdjustmentType
+        {
+            get
+            {
+                if (!HasAdjustment) { return "—"; }
+                switch (Detail.Adjustment.RefundType)
+                {
+                    case RefundType.Refund: return "退款";
+                    case RefundType.Discount: return "费用减免";
+                    default: return "财务调整";
+                }
+            }
+        }
+        public string DetailAdjustmentDirection
+        {
+            get
+            {
+                if (!HasAdjustment) { return "—"; }
+                if (Detail.Adjustment.RefundType != RefundType.Adjustment) { return "—"; }
+                return Detail.Adjustment.AdjustDir == 2 ? "调减冲正（−）" : "调增补收（＋）";
+            }
+        }
+        public string DetailAdjustmentAmount { get { return HasAdjustment ? Money(Detail.Adjustment.Amount) : "—"; } }
+        public string DetailAdjustmentMethod { get { return HasAdjustment ? FirstNonEmpty(Detail.Adjustment.Method, "—") : "—"; } }
+        public string DetailAdjustmentReason { get { return HasAdjustment ? FirstNonEmpty(Detail.Adjustment.Reason, "—") : "—"; } }
+        public string DetailAdjustmentOperator { get { return HasAdjustment ? FirstNonEmpty(Detail.Adjustment.OperatorName, "—") : "—"; } }
+
+        public string DetailExpenseCategory { get { return HasExpense ? FirstNonEmpty(Detail.Expense.CategoryName, "—") : "—"; } }
+        public string DetailExpenseDate { get { return HasExpense ? Detail.Expense.ExpenseDate.ToString("yyyy-MM-dd") : "—"; } }
+        public string DetailExpensePayee { get { return HasExpense ? FirstNonEmpty(Detail.Expense.Payee, "—") : "—"; } }
+        public string DetailExpenseAmount { get { return HasExpense ? Money(Detail.Expense.Amount) : "—"; } }
+        public string DetailExpenseNote { get { return HasExpense ? FirstNonEmpty(Detail.Expense.Note, "—") : "—"; } }
+        public string DetailNoBillReason { get { return Detail == null ? string.Empty : (Detail.NoBillReason ?? "该流水无关联账单"); } }
+
+        private static string Money(decimal value)
+        {
+            return "¥" + value.ToString("N2");
+        }
+
+        private static string FirstNonEmpty(params string[] values)
+        {
+            foreach (string value in values ?? new string[0])
+            {
+                if (!string.IsNullOrWhiteSpace(value)) { return value.Trim(); }
+            }
+            return "—";
+        }
+
+        private static string BillStatusText(BillStatus status)
+        {
+            switch (status)
+            {
+                case BillStatus.Pending: return "待缴";
+                case BillStatus.Partial: return "部分缴纳";
+                case BillStatus.Overdue: return "逾期";
+                case BillStatus.Paid: return "已缴";
+                case BillStatus.Reversed: return "已冲正";
+                case BillStatus.Draft: return "草稿";
+                default: return "—";
+            }
         }
 
         public async Task LoadAsync()

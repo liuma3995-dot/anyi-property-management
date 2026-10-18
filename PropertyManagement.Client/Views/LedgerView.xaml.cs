@@ -25,14 +25,14 @@ namespace PropertyManagement.Client.Views
             }
         }
 
-        /// <summary>行双击 → 查看关联单据详情（T4F-7-1）。</summary>
+        /// <summary>行双击 → 与「查看」共用同一份流水来源明细。</summary>
         private void DataGrid_MouseDoubleClick(object sender, MouseButtonEventArgs e)
         {
             var grid = sender as DataGrid;
             if (grid == null || grid.SelectedItem == null) { return; }
             var vm = DataContext as LedgerViewModel;
             if (vm == null) { return; }
-            vm.OpenDetail(grid.SelectedItem as LedgerRow);
+            _ = vm.OpenDetailAsync(grid.SelectedItem as LedgerRow);
         }
     }
 }

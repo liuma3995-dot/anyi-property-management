@@ -138,6 +138,13 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="时间周期" Width="176" Binding="{Binding PeriodText}">
+                        <DataGridTextColumn.ElementStyle>
+                            <Style TargetType="TextBlock" BasedOn="{StaticResource GridCellText}">
+                                <Setter Property="ToolTip" Value="{Binding PeriodText}" />
+                            </Style>
+                        </DataGridTextColumn.ElementStyle>
+                    </DataGridTextColumn>
                     <DataGridTextColumn Header="绑定房产" Width="*" Binding="{Binding BindProperty}" ElementStyle="{StaticResource GridCellText}" />
                     <!-- CHG-v1.1.0-11：租金/租期至下线（车位不再承载计费规则，定价统一由收费项目维护） -->
                     <DataGridTextColumn Header="绑定业主" Width="120" Binding="{Binding OwnerName}" ElementStyle="{StaticResource GridCellText}" />
@@ -162,28 +169,52 @@
 
         <!-- 新增弹层 -->
         <Border Grid.RowSpan="7" Background="#66000000" Visibility="{Binding IsFormVisible, Converter={StaticResource BoolToVis}}">
-            <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+            <Border Width="440" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
                     <TextBlock Text="{Binding FormTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" Margin="0,0,0,18" />
                     <TextBlock Text="车位编号 / 区域" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
-                        <TextBox x:Name="ParkingSpaceNoBox" Text="{Binding FormSpaceNo, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="170" />
-                        <TextBox Text="{Binding FormArea, UpdateSourceTrigger=PropertyChanged}" Height="32" Width="170" Margin="10,0,0,0" hc:InfoElement.Placeholder="区域，如 B1 层" />
-                    </StackPanel>
+                    <Grid Margin="0,6,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox x:Name="ParkingSpaceNoBox" Grid.Column="0" Text="{Binding FormSpaceNo, UpdateSourceTrigger=PropertyChanged}" Height="32" />
+                        <TextBox Grid.Column="2" Text="{Binding FormArea, UpdateSourceTrigger=PropertyChanged}" Height="32" hc:InfoElement.Placeholder="区域，如 B1 层" />
+                    </Grid>
                     <TextBlock Text="类型 / 状态" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,12">
-                        <ComboBox x:Name="ParkingTypeCombo" SelectedValue="{Binding FormType}" SelectedValuePath="Tag" Width="170">
+                    <Grid Margin="0,6,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="ParkingTypeCombo" Grid.Column="0" SelectedValue="{Binding FormType}" SelectedValuePath="Tag">
                             <ComboBoxItem Content="产权" Tag="PropertyRight" />
                             <ComboBoxItem Content="普通" Tag="CivilDefense" />
                             <ComboBoxItem Content="临时" Tag="Temporary" />
                         </ComboBox>
-                        <ComboBox SelectedValue="{Binding FormStatus}" SelectedValuePath="Tag" Width="170" Margin="10,0,0,0">
+                        <ComboBox Grid.Column="2" SelectedValue="{Binding FormStatus}" SelectedValuePath="Tag">
                             <ComboBoxItem Content="已售" Tag="Owned" />
                             <ComboBoxItem Content="已租" Tag="Rented" />
                             <ComboBoxItem Content="空置" Tag="Vacant" />
                             <ComboBoxItem Content="维修中" Tag="Repairing" />
                         </ComboBox>
-                    </StackPanel>
+                    </Grid>
+                    <TextBlock Text="时间周期（选填）" Foreground="{StaticResource TextSecondaryBrush}" FontSize="12" />
+                    <Grid Margin="0,6,0,12">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <hc:DatePicker Grid.Column="0" SelectedDate="{Binding FormPeriodStart, Mode=TwoWay}" Height="32"
+                                       hc:InfoElement.Placeholder="起始日期" />
+                        <hc:DatePicker Grid.Column="2" SelectedDate="{Binding FormPeriodEnd, Mode=TwoWay}" Height="32"
+                                       hc:InfoElement.Placeholder="终止日期" />
+                    </Grid>
+                    <TextBlock Text="起始、终止日期可同时留空；填写时两项必填且起始不得晚于终止。"
+                               Foreground="{StaticResource TextMutedBrush}" FontSize="10" TextWrapping="Wrap" Margin="0,-6,0,10" />
                     <!-- CHG-v1.1.0-12：绑定房产下线（改由「绑定业主 → 自动引用房产」，避免与业主-房产关系模块歧义） -->
                     <!-- CHG-v1.1.0-11：租金/租期至下线（定价统一由收费项目维护）；表单新增绑定业主 -->
                     <!-- CHG-v1.4.1-05：候选改为「服务端检索 + 下拉内翻页」（原可编辑 ComboBox 只预取前 200 位业主，
@@ -255,6 +286,10 @@
                             <TextBlock Text="{Binding ViewRow.OwnerName}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
                         </StackPanel>
                     </Grid>
+                    <StackPanel Margin="0,14,0,0">
+                        <TextBlock Text="时间周期" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                        <TextBlock Text="{Binding ViewRow.PeriodText}" Foreground="{StaticResource TextPrimaryBrush}" FontSize="13" Margin="0,4,0,0" />
+                    </StackPanel>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,20,0,0">
                         <Button Style="{StaticResource ButtonSecondary}" Content="关闭" Command="{Binding CloseViewCommand}" />
                     </StackPanel>

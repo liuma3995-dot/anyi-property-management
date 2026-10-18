@@ -71,6 +71,10 @@ namespace PropertyManagement.Contract.BaseInfo
         public decimal? MonthlyRent { get; set; }
         public RentMode RentMode { get; set; }
         public DateTime? RentTo { get; set; }
+        /// <summary>车位资料时间周期起始日；与 PeriodEnd 同时为空或同时填写。</summary>
+        public DateTime? PeriodStart { get; set; }
+        /// <summary>车位资料时间周期终止日；与 PeriodStart 同时为空或同时填写。</summary>
+        public DateTime? PeriodEnd { get; set; }
     }
 
     /// <summary>基础信息查询条件（房产/业主/车位，分页）。</summary>

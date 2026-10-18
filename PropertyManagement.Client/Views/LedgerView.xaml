@@ -121,6 +121,15 @@
                             </DataGridTextColumn.ElementStyle>
                         </DataGridTextColumn>
                         <DataGridTextColumn Header="经手人" Width="100" Binding="{Binding OperatorName}" ElementStyle="{StaticResource GridCellText}" />
+                        <DataGridTemplateColumn Header="操作" Width="64">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate>
+                                    <Button Style="{StaticResource LinkButton}" Content="查看"
+                                            Command="{Binding DataContext.ViewCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
                     </DataGrid.Columns>
                 </DataGrid>
             </Grid>
@@ -133,61 +142,149 @@
             <TextBlock Text="{Binding ErrorText}" FontSize="11" Foreground="{StaticResource DangerBrush}" TextWrapping="Wrap" />
         </StackPanel>
 
-        <!-- ============ 关联单据详情浮层（行点击，T4F-7-1） ============ -->
+        <!-- ============ 流水与来源单据明细（点击「查看」或双击行） ============ -->
         <Grid Grid.Row="0" Grid.RowSpan="5" Visibility="{Binding IsDetailVisible, Converter={StaticResource BoolToVis}}">
             <Border Background="#66000000" />
-            <Border Width="430" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
+            <Border Width="640" MaxHeight="690" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
-                    <TextBlock Text="关联单据详情" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
-                    <TextBlock Text="收支明细流水（只读）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}"
-                               Margin="0,6,0,18" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding DetailTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="收支明细流水（只读）" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" Margin="0,5,0,14" />
+                    <ScrollViewer MaxHeight="560" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel>
+                            <Border Background="{StaticResource SurfaceAltBrush}" CornerRadius="6" Padding="12,9">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="88" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="流水号" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedRow.NoText}" FontSize="12" />
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="日期" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding SelectedRow.DateText}" FontSize="12" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="类型" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedRow.BizTypeText}" FontSize="12" />
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="金额" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding SelectedRow.AmountText}" FontSize="12" FontWeight="SemiBold" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="付款人" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedRow.OwnerNameText}" FontSize="12" />
+                                    <TextBlock Grid.Row="4" Grid.Column="2" Text="关联单据" Foreground="{StaticResource TextMutedBrush}" FontSize="11" />
+                                    <TextBlock Grid.Row="4" Grid.Column="3" Text="{Binding SelectedRow.BizNo}" FontSize="12" TextWrapping="Wrap" />
+                                </Grid>
+                            </Border>
 
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="96" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="9" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="流水号" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedRow.NoText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="日期" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedRow.DateText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="4" Grid.Column="0" Text="类型" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding SelectedRow.BizTypeText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="6" Grid.Column="0" Text="项目" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding SelectedRow.Category}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="8" Grid.Column="0" Text="金额" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding SelectedRow.AmountText}" FontSize="12" FontWeight="SemiBold" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="10" Grid.Column="0" Text="支付方式" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="10" Grid.Column="1" Text="{Binding SelectedRow.PayMethodText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="12" Grid.Column="0" Text="关联单据" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="12" Grid.Column="1" Text="{Binding SelectedRow.BizNo}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <TextBlock Grid.Row="14" Grid.Column="0" Text="付款人" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="14" Grid.Column="1" Text="{Binding SelectedRow.OwnerNameText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                        <!-- CHG-v1.1.2-05：详情同步展示「楼栋/房号」 -->
-                        <TextBlock Grid.Row="16" Grid.Column="0" Text="楼栋/房号/单元" FontSize="12" Foreground="{StaticResource TextSecondaryBrush}" />
-                        <TextBlock Grid.Row="16" Grid.Column="1" Text="{Binding SelectedRow.ObjectText}" FontSize="12" Foreground="{StaticResource TextPrimaryBrush}" />
-                    </Grid>
+                            <StackPanel Visibility="{Binding HasBill, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="账单明细" FontSize="13" FontWeight="SemiBold" Margin="0,16,0,8" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="账单号" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DetailBillNo}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="收费项目" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding DetailChargeItem}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="缴费对象" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DetailObject}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="缴费人" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding DetailPayer}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="账单期间" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Text="{Binding DetailCycle}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="4" Grid.Column="2" Text="到期日" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="3" Text="{Binding DetailDueAt}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="应收" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Text="{Binding DetailAmount}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="2" Text="实缴" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="3" Text="{Binding DetailPaid}" />
+                                    <TextBlock Grid.Row="8" Grid.Column="0" Text="未收" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="8" Grid.Column="1" Text="{Binding DetailUnpaid}" Foreground="{StaticResource DangerBrush}" />
+                                    <TextBlock Grid.Row="8" Grid.Column="2" Text="状态" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="8" Grid.Column="3" Text="{Binding DetailBillStatus}" />
+                                </Grid>
+                            </StackPanel>
 
-                    <Button Style="{StaticResource ButtonPrimary}" Content="关闭" FontSize="13" Margin="0,22,0,0"
+                            <Border Background="{StaticResource WarningSoftBrush}" CornerRadius="6" Padding="12,10" Margin="0,14,0,0"
+                                    Visibility="{Binding NoBillVisible, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding DetailNoBillReason}" Foreground="{StaticResource WarningBrush}" FontSize="12" TextWrapping="Wrap" />
+                            </Border>
+
+                            <StackPanel Visibility="{Binding HasAdjustment, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="调整单据" FontSize="13" FontWeight="SemiBold" Margin="0,16,0,8" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="单据类型" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DetailAdjustmentType}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="方向" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding DetailAdjustmentDirection}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="金额" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DetailAdjustmentAmount}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="方式" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding DetailAdjustmentMethod}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="经手人" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding DetailAdjustmentOperator}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="0" Text="原因" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="6" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding DetailAdjustmentReason}" TextWrapping="Wrap" />
+                                </Grid>
+                            </StackPanel>
+
+                            <StackPanel Visibility="{Binding HasExpense, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="支出单据" FontSize="13" FontWeight="SemiBold" Margin="0,16,0,8" />
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="92" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" /><RowDefinition Height="8" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="支出分类" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding DetailExpenseCategory}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="2" Text="支出日期" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding DetailExpenseDate}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="0" Text="收款方" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding DetailExpensePayee}" TextWrapping="Wrap" />
+                                    <TextBlock Grid.Row="2" Grid.Column="2" Text="金额" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding DetailExpenseAmount}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="0" Text="备注" Foreground="{StaticResource TextMutedBrush}" />
+                                    <TextBlock Grid.Row="4" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding DetailExpenseNote}" TextWrapping="Wrap" />
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Button Style="{StaticResource ButtonPrimary}" Content="关闭" FontSize="13" Margin="0,16,0,0"
                             HorizontalAlignment="Right" Command="{Binding CloseDetailCommand}" />
                 </StackPanel>
             </Border>

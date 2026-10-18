@@ -419,6 +419,12 @@ namespace PropertyManagement.Client.Services
             return GetAsync<PageResult<LedgerEntryDto>>("reports/ledger" + Query(request));
         }
 
+        public Task<LedgerEntryDetailDto> GetLedgerEntryDetailAsync(string bizType, int sourceId)
+        {
+            return GetAsync<LedgerEntryDetailDto>(
+                "reports/ledger/" + Uri.EscapeDataString(bizType ?? string.Empty) + "/" + sourceId);
+        }
+
         public Task<FinancialReportDto> GetFinancialReportAsync(FinancialReportQueryRequest request)
         {
             return GetAsync<FinancialReportDto>("reports/financial" + Query(request));

@@ -156,6 +156,7 @@ namespace PropertyManagement.Client.Services
         /// <summary>支出记录批量删除（v1.1.0-⑤）：软删留痕（BR-FIN-10）。</summary>
         Task<RecordBatchDeleteResultDto> BatchDeleteExpensesAsync(RecordBatchDeleteRequest request);
         Task<PageResult<LedgerEntryDto>> GetLedgerAsync(LedgerQueryRequest request);
+        Task<LedgerEntryDetailDto> GetLedgerEntryDetailAsync(string bizType, int sourceId);
 
         /// <summary>CHG-v1.1.2-05：收支明细流水导出（Excel/PDF）。</summary>
         Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request);

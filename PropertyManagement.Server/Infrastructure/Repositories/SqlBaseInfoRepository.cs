@@ -1006,6 +1006,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             SqlAddress.BuildingUnitRoom("bld.building_no", "u.unit_no", "pr.room_no") + " AS BindingProperty, " +
             "COALESCE(o.name, '') AS OwnerName, " +
             "p.monthly_rent AS MonthlyRent, p.rent_mode AS RentMode, p.rent_to AS RentTo, " +
+            "p.period_start AS PeriodStart, p.period_end AS PeriodEnd, " +
             "CASE p.status WHEN 0 THEN '已售' WHEN 1 THEN '已租' WHEN 2 THEN '空置' ELSE '维修中' END AS StatusText, " +
             "CASE p.space_type WHEN 0 THEN '产权' WHEN 1 THEN '普通' ELSE '临时' END AS SpaceTypeText, " +
             "p.del_flag AS DelFlag, p.created_at AS CreatedAt, p.updated_at AS UpdatedAt";
@@ -1069,9 +1070,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
         public int InsertParking(IDbConnection connection, IDbTransaction transaction, ParkingSpaceDto dto)
         {
             return connection.ExecuteScalar<int>(
-                "INSERT INTO t_parking_space (space_no, area, space_type, status, property_id, owner_id, monthly_rent, rent_mode, rent_to, del_flag) " +
-                "VALUES (@SpaceNo, @Area, @SpaceType, @Status, @PropertyId, @OwnerId, @MonthlyRent, @RentMode, @RentTo, 0); SELECT last_insert_rowid();",
-                new { dto.SpaceNo, dto.Area, dto.SpaceType, dto.Status, dto.PropertyId, dto.OwnerId, dto.MonthlyRent, dto.RentMode, dto.RentTo }, transaction);
+                "INSERT INTO t_parking_space (space_no, area, space_type, status, property_id, owner_id, monthly_rent, rent_mode, rent_to, period_start, period_end, del_flag) " +
+                "VALUES (@SpaceNo, @Area, @SpaceType, @Status, @PropertyId, @OwnerId, @MonthlyRent, @RentMode, @RentTo, @PeriodStart, @PeriodEnd, 0); SELECT last_insert_rowid();",
+                new { dto.SpaceNo, dto.Area, dto.SpaceType, dto.Status, dto.PropertyId, dto.OwnerId, dto.MonthlyRent, dto.RentMode, dto.RentTo, dto.PeriodStart, dto.PeriodEnd }, transaction);
         }
 
         public void UpdateParking(IDbConnection connection, IDbTransaction transaction, ParkingSpaceDto dto)
@@ -1079,8 +1080,9 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
             connection.Execute(
                 "UPDATE t_parking_space SET space_no = @SpaceNo, area = @Area, space_type = @SpaceType, status = @Status, " +
                 "property_id = @PropertyId, owner_id = @OwnerId, monthly_rent = @MonthlyRent, rent_mode = @RentMode, rent_to = @RentTo, " +
+                "period_start = @PeriodStart, period_end = @PeriodEnd, " +
                 "updated_at = datetime('now','localtime') WHERE id = @Id AND del_flag = 0",
-                new { dto.Id, dto.SpaceNo, dto.Area, dto.SpaceType, dto.Status, dto.PropertyId, dto.OwnerId, dto.MonthlyRent, dto.RentMode, dto.RentTo }, transaction);
+                new { dto.Id, dto.SpaceNo, dto.Area, dto.SpaceType, dto.Status, dto.PropertyId, dto.OwnerId, dto.MonthlyRent, dto.RentMode, dto.RentTo, dto.PeriodStart, dto.PeriodEnd }, transaction);
         }
 
         public void SoftDeleteParking(IDbConnection connection, IDbTransaction transaction, int id)

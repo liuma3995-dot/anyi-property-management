@@ -1119,6 +1119,16 @@ namespace PropertyManagement.Client.Services
             return Page(_ledger);
         }
 
+        public Task<LedgerEntryDetailDto> GetLedgerEntryDetailAsync(string bizType, int sourceId)
+        {
+            LedgerEntryDto entry = _ledger.FirstOrDefault(x => x.BizType == bizType && x.SourceId == sourceId);
+            return Task.FromResult(entry == null ? null : new LedgerEntryDetailDto
+            {
+                Entry = entry,
+                NoBillReason = entry.BizType == "expense" ? "支出流水无关联账单" : "该流水未关联账单"
+            });
+        }
+
         /// <summary>CHG-v1.1.2-05：流水导出（演示客户端只返回一条导出记录，不落真实文件）。</summary>
         public Task<ReportLogDto> ExportLedgerAsync(LedgerExportRequest request)
         {
@@ -1575,10 +1585,10 @@ namespace PropertyManagement.Client.Services
             Task.FromResult(new PageResult<ParkingSpaceDto> { PageIndex = request.PageIndex, PageSize = request.PageSize, Total = 0, Items = new List<ParkingSpaceDto>() });
 
         public Task<ParkingSpaceDto> CreateParkingAsync(ParkingSpaceRequest request) =>
-            Task.FromResult(new ParkingSpaceDto { Id = 99, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status });
+            Task.FromResult(new ParkingSpaceDto { Id = 99, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status, PeriodStart = request.PeriodStart, PeriodEnd = request.PeriodEnd });
 
         public Task<ParkingSpaceDto> UpdateParkingAsync(int id, ParkingSpaceRequest request) =>
-            Task.FromResult(new ParkingSpaceDto { Id = id, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status });
+            Task.FromResult(new ParkingSpaceDto { Id = id, SpaceNo = request.SpaceNo, SpaceType = request.SpaceType, Status = request.Status, PeriodStart = request.PeriodStart, PeriodEnd = request.PeriodEnd });
 
         public Task DeleteParkingAsync(int id) => Task.CompletedTask;
 

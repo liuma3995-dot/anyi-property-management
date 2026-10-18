@@ -46,6 +46,16 @@ namespace PropertyManagement.Client.ViewModels
         public string RentText { get { return Dto.MonthlyRent.HasValue ? ("¥" + Dto.MonthlyRent.Value.ToString("0.00") + "/" + (Dto.RentMode == RentMode.Yearly ? "年" : "月")) : "—"; } }
         public string RentTo { get { return Dto.RentTo?.ToString("yyyy-MM-dd") ?? "—"; } }
         public string RentPeriodText { get { return RentText + " / " + RentTo; } }
+        /// <summary>车位资料时间周期；未设置时显示明确空态。</summary>
+        public string PeriodText
+        {
+            get
+            {
+                return Dto.PeriodStart.HasValue && Dto.PeriodEnd.HasValue
+                    ? Dto.PeriodStart.Value.ToString("yyyy-MM-dd") + " ~ " + Dto.PeriodEnd.Value.ToString("yyyy-MM-dd")
+                    : "未设置";
+            }
+        }
     }
 
     /// <summary>
@@ -93,6 +103,8 @@ namespace PropertyManagement.Client.ViewModels
         private RentMode _formRentMode = RentMode.Monthly;
         private decimal? _formRent;
         private DateTime? _formRentTo;
+        private DateTime? _formPeriodStart;
+        private DateTime? _formPeriodEnd;
         // CHG-v1.1.0-11：绑定业主（车位维护表单内直接维护，替代已下线的租金/租期至）
         private int? _formOwnerId;
         private string _ownerSearchText = string.Empty;
@@ -205,6 +217,8 @@ namespace PropertyManagement.Client.ViewModels
         public RentMode FormRentMode { get { return _formRentMode; } set { SetProperty(ref _formRentMode, value); } }
         public decimal? FormRent { get { return _formRent; } set { SetProperty(ref _formRent, value); } }
         public DateTime? FormRentTo { get { return _formRentTo; } set { SetProperty(ref _formRentTo, value); } }
+        public DateTime? FormPeriodStart { get { return _formPeriodStart; } set { SetProperty(ref _formPeriodStart, value); } }
+        public DateTime? FormPeriodEnd { get { return _formPeriodEnd; } set { SetProperty(ref _formPeriodEnd, value); } }
         public string CardUnderNote { get { return _cardUnderNote; } set { SetProperty(ref _cardUnderNote, value); } }
 
         public IAsyncRelayCommand QueryCommand { get; }
@@ -283,6 +297,8 @@ namespace PropertyManagement.Client.ViewModels
                 OnPropertyChanged(nameof(SelectedOwner));
                 FormRent = null;
                 FormRentTo = null;
+                FormPeriodStart = null;
+                FormPeriodEnd = null;
                 IsFormVisible = true;
             }, "正在加载可绑定房产…");
         }
@@ -304,6 +320,8 @@ namespace PropertyManagement.Client.ViewModels
                 FormRentMode = row.Dto.RentMode;
                 FormRent = row.Dto.MonthlyRent;
                 FormRentTo = row.Dto.RentTo;
+                FormPeriodStart = row.Dto.PeriodStart;
+                FormPeriodEnd = row.Dto.PeriodEnd;
                 IsFormVisible = true;
             }, "正在加载车位信息…");
         }
@@ -411,7 +429,15 @@ namespace PropertyManagement.Client.ViewModels
                     try { dto = await Api.GetOwnerAsync(ownerId.Value); }
                     catch (Exception) { dto = null; }
                     _selectedOwner = dto != null
-                        ? new OwnerPickItem { Id = dto.Id, Name = dto.Name, Phone = dto.Phone }
+                        ? new OwnerPickItem
+                        {
+                            Id = dto.Id,
+                            Name = dto.Name,
+                            Phone = dto.Phone,
+                            BuildingNo = dto.BuildingNo,
+                            UnitNo = dto.UnitNo,
+                            RoomNo = dto.RoomNo
+                        }
                         : new OwnerPickItem { Id = ownerId.Value, Name = fallbackName, Phone = null };
                 }
                 _ownerSearchText = _selectedOwner == null ? string.Empty : _selectedOwner.DisplayText;
@@ -472,6 +498,10 @@ namespace PropertyManagement.Client.ViewModels
             // CHG-v1.1.0-12：产权车位售出改为校验「绑定业主」（房产权属由服务端按业主自动引用）
             if (FormType == ParkingSpaceType.PropertyRight && FormStatus == ParkingSpaceStatus.Owned && !FormOwnerId.HasValue)
             { ErrorText = "产权车位标记为已售需绑定业主（房产权属将按其名下房产自动引用）"; return; }
+            if (FormPeriodStart.HasValue != FormPeriodEnd.HasValue)
+            { ErrorText = "起始日期和终止日期需要同时填写，或同时留空"; return; }
+            if (FormPeriodStart.HasValue && FormPeriodEnd.HasValue && FormPeriodStart.Value.Date > FormPeriodEnd.Value.Date)
+            { ErrorText = "起始日期不得晚于终止日期"; return; }
             var request = new ParkingSpaceRequest
             {
                 SpaceNo = FormSpaceNo.Trim(),
@@ -485,7 +515,9 @@ namespace PropertyManagement.Client.ViewModels
                 OwnerId = FormOwnerId,
                 MonthlyRent = FormRent,
                 RentMode = FormRentMode,
-                RentTo = FormRentTo
+                RentTo = FormRentTo,
+                PeriodStart = FormPeriodStart,
+                PeriodEnd = FormPeriodEnd
             };
             await RunAsync(async () =>
             {

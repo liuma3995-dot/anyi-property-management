@@ -570,6 +570,8 @@ namespace PropertyManagement.Contract.Finance
         public DateTime? To { get; set; }
         public string BizType { get; set; }
         public string Subject { get; set; }  // T4F-7-1：科目筛选（收款→收费项目名、支出→支出分类名等）
+        /// <summary>来源表主键（仅供流水详情按 BizType + SourceId 精确定位）。</summary>
+        public int? SourceId { get; set; }
     }
 
     /// <summary>财务报表查询（UC-FIN-009：month/quarter + 期间）。</summary>
