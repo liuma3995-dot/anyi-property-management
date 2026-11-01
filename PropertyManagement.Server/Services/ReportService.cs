@@ -1942,7 +1942,7 @@ namespace PropertyManagement.Server.Services
                 sheet.Cell(1, 1).Value = "安怡物业 · 收支明细流水";
                 sheet.Cell(2, 1).Value = "导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 条";
 
-                string[] headers = { "流水号", "日期", "收/支", "项目", "楼栋/房号", "付款人", "金额", "支付方式", "关联单据", "经手人" };
+                string[] headers = { "流水号", "日期", "收/支", "项目", "账单期间", "楼栋/房号/单元", "付款人", "金额", "支付方式", "关联单据", "经手人" };
                 int start = 4;
                 for (int c = 1; c <= headers.Length; c++)
                 {
@@ -1957,12 +1957,13 @@ namespace PropertyManagement.Server.Services
                     sheet.Cell(row, 2).Value = item.BizTime.ToString("yyyy-MM-dd HH:mm");
                     sheet.Cell(row, 3).Value = item.InAmount > 0 ? "收" : "支";
                     sheet.Cell(row, 4).Value = item.Subject ?? string.Empty;
-                    sheet.Cell(row, 5).Value = item.ObjectText ?? string.Empty;
-                    sheet.Cell(row, 6).Value = item.OwnerName ?? string.Empty;
-                    sheet.Cell(row, 7).Value = item.InAmount != 0 ? item.InAmount : -item.OutAmount;
-                    sheet.Cell(row, 8).Value = item.PayMethod ?? string.Empty;
-                    sheet.Cell(row, 9).Value = item.BizNo ?? string.Empty;
-                    sheet.Cell(row, 10).Value = item.OperatorName ?? string.Empty;
+                    sheet.Cell(row, 5).Value = LedgerCycleText(item);
+                    sheet.Cell(row, 6).Value = item.ObjectText ?? string.Empty;
+                    sheet.Cell(row, 7).Value = item.OwnerName ?? string.Empty;
+                    sheet.Cell(row, 8).Value = item.InAmount != 0 ? item.InAmount : -item.OutAmount;
+                    sheet.Cell(row, 9).Value = item.PayMethod ?? string.Empty;
+                    sheet.Cell(row, 10).Value = item.BizNo ?? string.Empty;
+                    sheet.Cell(row, 11).Value = item.OperatorName ?? string.Empty;
                     row++;
                 }
                 if (items.Count > 0)
@@ -1986,7 +1987,8 @@ namespace PropertyManagement.Server.Services
                         sheet.Cell(sumRow, c).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
                     }
                 }
-                for (int c = 1; c <= headers.Length; c++) { sheet.Column(c).Width = 16; }
+                int[] widths = { 14, 17, 8, 18, 24, 22, 14, 14, 14, 24, 14 };
+                for (int c = 1; c <= headers.Length; c++) { sheet.Column(c).Width = widths[c - 1]; }
                 workbook.SaveAs(filePath);
             }
         }
@@ -2006,9 +2008,9 @@ namespace PropertyManagement.Server.Services
             // CHG-v1.1.2-21 / CHG-v1.1.2-23：PDF 列布局按 A4 版面重排 ——
             // 每列先按「实际量宽（MeasureString）」裁剪，只有真正放不下才截断，
             // 并把「关联单据」列加宽到 120pt，使 RF-yyyyMMddHHmmssfff-NN / PAY-yyyyMMdd-NNNN 完整显示。
-            string[] headers = { "流水号", "日期", "收/支", "项目", "楼栋/房号/单元", "付款人", "金额", "关联单据" };
-            double[] xs = { 36, 88, 150, 174, 244, 330, 382, 440 };
-            double[] widths = { 50, 60, 22, 68, 84, 50, 56, 120 };
+            string[] headers = { "流水号", "日期", "收/支", "项目", "账单期间", "楼栋/房号/单元", "付款人", "金额", "关联单据" };
+            double[] xs = { 30, 106, 184, 214, 318, 454, 566, 632, 704 };
+            double[] widths = { 70, 72, 26, 96, 126, 104, 60, 64, 128 };
 
             decimal income = 0m;
             decimal outcome = 0m;
@@ -2019,7 +2021,7 @@ namespace PropertyManagement.Server.Services
             }
 
             using (var document = new PdfDocument())
-            using (var canvas = new PdfTableCanvas(document, titleFont, headerFont, bodyFont))
+            using (var canvas = new PdfTableCanvas(document, titleFont, headerFont, bodyFont, landscape: true))
             {
                 canvas.Title("安怡物业 · 收支明细流水");
                 canvas.Line("导出时间：" + DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss") + "，共 " + items.Count + " 条");
@@ -2036,6 +2038,7 @@ namespace PropertyManagement.Server.Services
                         item.BizTime.ToString("MM-dd HH:mm"),
                         item.InAmount > 0 ? "收" : "支",
                         item.Subject,
+                        LedgerCycleText(item),
                         item.ObjectText,
                         item.OwnerName,
                         signed.ToString("0.00"),
@@ -2053,6 +2056,28 @@ namespace PropertyManagement.Server.Services
                             " 元　　结余 " + (income - outcome).ToString("0.00") + " 元　　共 " + items.Count + " 条");
                 document.Save(filePath);
             }
+        }
+
+        /// <summary>
+        /// CHG-v2.2.0-01：流水导出账单期间统一输出完整日期；
+        /// 支出、无关联账单调整以及来源账期缺失的历史行显示“—”。
+        /// </summary>
+        private static string LedgerCycleText(LedgerEntryDto item)
+        {
+            if (item == null || string.IsNullOrWhiteSpace(item.CycleStart) || string.IsNullOrWhiteSpace(item.CycleEnd))
+            {
+                return "—";
+            }
+
+            DateTime start;
+            DateTime end;
+            string startText = DateTime.TryParse(item.CycleStart, out start)
+                ? start.ToString("yyyy-MM-dd")
+                : item.CycleStart.Trim();
+            string endText = DateTime.TryParse(item.CycleEnd, out end)
+                ? end.ToString("yyyy-MM-dd")
+                : item.CycleEnd.Trim();
+            return startText + " ~ " + endText;
         }
 
         // ---------- 账单工作台：批次明细导出（CHG-v1.4.0-03） ----------

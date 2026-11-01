@@ -1088,6 +1088,20 @@ namespace PropertyManagement.Client.Services
             return Task.FromResult(dto);
         }
 
+        public Task<ExpenseDto> UpdateExpenseAsync(int id, ExpenseCreateRequest request)
+        {
+            ExpenseDto item = _expenses.FirstOrDefault(x => x.Id == id && x.Status == 0);
+            if (item == null) { throw new InvalidOperationException("支出记录不存在或已删除"); }
+            ExpenseCategoryDto cat = _categories.First(x => x.Id == request.CategoryId);
+            item.CategoryId = request.CategoryId;
+            item.CategoryName = cat.Name;
+            item.Amount = request.Amount;
+            item.ExpenseDate = request.ExpenseDate == default(DateTime) ? DateTime.Now : request.ExpenseDate;
+            item.Note = request.Note;
+            item.Payee = request.Payee;
+            return Task.FromResult(item);
+        }
+
         public Task<PageResult<ExpenseDto>> QueryExpensesAsync(PageRequest request)
         {
             return Page(_expenses);
@@ -1538,6 +1552,9 @@ namespace PropertyManagement.Client.Services
                 Items = new List<PropertyDto> { new PropertyDto { Id = 1, UnitId = 1, UnitPath = "1号楼-1单元-101", RoomNo = "101", Area = 88.5m, Usage = PropertyUsage.Residential, Status = PropertyStatus.Occupied, OwnerName = "张伟", OwnerPhone = "13800000001", CurrentArrear = 0 } }
             });
 
+        public Task<PropertyDto> GetPropertyAsync(int id) =>
+            Task.FromResult(new PropertyDto { Id = id, UnitId = 1, UnitPath = "1号楼-1单元-101", RoomNo = "101", Area = 88.5m, Usage = PropertyUsage.Residential, Status = PropertyStatus.Occupied, OwnerName = "张伟", OwnerPhone = "13800000001", CurrentArrear = 0 });
+
         public Task<PropertyDto> CreatePropertyAsync(PropertyRequest request) =>
             Task.FromResult(new PropertyDto { Id = 99, BuildingId = request.BuildingId, UnitId = request.UnitId, RoomNo = request.RoomNo, Area = request.Area, Usage = request.Usage, Status = request.Status });
 
@@ -1789,6 +1806,9 @@ namespace PropertyManagement.Client.Services
                     new PhoneEntryDto { Id = 4, CategoryId = 2, EntryType = PhoneEntryType.Employee, Name = "水电班组 · 王平安", Phone = "135****7712", IsTop = false, Status = PhoneEntryStatus.Enabled, CategoryName = "工程维修", StatusText = "启用" }
                 }
             });
+
+        public Task<PhoneEntryDto> GetPhoneEntryAsync(int id) =>
+            Task.FromResult(new PhoneEntryDto { Id = id, CategoryId = 1, EntryType = PhoneEntryType.Normal, Name = "物业服务中心", Phone = "0571-88021234", Note = "24 小时值班", IsTop = true, Status = PhoneEntryStatus.Enabled, CategoryName = "物业服务中心", StatusText = "启用" });
 
         public Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request) =>
             Task.FromResult(new PhoneEntryDto { Id = 99, CategoryId = request.CategoryId, EntryType = request.EntryType, Name = request.Name, Phone = request.Phone, Note = request.Note, IsTop = request.IsTop, Status = PhoneEntryStatus.Enabled });

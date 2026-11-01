@@ -762,6 +762,18 @@ namespace PropertyManagement.Client.ViewModels
             _ = LoadDetailRecordsAsync(row.Dto.Id);
         }
 
+        /// <summary>CHG-v2.2.0-03：全局搜索按 TargetId 打开指定设备详情。</summary>
+        public async Task FocusDeviceAsync(int id)
+        {
+            if (id <= 0) { return; }
+            await RunAsync(async () =>
+            {
+                DeviceDto dto = await Api.GetDeviceAsync(id);
+                if (dto == null) { throw new InvalidOperationException("该设备不存在或已删除"); }
+                OpenDetail(WrapRow(dto));
+            }, "已定位设备：" + id);
+        }
+
         private async Task LoadDetailRecordsAsync(int deviceId)
         {
             await RunAsync(async () =>

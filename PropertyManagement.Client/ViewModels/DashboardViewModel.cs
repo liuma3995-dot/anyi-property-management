@@ -12,11 +12,29 @@ using PropertyManagement.Contract.Common;
 namespace PropertyManagement.Client.ViewModels
 {
     /// <summary>待办列表项（仪表盘，原型 PG-DASH 下半区）。</summary>
-    public class ReminderItem
+    public class ReminderItem : ObservableObject
     {
+        private string _rawMeta;
+        private bool _areAmountsVisible;
+
         public string Title { get; set; }
 
-        public string Meta { get; set; }
+        public string Meta
+        {
+            get { return _areAmountsVisible ? _rawMeta : DashboardViewModel.MaskCurrencyAmounts(_rawMeta); }
+            set
+            {
+                _rawMeta = value;
+                OnPropertyChanged();
+            }
+        }
+
+        internal void ApplyAmountVisibility(bool visible)
+        {
+            if (_areAmountsVisible == visible) { return; }
+            _areAmountsVisible = visible;
+            OnPropertyChanged(nameof(Meta));
+        }
 
         public string Tag { get; set; }
 
@@ -118,6 +136,8 @@ namespace PropertyManagement.Client.ViewModels
         private string _arrearLegendText = "待收 ¥0";
         private string _collectionGapText = "目标收缴率 85%，还差 0%";
         private string _collectionHintText = "建议优先跟进 0 户逾期业主";
+        private bool _areAmountsVisible;
+        private readonly Action<bool> _amountVisibilityChanged;
 
         // R17：月份选择器 + 待办跳转
         private bool _isMonthPickerOpen;
@@ -202,8 +222,14 @@ namespace PropertyManagement.Client.ViewModels
 
         public string MonthReceivableText
         {
-            get { return _monthReceivableText; }
-            private set { SetProperty(ref _monthReceivableText, value); }
+            get { return ProjectAmount(_monthReceivableText); }
+            private set
+            {
+                if (SetProperty(ref _monthReceivableText, value))
+                {
+                    OnPropertyChanged(nameof(MonthReceivableText));
+                }
+            }
         }
 
         public string ReceivableTrend
@@ -214,8 +240,14 @@ namespace PropertyManagement.Client.ViewModels
 
         public string MonthReceivedText
         {
-            get { return _monthReceivedText; }
-            private set { SetProperty(ref _monthReceivedText, value); }
+            get { return ProjectAmount(_monthReceivedText); }
+            private set
+            {
+                if (SetProperty(ref _monthReceivedText, value))
+                {
+                    OnPropertyChanged(nameof(MonthReceivedText));
+                }
+            }
         }
 
         public string ReceivedTrend
@@ -226,8 +258,14 @@ namespace PropertyManagement.Client.ViewModels
 
         public string ArrearAmountText
         {
-            get { return _arrearAmountText; }
-            private set { SetProperty(ref _arrearAmountText, value); }
+            get { return ProjectAmount(_arrearAmountText); }
+            private set
+            {
+                if (SetProperty(ref _arrearAmountText, value))
+                {
+                    OnPropertyChanged(nameof(ArrearAmountText));
+                }
+            }
         }
 
         public string ArrearTrend
@@ -302,14 +340,49 @@ namespace PropertyManagement.Client.ViewModels
 
         public string ReceivedLegendText
         {
-            get { return _receivedLegendText; }
+            get { return ProjectAmount(_receivedLegendText); }
             private set { SetProperty(ref _receivedLegendText, value); }
         }
 
         public string ArrearLegendText
         {
-            get { return _arrearLegendText; }
+            get { return ProjectAmount(_arrearLegendText); }
             private set { SetProperty(ref _arrearLegendText, value); }
+        }
+
+        /// <summary>
+        /// CHG-v2.2.0-02：仪表盘货币金额默认隐藏。
+        /// 仅影响界面展示，API 返回、报表、导出与数据库金额不变。
+        /// </summary>
+        public bool AreAmountsVisible
+        {
+            get { return _areAmountsVisible; }
+            private set
+            {
+                if (!SetProperty(ref _areAmountsVisible, value)) { return; }
+                OnPropertyChanged(nameof(AmountVisibilityText));
+                OnPropertyChanged(nameof(AmountVisibilityTooltip));
+                OnPropertyChanged(nameof(MonthReceivableText));
+                OnPropertyChanged(nameof(MonthReceivedText));
+                OnPropertyChanged(nameof(ArrearAmountText));
+                OnPropertyChanged(nameof(ReceivedLegendText));
+                OnPropertyChanged(nameof(ArrearLegendText));
+                foreach (ReminderItem reminder in Reminders)
+                {
+                    reminder.ApplyAmountVisibility(value);
+                }
+                if (_amountVisibilityChanged != null) { _amountVisibilityChanged(value); }
+            }
+        }
+
+        public string AmountVisibilityText
+        {
+            get { return AreAmountsVisible ? "隐藏金额" : "显示金额"; }
+        }
+
+        public string AmountVisibilityTooltip
+        {
+            get { return AreAmountsVisible ? "隐藏仪表盘金额" : "显示仪表盘金额"; }
         }
 
         public string CollectionGapText
@@ -396,6 +469,9 @@ namespace PropertyManagement.Client.ViewModels
         /// <summary>CHG-v1.2.0-21：「回到本月」。</summary>
         public IAsyncRelayCommand BackToCurrentMonthCommand { get; }
 
+        /// <summary>CHG-v2.2.0-02：切换仪表盘金额显示 / 隐藏。</summary>
+        public IRelayCommand ToggleAmountVisibilityCommand { get; }
+
         /// <summary>点击待办项 → 跳转对应模块页（R17）。</summary>
         public IRelayCommand<ReminderItem> OpenTodoCommand { get; }
 
@@ -410,7 +486,8 @@ namespace PropertyManagement.Client.ViewModels
         public DashboardViewModel(IApiClient api, Action<string> navigate,
             Action<string, string, string, int> openPage = null, Action openTodoCenter = null,
             Func<string> userNameProvider = null, string initialPeriod = null,
-            Action<string> periodChanged = null)
+            Action<string> periodChanged = null, bool initialAmountsVisible = false,
+            Action<bool> amountVisibilityChanged = null)
         {
             _api = api;
             _navigate = navigate;
@@ -418,9 +495,12 @@ namespace PropertyManagement.Client.ViewModels
             _openTodoCenter = openTodoCenter;
             _userNameProvider = userNameProvider;
             _periodChanged = periodChanged;
+            _amountVisibilityChanged = amountVisibilityChanged;
+            _areAmountsVisible = initialAmountsVisible;
             RefreshCommand = new AsyncRelayCommand(LoadAsync);
             QuickEntryCommand = new RelayCommand<string>(QuickEntry);
             ToggleMonthPickerCommand = new RelayCommand(() => IsMonthPickerOpen = !IsMonthPickerOpen);
+            ToggleAmountVisibilityCommand = new RelayCommand(() => AreAmountsVisible = !AreAmountsVisible);
             SelectMonthCommand = new AsyncRelayCommand<MonthOption>(SelectMonthAsync);
             ShiftPickerYearCommand = new RelayCommand<string>(ShiftPickerYear);
             SelectAnnualCommand = new AsyncRelayCommand(SelectAnnualAsync);
@@ -787,7 +867,7 @@ namespace PropertyManagement.Client.ViewModels
         }
 
         /// <summary>待办项 → 面板展示模型（R17：统一由服务端待办中心投影，替换原先按字符串猜类型的分支）。</summary>
-        private static ReminderItem BuildTodoItem(TodoItemDto todo)
+        private ReminderItem BuildTodoItem(TodoItemDto todo)
         {
             Brush tagForeground;
             Brush tagBackground;
@@ -812,7 +892,7 @@ namespace PropertyManagement.Client.ViewModels
                 default: iconKey = "Icon.ClipboardCheck"; break;
             }
 
-            return new ReminderItem
+            var item = new ReminderItem
             {
                 Title = todo.Title,
                 Meta = todo.Meta,
@@ -825,6 +905,8 @@ namespace PropertyManagement.Client.ViewModels
                 TagBackground = tagBackground,
                 Source = todo
             };
+            item.ApplyAmountVisibility(AreAmountsVisible);
+            return item;
         }
 
         private static string ExtractPercent(string trend)
@@ -849,6 +931,17 @@ namespace PropertyManagement.Client.ViewModels
         {
             string[] names = { "星期日", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六" };
             return names[(int)d.DayOfWeek];
+        }
+
+        private string ProjectAmount(string text)
+        {
+            return AreAmountsVisible ? text : MaskCurrencyAmounts(text);
+        }
+
+        internal static string MaskCurrencyAmounts(string text)
+        {
+            if (string.IsNullOrEmpty(text)) { return text; }
+            return Regex.Replace(text, @"¥\s*[\d,]+(?:\.\d+)?", "¥ ••••••");
         }
 
         private static Brush Brush(string hex)

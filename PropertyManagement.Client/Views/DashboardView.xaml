@@ -144,8 +144,34 @@
                 <TextBlock Text="{Binding WelcomeDate}" FontSize="11"
                            Foreground="{StaticResource TextSecondaryBrush}" Margin="0,4,0,0" />
             </StackPanel>
-            <!-- R17：月份选择器（可交互下拉，切换统计口径月份） -->
-            <Grid Grid.Column="1" VerticalAlignment="Center">
+            <!-- CHG-v2.2.0-02：金额隐私开关 + 统计周期 -->
+            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="AmountVisibilityButton" Command="{Binding ToggleAmountVisibilityCommand}"
+                        AutomationProperties.Name="{Binding AmountVisibilityText}"
+                        ToolTip="{Binding AmountVisibilityTooltip}"
+                        Height="34" Padding="12,0" Margin="0,0,10,0" Cursor="Hand"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderBrushColor}" BorderThickness="1">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="7" Padding="{TemplateBinding Padding}">
+                                <ContentPresenter />
+                            </Border>
+                        </ControlTemplate>
+                    </Button.Template>
+                    <StackPanel Orientation="Horizontal">
+                        <Path Data="{StaticResource Icon.Eye}" Style="{StaticResource IconStroke}"
+                              Stroke="{StaticResource TextSecondaryBrush}"
+                              Width="15" Height="15" VerticalAlignment="Center" />
+                        <TextBlock Text="{Binding AmountVisibilityText}" FontSize="11"
+                                   Foreground="{StaticResource TextPrimaryBrush}"
+                                   Margin="8,0,0,0" VerticalAlignment="Center" />
+                    </StackPanel>
+                </Button>
+
                 <Button x:Name="MonthPickerButton" Command="{Binding ToggleMonthPickerCommand}"
                         AutomationProperties.Name="统计周期（月 / 年）"
                         ToolTip="切换统计周期：可选月份，也可选「全年」按年度统计"
@@ -263,7 +289,7 @@
                         </StackPanel>
                     </Border>
                 </Popup>
-            </Grid>
+            </StackPanel>
         </Grid>
 
         <!-- ============ 财务指标行 h100（4卡） ============ -->

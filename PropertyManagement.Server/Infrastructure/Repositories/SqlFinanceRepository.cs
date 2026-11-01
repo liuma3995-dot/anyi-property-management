@@ -1610,9 +1610,11 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 "COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, '') AS BizNo, p.amount AS InAmount, 0 AS OutAmount, " +
                 "COALESCE(ci.name, '收款') AS Subject, " +
                 "CASE p.pay_method WHEN 0 THEN '现金' WHEN 1 THEN '转账' WHEN 2 THEN '微信' WHEN 3 THEN '银行转账' WHEN 4 THEN 'POS' ELSE '转账' END AS PayMethod, " +
-                "'系统管理员' AS OperatorName, " + ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
+                "'系统管理员' AS OperatorName, " + ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText, " +
+                "cy.start_date AS CycleStart, cy.end_date AS CycleEnd " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id " +
                 "LEFT JOIN t_bill b ON b.id = p.bill_id " +
+                "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
                 // CHG-v1.1.2-02：账单删除后其流水同步不再计入（与收款登记/财务报表口径一致）
                 // CHG-v1.3.1-03：账单行被物理回收后不再"复活"—— 无账单关联才放行，否则要求账单存在且未删
                 "LEFT JOIN t_charge_item ci ON ci.id = b.charge_item_id " +
@@ -1627,18 +1629,22 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
                 " WHEN pr.refund_type = 2 AND pr.adjust_dir = 2 THEN '调减冲正' " +
                 " WHEN pr.refund_type = 1 THEN '费用减免' ELSE '退款/冲减' END AS Subject, " +
                 "COALESCE(NULLIF(pr.method, ''), '原路退回') AS PayMethod, '系统管理员', " +
-                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
+                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText, " +
+                "cy.start_date AS CycleStart, cy.end_date AS CycleEnd " +
                 "FROM t_payment_refund pr LEFT JOIN t_bill b ON b.id = pr.bill_id " +
+                "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
                 // CHG-v1.4.0-01：已删除（软删留痕）的调整记录不再计入流水
                 // CHG-v1.5.0-01：退款（refund_type = 0）删除后金额数字不变 —— 不再按 del_flag 过滤；调整（2）仍按软删过滤
                 "WHERE (pr.del_flag = 0 OR pr.refund_type = 0) AND (pr.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0)) AND pr.refund_type <> 1 " +
                 "UNION ALL " +
-                "SELECT e.id, e.id, NULL, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText " +
+                "SELECT e.id, e.id, NULL, e.expense_date, 'expense', CAST(e.id AS TEXT), 0, e.amount, COALESCE(c.name, '支出'), '银行转账', '系统管理员', '' AS OwnerName, '' AS ObjectText, NULL AS CycleStart, NULL AS CycleEnd " +
                 "FROM t_expense e LEFT JOIN t_expense_category c ON c.id = e.category_id WHERE e.del_flag = 0 " +
                 "UNION ALL " +
                 "SELECT p.id, p.id, b.id, p.paid_at, 'reversed', COALESCE(NULLIF(p.batch_no, ''), r.receipt_no, ''), -p.amount, 0, '红冲', '原路退回', '系统管理员', " +
-                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText " +
+                ownerExpr + " AS OwnerName, " + objectExpr + " AS ObjectText, " +
+                "cy.start_date AS CycleStart, cy.end_date AS CycleEnd " +
                 "FROM t_payment p LEFT JOIN t_receipt r ON r.payment_id = p.id LEFT JOIN t_bill b ON b.id = p.bill_id " +
+                "LEFT JOIN t_billing_cycle cy ON cy.id = b.cycle_id " +
                 "WHERE p.status = 1 AND (p.bill_id IS NULL OR (b.id IS NOT NULL AND b.del_flag = 0))) x";
 
             int pageIndex = query.PageIndex <= 0 ? 1 : query.PageIndex;
@@ -1647,7 +1653,7 @@ namespace PropertyManagement.Server.Infrastructure.Repositories
 
             int total = connection.ExecuteScalar<int>("SELECT COUNT(1) " + from + where, parameters);
 
-            string sql = "SELECT Id, SourceId, BillId, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, ObjectText, " +
+            string sql = "SELECT Id, SourceId, BillId, BizTime, BizType, BizNo, PayMethod, OperatorName, Subject, OwnerName, ObjectText, CycleStart, CycleEnd, " +
                 "CAST(InAmount AS REAL) AS InAmount, CAST(OutAmount AS REAL) AS OutAmount " +
                 from + where + " ORDER BY BizTime DESC, Id DESC LIMIT @limit OFFSET @offset";
             parameters.Add("limit", pageSize);

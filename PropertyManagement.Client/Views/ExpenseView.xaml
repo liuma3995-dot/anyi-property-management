@@ -172,14 +172,19 @@
                             </DataTemplate>
                         </DataGridTemplateColumn.CellTemplate>
                     </DataGridTemplateColumn>
-                    <DataGridTemplateColumn Header="操作" Width="120">
+                    <DataGridTemplateColumn Header="操作" Width="170" MinWidth="160">
                         <DataGridTemplateColumn.CellTemplate>
                             <DataTemplate>
                                 <StackPanel Orientation="Horizontal">
                                     <Button Style="{StaticResource LinkButton}" Content="查看"
                                             Command="{Binding DataContext.ViewCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}" />
+                                    <Button Style="{StaticResource LinkButton}" Content="编辑" Margin="8,0,0,0"
+                                            Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"
+                                            Command="{Binding DataContext.EditCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                            CommandParameter="{Binding}" />
                                     <Button Style="{StaticResource LinkButton}" Content="删除"
+                                            Margin="8,0,0,0"
                                             Visibility="{Binding IsActive, Converter={StaticResource BoolToVis}}"
                                             Command="{Binding DataContext.DeleteCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
                                             CommandParameter="{Binding}" />
@@ -225,7 +230,7 @@
             <Border Background="#66000000" />
             <Border Width="420" HorizontalAlignment="Center" VerticalAlignment="Center" Style="{StaticResource CardBorder}" Padding="26,22">
                 <StackPanel>
-                    <TextBlock Text="登记支出" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
+                    <TextBlock Text="{Binding FormTitle}" FontSize="16" FontWeight="Bold" Foreground="{StaticResource TextPrimaryBrush}" />
                     <!-- CHG-v1.1.2-10：清除用户可见的 mock 编号 -->
                     <TextBlock Text="支出分类必选、可在表单内新增/删除；登记即支付并联动收支明细流水"
                                FontSize="10" Foreground="{StaticResource TextMutedBrush}" Margin="0,4,0,18" TextWrapping="Wrap" />
@@ -292,7 +297,7 @@
                             <ColumnDefinition Width="12" />
                             <ColumnDefinition Width="*" />
                         </Grid.ColumnDefinitions>
-                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="保存" Command="{Binding SaveCommand}" />
+                        <Button Grid.Column="0" Style="{StaticResource ButtonPrimary}" Content="{Binding SaveButtonText}" Command="{Binding SaveCommand}" />
                         <Button Grid.Column="2" Style="{StaticResource LinkButton}" Content="取消" FontSize="13"
                                 HorizontalAlignment="Center" VerticalAlignment="Center" Command="{Binding CancelCommand}" />
                     </Grid>

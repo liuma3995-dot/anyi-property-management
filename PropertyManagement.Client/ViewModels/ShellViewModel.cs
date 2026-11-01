@@ -40,6 +40,8 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isTodoCenterOpen;
         /// <summary>CHG-v1.2.0-28：仪表盘统计口径（月 `yyyy-MM` / 年 `yyyy`）—— 切页返回后沿用，直到点「回到本月」。</summary>
         private string _dashboardPeriod;
+        /// <summary>CHG-v2.2.0-02：仪表盘金额显隐状态；登录后默认隐藏，本次登录跨页面保持。</summary>
+        private bool _dashboardAmountsVisible;
         /// <summary>CHG-v1.3.1-06：财务报表统计口径记忆（本次登录期间跨页面记住，登出清空）。</summary>
         private FinancialReportPeriodState _financialReportPeriod;
         private int _todoTotal;
@@ -439,7 +441,9 @@ namespace PropertyManagement.Client.ViewModels
                 }
                 CurrentViewModel = new DashboardViewModel(_api, NavigateTo, NavigateToPageWithKeyword,
                     OpenTodoCenterFromDashboard, () => UserName, _dashboardPeriod,
-                    period => _dashboardPeriod = period);
+                    period => _dashboardPeriod = period,
+                    _dashboardAmountsVisible,
+                    visible => _dashboardAmountsVisible = visible);
             }
             else
             {
@@ -705,7 +709,7 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
             IsSearchOpen = false;
-            NavigateToPageWithKeyword(item.TargetModule, item.TargetPage, item.Keyword);
+            NavigateToPageWithKeyword(item.TargetModule, item.TargetPage, item.Keyword, item.TargetId);
         }
 
         /// <summary>跳转模块页并带关键词过滤（R17：搜索结果 / 待办跳转复用；无关键词时仅跳页）。</summary>
@@ -718,6 +722,7 @@ namespace PropertyManagement.Client.ViewModels
             NavigateToPage(moduleKey, pageTitle);
             if (targetId > 0)
             {
+                bool focused = true;
                 switch (CurrentViewModel)
                 {
                     case ArrearViewModel arrear:
@@ -730,7 +735,26 @@ namespace PropertyManagement.Client.ViewModels
                     case DisputeListViewModel disputeList:
                         _ = disputeList.FocusCaseAsync(targetId);
                         break;
+                    case PropertyListViewModel property:
+                        _ = property.FocusPropertyAsync(targetId);
+                        break;
+                    case OwnerProfileViewModel owner:
+                        _ = owner.FocusOwnerAsync(targetId);
+                        break;
+                    case DeviceListViewModel device:
+                        _ = device.FocusDeviceAsync(targetId);
+                        break;
+                    case PhoneQueryViewModel phone:
+                        _ = phone.FocusPhoneAsync(targetId);
+                        break;
+                    case EmployeeListViewModel employee:
+                        _ = employee.FocusEmployeeAsync(targetId);
+                        break;
+                    default:
+                        focused = false;
+                        break;
                 }
+                if (focused) { return; }
             }
             if (string.IsNullOrWhiteSpace(keyword) || CurrentViewModel == null)
             {
@@ -1023,6 +1047,8 @@ namespace PropertyManagement.Client.ViewModels
             _todoTimer.Stop();
             // CHG-v1.2.0-28：登出清掉统计口径记忆（下次登录回到当前月）
             _dashboardPeriod = null;
+            // CHG-v2.2.0-02：仪表盘金额隐私随登录会话结束恢复默认隐藏
+            _dashboardAmountsVisible = false;
             // CHG-v1.3.1-06：财务报表统计口径记忆同样随登出清空
             _financialReportPeriod = null;
             LogoutRequested?.Invoke();

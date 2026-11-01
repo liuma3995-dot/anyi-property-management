@@ -694,6 +694,31 @@ namespace PropertyManagement.Contract.Finance
         public string OwnerName { get; set; }    // T4F-7-1：付款户主信息（收款/退款/红冲按账单解析房产或车位业主，支出为空）
         /// <summary>CHG-v1.1.2-05：楼栋/房号（车位显示车位编号，自定义缴费对象显示名称，支出为空）。</summary>
         public string ObjectText { get; set; }
+
+        /// <summary>
+        /// CHG-v2.2.0-01：关联账单的真实账期起始日（来源 t_billing_cycle）。
+        /// 支出、无关联账单调整或历史来源缺失时为空。
+        /// </summary>
+        public string CycleStart { get; set; }
+
+        /// <summary>
+        /// CHG-v2.2.0-01：关联账单的真实账期终止日（来源 t_billing_cycle）。
+        /// 支出、无关联账单调整或历史来源缺失时为空。
+        /// </summary>
+        public string CycleEnd { get; set; }
+
+        /// <summary>导出展示口径：完整起止日期；无关联账单显示“—”。</summary>
+        public string CyclePeriod
+        {
+            get
+            {
+                if (string.IsNullOrWhiteSpace(CycleStart) || string.IsNullOrWhiteSpace(CycleEnd))
+                {
+                    return "—";
+                }
+                return CycleStart.Trim() + " ~ " + CycleEnd.Trim();
+            }
+        }
     }
 
     /// <summary>收支明细流水「查看」：统一承载流水及来源账单/单据详情。</summary>

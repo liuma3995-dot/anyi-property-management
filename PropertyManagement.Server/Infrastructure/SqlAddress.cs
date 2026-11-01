@@ -67,7 +67,12 @@ namespace PropertyManagement.Server.Infrastructure
                 if (i > 0) { sb.Append(" || "); }
                 sb.Append("COALESCE(").Append(columns[i]).Append(", '')");
             }
-            return "REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(" + sb + ", '/', ''), '-', ''), ' ', ''), '　', ''), '、', '')";
+            string expression = sb.ToString();
+            foreach (string separator in new[] { "/", "\\", "-", "－", "—", "、", "·", "・", " ", "　" })
+            {
+                expression = "REPLACE(" + expression + ", '" + separator.Replace("'", "''") + "', '')";
+            }
+            return expression;
         }
     }
 }

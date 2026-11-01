@@ -95,13 +95,15 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isBatchConfirmVisible;
         private string _batchConfirmText = string.Empty;
         private bool _isExportMenuOpen;              // CHG-v2.0.0-05：导出下拉（PDF / Excel）
+        private int _editingId;                       // CHG-v2.2.0-04：0=新增，>0=编辑
 
         public ExpenseViewModel(IApiClient api) : base(api)
         {
             SaveCommand = new AsyncRelayCommand(SaveAsync);
             SearchCommand = new AsyncRelayCommand(LoadAsync);
-            OpenFormCommand = new RelayCommand(() => IsFormVisible = true);
-            CancelCommand = new RelayCommand(() => IsFormVisible = false);
+            OpenFormCommand = new RelayCommand(OpenCreateForm);
+            CancelCommand = new RelayCommand(CloseForm);
+            EditCommand = new RelayCommand<ExpenseRow>(OpenEditForm);
             DeleteCommand = new RelayCommand<ExpenseRow>(RequestDelete);
             ConfirmDeleteCommand = new AsyncRelayCommand(DeleteConfirmedAsync);
             CancelDeleteCommand = new RelayCommand(() => { ConfirmRow = null; IsConfirmVisible = false; });
@@ -194,6 +196,12 @@ namespace PropertyManagement.Client.ViewModels
 
         public bool IsFormVisible { get { return _isFormVisible; } private set { SetProperty(ref _isFormVisible, value); } }
 
+        public bool IsEditing { get { return _editingId > 0; } }
+
+        public string FormTitle { get { return IsEditing ? "编辑支出" : "登记支出"; } }
+
+        public string SaveButtonText { get { return IsEditing ? "保存修改" : "保存"; } }
+
         public bool IsDetailVisible { get { return _isDetailVisible; } private set { SetProperty(ref _isDetailVisible, value); } }
 
         public bool IsConfirmVisible { get { return _isConfirmVisible; } private set { SetProperty(ref _isConfirmVisible, value); } }
@@ -234,6 +242,9 @@ namespace PropertyManagement.Client.ViewModels
         public IRelayCommand OpenFormCommand { get; }
 
         public IRelayCommand CancelCommand { get; }
+
+        /// <summary>CHG-v2.2.0-04：编辑未删除支出记录。</summary>
+        public IRelayCommand<ExpenseRow> EditCommand { get; }
 
         public IRelayCommand<ExpenseRow> DeleteCommand { get; }
 
@@ -630,9 +641,10 @@ namespace PropertyManagement.Client.ViewModels
                 return;
             }
 
+            bool editing = IsEditing;
             await RunAsync(async () =>
             {
-                await Api.CreateExpenseAsync(new ExpenseCreateRequest
+                var request = new ExpenseCreateRequest
                 {
                     CategoryId = SelectedCategory.Id,
                     Amount = Amount,
@@ -640,13 +652,65 @@ namespace PropertyManagement.Client.ViewModels
                     Note = Note.Trim(),
                     Payee = Payee.Trim(),
                     Objects = null
-                });
-                IsFormVisible = false;
-                Amount = 0m;
-                Note = string.Empty;
-                Payee = string.Empty;
+                };
+                if (editing) { await Api.UpdateExpenseAsync(_editingId, request); }
+                else { await Api.CreateExpenseAsync(request); }
+                CloseForm();
                 await LoadAsync();
-            }, "支出已登记（登记即生效，已联动收支明细流水）");
+            }, editing ? "支出已更新（收支明细流水与财务报表将按新值显示）" : "支出已登记（登记即生效，已联动收支明细流水）");
+        }
+
+        /// <summary>打开空白新增表单，确保不残留上一次编辑 id 或字段。</summary>
+        private void OpenCreateForm()
+        {
+            _editingId = 0;
+            SelectedCategory = Categories.FirstOrDefault();
+            Amount = 0m;
+            ExpenseDate = DateTime.Today;
+            Note = string.Empty;
+            Payee = string.Empty;
+            NewCategoryName = string.Empty;
+            CategoryHintText = string.Empty;
+            ErrorText = string.Empty;
+            OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(FormTitle));
+            OnPropertyChanged(nameof(SaveButtonText));
+            IsFormVisible = true;
+        }
+
+        /// <summary>打开编辑表单并完整回填五个可编辑字段。</summary>
+        private void OpenEditForm(ExpenseRow row)
+        {
+            if (row == null || !row.IsActive) { return; }
+            ExpenseCategoryDto category = Categories.FirstOrDefault(x => x.Id == row.Dto.CategoryId);
+            if (category == null)
+            {
+                ErrorText = "该支出的分类已停用，无法编辑；请先在分类维护中恢复分类";
+                return;
+            }
+
+            _editingId = row.Dto.Id;
+            SelectedCategory = category;
+            Amount = row.Dto.Amount;
+            ExpenseDate = row.Dto.ExpenseDate;
+            Note = row.Dto.Note ?? string.Empty;
+            Payee = row.Dto.Payee ?? string.Empty;
+            NewCategoryName = string.Empty;
+            CategoryHintText = string.Empty;
+            ErrorText = string.Empty;
+            OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(FormTitle));
+            OnPropertyChanged(nameof(SaveButtonText));
+            IsFormVisible = true;
+        }
+
+        private void CloseForm()
+        {
+            IsFormVisible = false;
+            _editingId = 0;
+            OnPropertyChanged(nameof(IsEditing));
+            OnPropertyChanged(nameof(FormTitle));
+            OnPropertyChanged(nameof(SaveButtonText));
         }
 
         private void RequestDelete(ExpenseRow row)

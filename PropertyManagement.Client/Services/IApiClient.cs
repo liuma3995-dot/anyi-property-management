@@ -150,6 +150,8 @@ namespace PropertyManagement.Client.Services
         /// <summary>删除支出分类（被支出记录引用时服务端拒绝并提示改用停用）。</summary>
         Task DeleteExpenseCategoryAsync(int id);
         Task<ExpenseDto> CreateExpenseAsync(ExpenseCreateRequest request);
+        /// <summary>CHG-v2.2.0-04：编辑未删除支出（分类 / 金额 / 日期 / 摘要 / 收款方）。</summary>
+        Task<ExpenseDto> UpdateExpenseAsync(int id, ExpenseCreateRequest request);
         Task<PageResult<ExpenseDto>> QueryExpensesAsync(PageRequest request);
         Task DeleteExpenseAsync(int id);
 
@@ -264,6 +266,7 @@ namespace PropertyManagement.Client.Services
         Task DeleteBuildingAsync(int id);
         Task DeleteUnitAsync(int id);
         Task<PageResult<PropertyDto>> QueryPropertiesAsync(BaseInfoQueryRequest request);
+        Task<PropertyDto> GetPropertyAsync(int id);
         Task<PropertyDto> CreatePropertyAsync(PropertyRequest request);
         Task<PropertyDto> UpdatePropertyAsync(int id, PropertyRequest request);
         Task DeletePropertyAsync(int id);
@@ -344,6 +347,7 @@ namespace PropertyManagement.Client.Services
         Task<PhoneTypeDto> UpdatePhoneTypeAsync(int id, PhoneTypeRequest request);
         Task DeletePhoneTypeAsync(int id);
         Task<PageResult<PhoneEntryDto>> QueryPhoneEntriesAsync(PhoneEntryQueryRequest request);
+        Task<PhoneEntryDto> GetPhoneEntryAsync(int id);
         Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request);
         Task<PhoneEntryDto> UpdatePhoneEntryAsync(int id, PhoneEntryRequest request);
         Task<PhoneEntryDto> SetPhoneEntryStatusAsync(int id, PhoneEntryStatus status);

@@ -367,6 +367,33 @@ namespace PropertyManagement.Client.ViewModels
 
         public async Task LoadAsync() => await RunAsync(LoadCoreAsync, "房产已加载");
 
+        /// <summary>
+        /// CHG-v2.2.0-03：全局搜索按 TargetId 精准打开指定房产。
+        /// 直接以 id 回查，避免同名房号或当前筛选条件导致跳错记录。
+        /// </summary>
+        public async Task FocusPropertyAsync(int id)
+        {
+            if (id <= 0) { return; }
+            await RunAsync(async () =>
+            {
+                PropertyDto dto = await Api.GetPropertyAsync(id);
+                if (dto == null) { throw new InvalidOperationException("该房产不存在或已删除"); }
+
+                _buildingFilter = 0;
+                _statusFilter = 0;
+                _arrearFilter = 0;
+                _pageIndex = 1;
+                _searchText = dto.RoomNo ?? string.Empty;
+                OnPropertyChanged(nameof(SearchText));
+                OnPropertyChanged(nameof(BuildingFilter));
+                OnPropertyChanged(nameof(StatusFilter));
+                OnPropertyChanged(nameof(ArrearFilter));
+
+                await LoadCoreAsync();
+                ViewRow = Items.FirstOrDefault(x => x.Id == id) ?? new PropertyRow { Dto = dto };
+            }, "已定位房产：" + id);
+        }
+
         private async Task LoadCoreAsync()
         {
             var query = BuildQuery(_pageIndex, _pageSize);

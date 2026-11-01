@@ -153,6 +153,8 @@ namespace PropertyManagement.Client.ViewModels
         private int _deletePositionId;
         private string _deletePositionName = string.Empty;
         private bool _filterDefaultsApplied;
+        /// <summary>CHG-v2.2.0-03：全局搜索指定员工，初始化与重载都优先展示该记录。</summary>
+        private int _explicitFocusEmployeeId;
 
         public EmployeeListViewModel(IApiClient api) : base(api)
         {
@@ -214,6 +216,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _keyword, value))
                 {
+                    _explicitFocusEmployeeId = 0;
                     // 输入即自动排列数据：300ms 防抖重新查询
                     _searchDebounce?.Stop();
                     _searchDebounce?.Start();
@@ -228,6 +231,7 @@ namespace PropertyManagement.Client.ViewModels
             {
                 if (SetProperty(ref _deptFilter, value))
                 {
+                    _explicitFocusEmployeeId = 0;
                     _ = LoadPositionFilterAsync();
                     _pageIndex = 1;
                     _ = SearchAsync();
@@ -235,8 +239,8 @@ namespace PropertyManagement.Client.ViewModels
             }
         }
 
-        public int? PositionFilter { get { return _positionFilter; } set { if (SetProperty(ref _positionFilter, value)) { _pageIndex = 1; _ = SearchAsync(); } } }
-        public int? StatusFilter { get { return _statusFilter; } set { if (SetProperty(ref _statusFilter, value)) { _pageIndex = 1; _ = SearchAsync(); } } }
+        public int? PositionFilter { get { return _positionFilter; } set { if (SetProperty(ref _positionFilter, value)) { _explicitFocusEmployeeId = 0; _pageIndex = 1; _ = SearchAsync(); } } }
+        public int? StatusFilter { get { return _statusFilter; } set { if (SetProperty(ref _statusFilter, value)) { _explicitFocusEmployeeId = 0; _pageIndex = 1; _ = SearchAsync(); } } }
 
         public int Total
         {
@@ -350,13 +354,24 @@ namespace PropertyManagement.Client.ViewModels
                 var page = await Api.QueryEmployeesAsync(query);
                 foreach (var r in Items) { r.PropertyChanged -= Row_PropertyChanged; }
                 Items.Clear();
-                foreach (var dto in page.Items) { Items.Add(CreateRow(dto)); }
+                if (_explicitFocusEmployeeId > 0)
+                {
+                    EmployeeDto target = await Api.GetEmployeeAsync(_explicitFocusEmployeeId);
+                    if (target == null) { throw new InvalidOperationException("该员工不存在或已删除"); }
+                    Items.Add(CreateRow(target));
+                    _keyword = target.EmpNo ?? target.Name ?? string.Empty;
+                    OnPropertyChanged(nameof(Keyword));
+                }
+                else
+                {
+                    foreach (var dto in page.Items) { Items.Add(CreateRow(dto)); }
+                }
                 _isSelectAll = false;
                 OnPropertyChanged(nameof(IsSelectAll));
                 OnPropertyChanged(nameof(HasItemsChecked));
                 OnPropertyChanged(nameof(IsAllChecked));
                 OnPropertyChanged(nameof(CheckedCountText));
-                Total = page.Total;
+                Total = _explicitFocusEmployeeId > 0 ? Items.Count : page.Total;
                 if (Departments.Count == 0)
                 {
                     foreach (var d in await Api.GetDepartmentsAsync()) { Departments.Add(d); }
@@ -374,9 +389,25 @@ namespace PropertyManagement.Client.ViewModels
             }, null);
         }
 
+        /// <summary>CHG-v2.2.0-03：全局搜索按 TargetId 精准展示员工。</summary>
+        public async Task FocusEmployeeAsync(int id)
+        {
+            if (id <= 0) { return; }
+            _explicitFocusEmployeeId = id;
+            _pageIndex = 1;
+            _deptFilter = null;
+            _positionFilter = null;
+            _statusFilter = null;
+            OnPropertyChanged(nameof(DeptFilter));
+            OnPropertyChanged(nameof(PositionFilter));
+            OnPropertyChanged(nameof(StatusFilter));
+            await LoadAsync();
+        }
+
         /// <summary>回车搜索：重置到第一页。</summary>
         private async Task SearchAsync()
         {
+            _explicitFocusEmployeeId = 0;
             _pageIndex = 1;
             await LoadAsync();
         }

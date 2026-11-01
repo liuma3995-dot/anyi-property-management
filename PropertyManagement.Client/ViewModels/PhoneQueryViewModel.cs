@@ -59,6 +59,8 @@ namespace PropertyManagement.Client.ViewModels
         private PhoneQueryRow _selectedRow;
         private int _total;
         private bool _categoriesLoaded;
+        /// <summary>CHG-v2.2.0-03：全局搜索指定电话条目，加载完成后必须保持该行选中。</summary>
+        private int _explicitFocusPhoneId;
 
         public PhoneQueryViewModel(IApiClient api) : base(api)
         {
@@ -121,12 +123,44 @@ namespace PropertyManagement.Client.ViewModels
                     _categoriesLoaded = true;
                 }
                 // 刷新后按 Id 恢复选中行，右列详情跟随最新数据（置顶后 ★ 与按钮态即时更新）
-                if (_selectedRow != null)
+                int keepId = _explicitFocusPhoneId > 0
+                    ? _explicitFocusPhoneId
+                    : (_selectedRow == null ? 0 : _selectedRow.Dto.Id);
+                if (keepId > 0)
                 {
-                    var fresh = Items.FirstOrDefault(x => x.Dto.Id == _selectedRow.Dto.Id);
+                    PhoneQueryRow fresh = Items.FirstOrDefault(x => x.Dto.Id == keepId);
+                    if (fresh == null && _explicitFocusPhoneId > 0)
+                    {
+                        PhoneEntryDto target = await Api.GetPhoneEntryAsync(keepId);
+                        if (target != null)
+                        {
+                            fresh = new PhoneQueryRow { Dto = target };
+                            Items.Insert(0, fresh);
+                        }
+                    }
                     SelectedRow = fresh;
                 }
             }, "电话已加载");
+        }
+
+        /// <summary>CHG-v2.2.0-03：全局搜索按 TargetId 精准选中电话条目。</summary>
+        public async Task FocusPhoneAsync(int id)
+        {
+            if (id <= 0) { return; }
+            _explicitFocusPhoneId = id;
+            try
+            {
+                await LoadAsync();
+                if (SelectedRow == null || SelectedRow.Dto.Id != id)
+                {
+                    ErrorText = "该电话条目不存在、已停用或已删除";
+                }
+            }
+            finally
+            {
+                // 定位完成后恢复普通刷新规则，后续置顶/分类筛选不再强制拉回首次目标。
+                _explicitFocusPhoneId = 0;
+            }
         }
 
         /// <summary>分类 tab 点击：全部=0，其余=分类 Id；选中态高亮后重查。</summary>

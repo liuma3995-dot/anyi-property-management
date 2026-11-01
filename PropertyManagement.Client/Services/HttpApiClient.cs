@@ -398,6 +398,11 @@ namespace PropertyManagement.Client.Services
             return PostAsync<ExpenseCreateRequest, ExpenseDto>("expenses", request);
         }
 
+        public Task<ExpenseDto> UpdateExpenseAsync(int id, ExpenseCreateRequest request)
+        {
+            return PutAsync<ExpenseCreateRequest, ExpenseDto>("expenses/" + id, request);
+        }
+
         public Task<PageResult<ExpenseDto>> QueryExpensesAsync(PageRequest request)
         {
             return GetAsync<PageResult<ExpenseDto>>("expenses" + Query(request));
@@ -586,6 +591,11 @@ namespace PropertyManagement.Client.Services
         public Task<PageResult<PropertyDto>> QueryPropertiesAsync(BaseInfoQueryRequest request)
         {
             return GetAsync<PageResult<PropertyDto>>("baseinfo/properties" + Query(request));
+        }
+
+        public Task<PropertyDto> GetPropertyAsync(int id)
+        {
+            return GetAsync<PropertyDto>("baseinfo/properties/" + id);
         }
 
         public Task<PropertyDto> CreatePropertyAsync(PropertyRequest request)
@@ -971,6 +981,11 @@ namespace PropertyManagement.Client.Services
         public Task<PageResult<PhoneEntryDto>> QueryPhoneEntriesAsync(PhoneEntryQueryRequest request)
         {
             return GetAsync<PageResult<PhoneEntryDto>>("phonebook/entries" + Query(request));
+        }
+
+        public Task<PhoneEntryDto> GetPhoneEntryAsync(int id)
+        {
+            return GetAsync<PhoneEntryDto>("phonebook/entries/" + id);
         }
 
         public Task<PhoneEntryDto> CreatePhoneEntryAsync(PhoneEntryRequest request)

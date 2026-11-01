@@ -46,6 +46,8 @@ namespace PropertyManagement.Client.ViewModels
         private bool _isBatchDialogVisible;
         private bool _isBatchSelectAll;
         private readonly DispatcherTimer _searchDebounce;
+        /// <summary>全局搜索指定业主：覆盖页面初始化默认选中第一人的行为。</summary>
+        private int _explicitFocusOwnerId;
 
         public OwnerProfileViewModel(IApiClient api) : base(api)
         {
@@ -145,7 +147,12 @@ namespace PropertyManagement.Client.ViewModels
             set
             {
                 if (value == null) { return; }
-                if (SetProperty(ref _selectedOwnerItem, value)) { _ = SelectOwner(value); }
+                if (SetProperty(ref _selectedOwnerItem, value))
+                {
+                    // 用户主动改选后，后续刷新回归普通候选人逻辑。
+                    _explicitFocusOwnerId = 0;
+                    _ = SelectOwner(value);
+                }
             }
         }
         /// <summary>下拉页脚（共 N 条 · 第 X/Y 页）。</summary>
@@ -288,7 +295,15 @@ namespace PropertyManagement.Client.ViewModels
         {
             if (!id.HasValue) return;
             var row = Owners.FirstOrDefault(x => x.Id == id.Value) ?? FilteredOwners.FirstOrDefault(x => x.Id == id.Value);
-            if (row != null) await SelectOwner(row);
+            if (row != null)
+            {
+                await SelectOwner(row);
+                return;
+            }
+
+            // CHG-v2.2.0-03：目标业主不在当前候选页时仍按 id 直接加载，不能静默留在空档案。
+            OwnerDto dto = await Api.GetOwnerAsync(id.Value);
+            if (dto != null) { await SelectOwner(new OwnerRow { Dto = dto }); }
         }
 
         private static string IdCardTypeName(OwnerIdCardType? t)
@@ -308,8 +323,38 @@ namespace PropertyManagement.Client.ViewModels
             await RunAsync(async () =>
             {
                 await SearchOwnersCoreAsync(string.Empty);
-                if (FilteredOwners.Count > 0) await SelectOwner(FilteredOwners[0]);
+                if (_explicitFocusOwnerId > 0)
+                {
+                    await SelectOwnerById(_explicitFocusOwnerId);
+                }
+                else if (FilteredOwners.Count > 0)
+                {
+                    await SelectOwner(FilteredOwners[0]);
+                }
             }, "业主已加载");
+        }
+
+        /// <summary>
+        /// CHG-v2.2.0-03：全局搜索按 TargetId 直接选中业主并加载右侧档案。
+        /// 原实现只设置关键词，必须再点下拉候选才能看到详情。
+        /// </summary>
+        public async Task FocusOwnerAsync(int id)
+        {
+            if (id <= 0) { return; }
+            _explicitFocusOwnerId = id;
+            await RunAsync(async () =>
+            {
+                OwnerDto target = await Api.GetOwnerAsync(id);
+                if (target == null) { throw new InvalidOperationException("该业主不存在或已删除"); }
+                _searchText = target.Name ?? string.Empty;
+                OnPropertyChanged(nameof(SearchText));
+                await SearchOwnersCoreAsync(_searchText, 1);
+                await SelectOwnerById(id);
+                if (Selected == null || Selected.Id != id)
+                {
+                    await SelectOwner(new OwnerRow { Dto = target });
+                }
+            }, "已定位业主：" + id);
         }
 
         public async Task LoadAsync()

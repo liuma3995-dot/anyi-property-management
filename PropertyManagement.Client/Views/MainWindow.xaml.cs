@@ -62,8 +62,9 @@ namespace PropertyManagement.Client.Views
             try
             {
                 Point topLeft = SearchArea.TransformToAncestor(ShellRoot).Transform(new Point(0, 0));
-                double width = 360d;
-                double left = topLeft.X;
+                // CHG-v2.2.0-05：浮层固定满宽行，并相对搜索框水平居中；长结果不再改变行的视觉起点。
+                double width = 420d;
+                double left = topLeft.X + (SearchArea.ActualWidth - width) / 2d;
                 double maxRight = ShellRoot.ActualWidth - 12d;
                 if (left + width > maxRight) { left = Math.Max(12d, maxRight - width); }
                 double top = topLeft.Y + SearchArea.ActualHeight + 6d;

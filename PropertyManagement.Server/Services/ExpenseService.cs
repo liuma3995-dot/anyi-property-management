@@ -205,12 +205,15 @@ namespace PropertyManagement.Server.Services
                 {
                     throw ApiException.NotFound("支出记录不存在或已删除");
                 }
-                if (_finance.GetExpenseCategory(connection, request.CategoryId) == null)
+                ExpenseCategoryDto category = _finance.GetExpenseCategory(connection, request.CategoryId);
+                if (category == null)
                 {
                     throw ApiException.NotFound("支出分类不存在或已停用");
                 }
 
+                string before = ExpenseAuditSnapshot(existing);
                 existing.CategoryId = request.CategoryId;
+                existing.CategoryName = category.Name;
                 existing.Amount = request.Amount;
                 existing.ExpenseDate = request.ExpenseDate == default(DateTime) ? DateTime.Now : request.ExpenseDate;
                 existing.Note = request.Note;
@@ -219,10 +222,22 @@ namespace PropertyManagement.Server.Services
                 transaction.Commit();
 
                 _audit.Write("EXPENSE_UPDATE", "expense", id.ToString(),
-                    "修改支出：" + existing.Amount.ToString("0.00") + " 元",
+                    "修改支出：" + before + " → " + ExpenseAuditSnapshot(existing),
                     userName: operatorName, ip: ip, result: "成功");
                 return existing;
             }
+        }
+
+        /// <summary>
+        /// CHG-v2.2.0-04：支出编辑审计保留修改前后五项关键字段，保证财务追溯完整。
+        /// </summary>
+        private static string ExpenseAuditSnapshot(ExpenseDto item)
+        {
+            return "类别=" + (item.CategoryName ?? "—") +
+                   "，金额=" + item.Amount.ToString("0.00") +
+                   "，日期=" + item.ExpenseDate.ToString("yyyy-MM-dd") +
+                   "，摘要=" + (string.IsNullOrWhiteSpace(item.Note) ? "—" : item.Note.Trim()) +
+                   "，收款方=" + (string.IsNullOrWhiteSpace(item.Payee) ? "—" : item.Payee.Trim());
         }
 
         public void DeleteExpense(int id, string operatorName = null, string ip = null)
